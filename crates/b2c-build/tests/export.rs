@@ -1,9 +1,12 @@
-//! Export as a C++ project (`docs/spec/06-compiler-pipeline.md` §6.11):
-//! exported examples build with `make` and with CMake, without Blocks2Cpp,
-//! and the programs do what their golden run data says (the same check as
-//! `golden.rs`). The builds need g++ (required with `B2C_REQUIRE_GXX`), and
-//! `make` or `cmake` on `PATH`; a tool that is missing skips its part. CMake
-//! is used on Linux only (on Windows it would choose MSVC).
+//! Export as a C++ project (`docs/spec/06-compiler-pipeline.md` §6.11,
+//! `docs/plans/m3-contracts/w3-modules.md` §2.8): exported examples, and a
+//! hand-built project of two modules with a header, build with `make` and
+//! with CMake, without Blocks2Cpp, and the programs do what their golden run
+//! data says (the same check as `golden.rs`); a replacement keeps the files
+//! a student changed. The builds need g++ (required with `B2C_REQUIRE_GXX`),
+//! and `make` (or MinGW's `mingw32-make`) or `cmake` on `PATH`; a tool that
+//! is missing skips its part, except `make` with `B2C_REQUIRE_MAKE` (as in
+//! CI). CMake is used on Linux only (on Windows it would choose MSVC).
 
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -12,7 +15,8 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use b2c_build::export::{self, EXPORT_MANIFEST, ExportMode, FolderState};
+use b2c_build::export::{self, EXPORT_MANIFEST, ExportMode, FolderState, KeptReason};
+use b2c_ir::source_map::{FileKind, GeneratedFile, GeneratedProject, SourceMap};
 use common::repo_root;
 use common::run_data::RunData;
 
@@ -34,10 +38,28 @@ fn available(name: &str) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
+/// GNU make: `make`, or on Windows MinGW's `mingw32-make` (MSYS2's UCRT64
+/// `make` package); `None` without one. With `B2C_REQUIRE_MAKE` set (as in
+/// CI) a missing make fails the test instead of skipping its part.
+fn make() -> Option<&'static str> {
+    let names: &[&'static str] = if cfg!(windows) {
+        &["make", "mingw32-make"]
+    } else {
+        &["make"]
+    };
+    let found = names.iter().copied().find(|name| available(name));
+    assert!(
+        found.is_some() || std::env::var_os("B2C_REQUIRE_MAKE").is_none(),
+        "B2C_REQUIRE_MAKE is set but make was not found"
+    );
+    found
+}
+
 fn exported(name: &str, folder: &Path) -> export::Export {
     let bytes = std::fs::read(repo_root().join("examples").join(format!("{name}.b2c"))).unwrap();
     let export = export::prepare(&bytes, 4, "0.0.0-test").unwrap();
-    export::write(folder, &export, ExportMode::New).unwrap();
+    let written = export::write(folder, &export, ExportMode::New).unwrap();
+    assert!(written.kept.is_empty());
     export
 }
 
@@ -72,7 +94,10 @@ fn changed_example(example: &str, module: &str, standard: &str) -> Vec<u8> {
 
 #[test]
 fn exported_examples_build_with_make() {
-    if common::gxx().is_none() || !available("make") {
+    let Some(make) = make() else {
+        return;
+    };
+    if common::gxx().is_none() {
         return;
     }
     for name in EXAMPLES {
@@ -82,7 +107,7 @@ fn exported_examples_build_with_make() {
         // Each configuration builds a program file of its own: `make` and
         // then `make CONFIG=release` compiles again.
         for config in ["debug", "release"] {
-            let output = tool("make")
+            let output = tool(make)
                 .arg("-C")
                 .arg(&folder)
                 .arg(format!("CONFIG={config}"))
@@ -236,15 +261,15 @@ fn exports_with_reserved_names_build() {
             );
             check("hello_world", &build.join(module));
         }
-        if available("make") {
+        if let Some(make) = make() {
             run(
-                &tool("make").arg("-C").arg(&folder).output().unwrap(),
+                &tool(make).arg("-C").arg(&folder).output().unwrap(),
                 &format!("make {module} {standard}"),
             );
             let built = folder.join(format!("{module}-debug"));
             check("hello_world", &built);
             run(
-                &tool("make").arg("-C").arg(&folder).arg("clean").output().unwrap(),
+                &tool(make).arg("-C").arg(&folder).arg("clean").output().unwrap(),
                 &format!("make clean {module}"),
             );
             assert!(!built.exists());
@@ -269,9 +294,9 @@ fn sanitize_and_harden_values_other_than_1_build_a_file_of_their_own() {
         "{make}"
     );
     assert!(make.contains("ifeq ($(SANITIZE),1)") && make.contains("ifeq ($(HARDEN),1)"));
-    if !available("make") {
+    let Some(make) = self::make() else {
         return;
-    }
+    };
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("export");
     export::write(&folder, &export, ExportMode::New).unwrap();
@@ -281,7 +306,7 @@ fn sanitize_and_harden_values_other_than_1_build_a_file_of_their_own() {
         (&["SANITIZE=0", "HARDEN=0"][..], "main-debug-nosanitize-noharden"),
         (&[][..], "main-debug"),
     ] {
-        let output = tool("make")
+        let output = tool(make)
             .arg("-C")
             .arg(&folder)
             .arg("-n")
@@ -328,6 +353,7 @@ fn an_export_is_never_replaced_by_another_projects() {
     let mut value: serde_json::Value = serde_json::from_str(&manifest).unwrap();
     value["formatVersion"] = serde_json::Value::from(1);
     value.as_object_mut().unwrap().remove("projectId");
+    value["files"] = paths_only(&value);
     std::fs::write(folder.join(EXPORT_MANIFEST), value.to_string()).unwrap();
     assert_eq!(export::earlier_export_project(&folder), Some(None));
     export::write(&folder, &second, ExportMode::Replace).unwrap();
@@ -348,7 +374,7 @@ fn a_linked_source_folder_is_never_followed_to_remove_a_file() {
     value["files"]
         .as_array_mut()
         .unwrap()
-        .push(serde_json::Value::from("src/old.cpp"));
+        .push(serde_json::json!({"path": "src/old.cpp", "sha256": sha256("keep")}));
     std::fs::write(folder.join(EXPORT_MANIFEST), value.to_string()).unwrap();
     std::fs::remove_dir_all(folder.join("src")).unwrap();
     std::fs::write(outside.path().join("old.cpp"), "keep").unwrap();
@@ -378,16 +404,26 @@ fn an_export_never_writes_over_what_it_did_not_make() {
     std::fs::write(folder.join("notes.txt"), "mine").unwrap();
     std::fs::write(folder.join("src").join("mine.cpp"), "// mine").unwrap();
     std::fs::write(folder.join("Makefile"), "changed").unwrap();
+    std::fs::remove_file(folder.join("README.md")).unwrap();
     let written = export::write(&folder, &export, ExportMode::Replace).unwrap();
-    assert_eq!(written.last().map(String::as_str), Some(EXPORT_MANIFEST));
+    assert_eq!(written.files.last().map(String::as_str), Some(EXPORT_MANIFEST));
     assert_eq!(std::fs::read_to_string(folder.join("notes.txt")).unwrap(), "mine");
     assert_eq!(
         std::fs::read_to_string(folder.join("src/mine.cpp")).unwrap(),
         "// mine"
     );
-    assert_ne!(
+    // The Makefile the student changed is kept, and named; the README they
+    // deleted is written again.
+    assert_eq!(
         std::fs::read_to_string(folder.join("Makefile")).unwrap(),
         "changed"
+    );
+    assert_eq!(kept(&written), [("Makefile", KeptReason::Changed, false)]);
+    assert!(!written.files.contains(&String::from("Makefile")));
+    assert!(folder.join("README.md").is_file());
+    assert_eq!(
+        written.kept[0].to_string(),
+        "Makefile was kept because it was changed after the earlier export (this export's version of it was not written)"
     );
 
     // A folder with other things in it is not an export.
@@ -450,7 +486,7 @@ fn a_replacement_never_writes_over_a_file_the_earlier_export_did_not_list() {
     value["files"]
         .as_array_mut()
         .unwrap()
-        .retain(|file| file != "Makefile");
+        .retain(|file| file["path"] != "Makefile");
     std::fs::write(folder.join(EXPORT_MANIFEST), value.to_string()).unwrap();
     std::fs::write(folder.join("Makefile"), "mine").unwrap();
     assert!(matches!(
@@ -483,4 +519,438 @@ fn a_text_define_the_build_tools_cannot_pass_is_refused() {
             Err(error) => panic!("{text}: {error}"),
         }
     }
+}
+
+/// The SHA-256 of `text`, as a manifest records it.
+fn sha256(text: &str) -> String {
+    use sha2::Digest as _;
+    b2c_model::hex(&sha2::Sha256::digest(text.as_bytes()))
+}
+
+/// A manifest's entries as format 1 and 2 list them: paths only.
+fn paths_only(manifest: &serde_json::Value) -> serde_json::Value {
+    manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["path"].clone())
+        .collect()
+}
+
+/// The kept files of a write: path, reason, and whether the export no
+/// longer has the file.
+fn kept(written: &export::Written) -> Vec<(&str, KeptReason, bool)> {
+    written
+        .kept
+        .iter()
+        .map(|file| (file.path.as_str(), file.reason, file.no_longer_written))
+        .collect()
+}
+
+/// One generated file of `module`.
+fn generated(path: &str, kind: FileKind, module: &str, contents: &str) -> GeneratedFile {
+    GeneratedFile {
+        path: path.to_owned(),
+        kind,
+        module: Some(b2c_ir::ModuleId::new(module).unwrap()),
+        contents: contents.to_owned(),
+    }
+}
+
+/// What the hand-built program prints.
+const TWO_MODULES_OUTPUT: &str = "twice(21) = 42\n";
+
+/// A two-module project made by hand, as the analyser cannot make one yet
+/// (w3-modules.md §2.8): `main` calls `twice` of module `helper`, which its
+/// header `<helper>.hpp` declares. `helper` names the module (`utils`, then
+/// `tools` after a rename); `None` is the project after the module was
+/// deleted, with `main` alone.
+fn two_modules(helper: Option<&str>) -> (b2c_model::Document, GeneratedProject) {
+    let mut document =
+        b2c_model::load(&std::fs::read(repo_root().join("examples/hello_world.b2c")).unwrap()).unwrap();
+    let mut files = Vec::new();
+    match helper {
+        Some(name) => {
+            document.modules.push(b2c_model::Module {
+                id: b2c_ir::ModuleId::new("mod_helper").unwrap(),
+                name: name.to_owned(),
+                workspace: b2c_model::Workspace::default(),
+            });
+            files.push(generated(
+                "main.cpp",
+                FileKind::Source,
+                "mod_main",
+                &format!(
+                    "#include <iostream>\n\n#include \"{name}.hpp\"\n\nint main() {{\n    std::cout << \"twice(21) = \" << twice(21) << '\\n';\n    return 0;\n}}\n"
+                ),
+            ));
+            files.push(generated(
+                &format!("{name}.cpp"),
+                FileKind::Source,
+                "mod_helper",
+                &format!("#include \"{name}.hpp\"\n\nint twice(int value) {{\n    return 2 * value;\n}}\n"),
+            ));
+            files.push(generated(
+                &format!("{name}.hpp"),
+                FileKind::Header,
+                "mod_helper",
+                "#pragma once\n\nint twice(int value);\n",
+            ));
+        }
+        None => files.push(generated(
+            "main.cpp",
+            FileKind::Source,
+            "mod_main",
+            "#include <iostream>\n\nint main() {\n    std::cout << \"twice(21) = \" << 2 * 21 << '\\n';\n    return 0;\n}\n",
+        )),
+    }
+    (
+        document,
+        GeneratedProject {
+            files,
+            source_map: SourceMap::default(),
+        },
+    )
+}
+
+/// The export of [`two_modules`].
+fn two_modules_export(helper: Option<&str>) -> export::Export {
+    let (document, generated) = two_modules(helper);
+    export::assemble(&document, &generated, "0.0.0-test").unwrap()
+}
+
+/// Runs `program` and checks that it prints [`TWO_MODULES_OUTPUT`].
+fn check_two_modules(program: &Path) {
+    // Production code spawns processes only through b2c-process; tests run
+    // the programs they built directly.
+    #[allow(clippy::disallowed_methods)]
+    let output = std::process::Command::new(program).output().unwrap();
+    run(&output, &format!("{}", program.display()));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n"),
+        TWO_MODULES_OUTPUT
+    );
+}
+
+/// An export of several sources with a header: every `.cpp` in CMake's
+/// `add_executable` and the Makefile's `SOURCES` in module order, the
+/// header in `src/`, and both build files build it.
+#[test]
+fn a_project_of_two_modules_with_a_header_builds_with_both_tools() {
+    let export = two_modules_export(Some("utils"));
+    let paths: Vec<&str> = export.files.iter().map(|file| file.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "src/main.cpp",
+            "src/utils.cpp",
+            "src/utils.hpp",
+            "CMakeLists.txt",
+            "Makefile",
+            "README.md"
+        ]
+    );
+    let file = |path: &str| {
+        export
+            .files
+            .iter()
+            .find(|file| file.path == path)
+            .map(|file| file.contents.clone())
+            .unwrap()
+    };
+    assert!(
+        file("CMakeLists.txt").contains("add_executable(b2c_program\n  src/main.cpp\n  src/utils.cpp\n)"),
+        "{}",
+        file("CMakeLists.txt")
+    );
+    assert!(file("Makefile").contains("SOURCES := src/main.cpp src/utils.cpp\n"));
+    assert!(file("Makefile").contains("HEADERS := $(wildcard src/*.hpp)\n"));
+    assert_eq!(export.name, "main");
+    if common::gxx().is_none() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("export");
+    export::write(&folder, &export, ExportMode::New).unwrap();
+    if let Some(make) = make() {
+        run(
+            &tool(make).arg("-C").arg(&folder).output().unwrap(),
+            "make of two modules",
+        );
+        check_two_modules(&program(&folder, "main-debug"));
+    }
+    #[cfg(unix)]
+    if available("cmake") {
+        let build = folder.join("build");
+        run(
+            &tool("cmake")
+                .arg("-S")
+                .arg(&folder)
+                .arg("-B")
+                .arg(&build)
+                .arg("-DCMAKE_CXX_COMPILER=g++")
+                .output()
+                .unwrap(),
+            "cmake configure of two modules",
+        );
+        run(
+            &tool("cmake").arg("--build").arg(&build).output().unwrap(),
+            "cmake build of two modules",
+        );
+        check_two_modules(&build.join("main"));
+    }
+}
+
+/// The manifest (format 3) records the SHA-256 of each file written. After
+/// a module is renamed, and again after it is deleted, Replace removes the
+/// old module's unchanged files and keeps the one the student edited,
+/// naming it, and goes on; the kept file stays listed as the earlier export
+/// recorded it, so it is kept again until it is back to what was written.
+#[test]
+fn replace_after_a_rename_and_a_delete_keeps_the_edited_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("export");
+    let first = two_modules_export(Some("utils"));
+    export::write(&folder, &first, ExportMode::New).unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(folder.join(EXPORT_MANIFEST)).unwrap()).unwrap();
+    assert_eq!(manifest["formatVersion"], 3);
+    assert_eq!(
+        manifest["projectId"],
+        serde_json::Value::from(first.project_id.clone())
+    );
+    for file in &first.files {
+        let entry = manifest["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["path"] == file.path.as_str())
+            .unwrap();
+        assert_eq!(entry["sha256"], serde_json::Value::from(sha256(&file.contents)));
+    }
+    let utils = std::fs::read_to_string(folder.join("src/utils.cpp")).unwrap();
+    let edited = format!("{utils}// my note\n");
+    std::fs::write(folder.join("src/utils.cpp"), &edited).unwrap();
+
+    // `utils` renamed to `tools`.
+    let renamed = two_modules_export(Some("tools"));
+    let written = export::write(&folder, &renamed, ExportMode::Replace).unwrap();
+    assert_eq!(kept(&written), [("src/utils.cpp", KeptReason::Changed, true)]);
+    assert_eq!(
+        written.kept[0].to_string(),
+        "src/utils.cpp was kept because it was changed after the earlier export (this export no longer has the file)"
+    );
+    assert!(!folder.join("src/utils.hpp").exists());
+    assert_eq!(
+        std::fs::read_to_string(folder.join("src/utils.cpp")).unwrap(),
+        edited
+    );
+    for file in &renamed.files {
+        assert_eq!(
+            std::fs::read_to_string(folder.join(&file.path)).unwrap(),
+            file.contents,
+            "{}",
+            file.path
+        );
+    }
+    if common::gxx().is_some()
+        && let Some(make) = make()
+    {
+        run(
+            &tool(make).arg("-C").arg(&folder).output().unwrap(),
+            "make after the rename",
+        );
+        check_two_modules(&program(&folder, "main-debug"));
+    }
+
+    // `tools` deleted; the student edited its header and the README.
+    std::fs::write(folder.join("src/tools.hpp"), "#pragma once\n// mine\n").unwrap();
+    std::fs::write(folder.join("README.md"), "# My notes\n").unwrap();
+    let deleted = two_modules_export(None);
+    let written = export::write(&folder, &deleted, ExportMode::Replace).unwrap();
+    assert_eq!(
+        kept(&written),
+        [
+            ("src/tools.hpp", KeptReason::Changed, true),
+            ("README.md", KeptReason::Changed, false),
+            ("src/utils.cpp", KeptReason::Changed, true),
+        ]
+    );
+    assert!(!folder.join("src/tools.cpp").exists());
+    assert_eq!(
+        std::fs::read_to_string(folder.join("README.md")).unwrap(),
+        "# My notes\n"
+    );
+    assert!(!written.files.contains(&String::from("README.md")));
+    assert!(written.files.contains(&String::from("src/main.cpp")));
+    if common::gxx().is_some()
+        && let Some(make) = make()
+    {
+        run(
+            &tool(make).arg("-C").arg(&folder).output().unwrap(),
+            "make after the delete",
+        );
+        check_two_modules(&program(&folder, "main-debug"));
+    }
+
+    // Back to what the first export wrote, `utils.cpp` is deleted; the
+    // README the student deleted is written again.
+    std::fs::write(folder.join("src/utils.cpp"), &utils).unwrap();
+    std::fs::remove_file(folder.join("README.md")).unwrap();
+    let written = export::write(&folder, &deleted, ExportMode::Replace).unwrap();
+    assert_eq!(kept(&written), [("src/tools.hpp", KeptReason::Changed, true)]);
+    assert!(!folder.join("src/utils.cpp").exists());
+    assert!(folder.join("README.md").is_file());
+}
+
+/// An older manifest (format 2) records no hashes: Replace keeps every
+/// listed file it would delete or change, naming each, and writes the rest.
+#[test]
+fn an_older_manifest_without_hashes_keeps_every_listed_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("export");
+    let first = two_modules_export(Some("utils"));
+    export::write(&folder, &first, ExportMode::New).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(folder.join(EXPORT_MANIFEST)).unwrap()).unwrap();
+    value["formatVersion"] = serde_json::Value::from(2);
+    value["files"] = paths_only(&value);
+    std::fs::write(folder.join(EXPORT_MANIFEST), value.to_string()).unwrap();
+    assert_eq!(export::folder_state(&folder), FolderState::EarlierExport);
+
+    let renamed = two_modules_export(Some("tools"));
+    let written = export::write(&folder, &renamed, ExportMode::Replace).unwrap();
+    // `main.cpp` and both build files differ from what this export writes;
+    // the README is the same, so it is written (and recorded) again.
+    assert_eq!(
+        kept(&written),
+        [
+            ("src/main.cpp", KeptReason::NotRecorded, false),
+            ("src/utils.cpp", KeptReason::NotRecorded, true),
+            ("src/utils.hpp", KeptReason::NotRecorded, true),
+            ("CMakeLists.txt", KeptReason::NotRecorded, false),
+            ("Makefile", KeptReason::NotRecorded, false),
+        ]
+    );
+    for path in ["src/utils.cpp", "src/utils.hpp"] {
+        let earlier = first.files.iter().find(|file| file.path == path).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(folder.join(path)).unwrap(),
+            earlier.contents
+        );
+    }
+    assert!(written.files.contains(&String::from("README.md")));
+    assert!(written.files.contains(&String::from("src/tools.cpp")));
+    // The kept files stay listed without a hash, and so are kept again.
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(folder.join(EXPORT_MANIFEST)).unwrap()).unwrap();
+    assert_eq!(manifest["formatVersion"], 3);
+    let utils = manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["path"] == "src/utils.cpp")
+        .unwrap();
+    assert!(utils.get("sha256").is_none(), "{utils}");
+    let again = export::write(&folder, &renamed, ExportMode::Replace).unwrap();
+    assert_eq!(kept(&again).len(), 5);
+}
+
+/// A manifest is untrusted: a format 3 entry without its object shape, a
+/// hash that is not 64 lower-case hex digits, an unknown key, a path that is
+/// not an export's, a path listed twice (also in another case) or an entry
+/// without a path make the folder one Blocks2Cpp did not make.
+#[test]
+fn a_malformed_manifest_is_not_an_export() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("export");
+    let export = two_modules_export(Some("utils"));
+    export::write(&folder, &export, ExportMode::New).unwrap();
+    let original = std::fs::read_to_string(folder.join(EXPORT_MANIFEST)).unwrap();
+    let hash = sha256("x");
+    for files in [
+        serde_json::json!(["src/main.cpp"]),
+        serde_json::json!([{"path": "src/main.cpp", "sha256": hash.to_uppercase()}]),
+        serde_json::json!([{"path": "src/main.cpp", "sha256": &hash[1..]}]),
+        serde_json::json!([{"path": "src/main.cpp", "sha256": hash, "size": 1}]),
+        serde_json::json!([{"path": "../main.cpp", "sha256": hash}]),
+        serde_json::json!([{"path": "src/main.cpp"}, {"path": "src/main.cpp"}]),
+        serde_json::json!([{"path": "src/main.cpp"}, {"path": "src/Main.cpp"}]),
+        serde_json::json!([{"sha256": hash}]),
+    ] {
+        let mut value: serde_json::Value = serde_json::from_str(&original).unwrap();
+        value["files"] = files.clone();
+        std::fs::write(folder.join(EXPORT_MANIFEST), value.to_string()).unwrap();
+        assert_eq!(export::folder_state(&folder), FolderState::Other, "{files}");
+        assert!(
+            matches!(
+                export::write(&folder, &export, ExportMode::Replace),
+                Err(export::ExportError::NoEarlierExport)
+            ),
+            "{files}"
+        );
+    }
+    // A format 2 manifest with format 3 entries is refused too.
+    let mut value: serde_json::Value = serde_json::from_str(&original).unwrap();
+    value["formatVersion"] = serde_json::Value::from(2);
+    std::fs::write(folder.join(EXPORT_MANIFEST), value.to_string()).unwrap();
+    assert_eq!(export::folder_state(&folder), FolderState::Other);
+    // As written, it is an export.
+    std::fs::write(folder.join(EXPORT_MANIFEST), &original).unwrap();
+    assert_eq!(export::folder_state(&folder), FolderState::EarlierExport);
+}
+
+/// `hello_world` with `count` more, empty modules named by `name`.
+fn with_modules(count: usize, name: impl Fn(usize) -> String) -> Vec<u8> {
+    let mut project: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(repo_root().join("examples/hello_world.b2c")).unwrap())
+            .unwrap();
+    for index in 0..count {
+        project["modules"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": format!("mod_{index}"),
+                "name": name(index),
+                "workspace": {"blocks": []}
+            }));
+    }
+    project.to_string().into_bytes()
+}
+
+/// The README says the project needs MSYS2's shell or CMake only when the
+/// Makefile's one build command passes 8,000 characters, which cmd.exe
+/// (8,191) would refuse: about 75 characters a module.
+#[test]
+fn the_readme_names_the_shell_only_for_a_command_too_long_for_cmd() {
+    let note = "longer than\ncmd.exe takes";
+    let readme = |bytes: &[u8]| {
+        let export = export::prepare(bytes, 4, "0.0.0-test").unwrap();
+        let file = |path: &str| {
+            export
+                .files
+                .iter()
+                .find(|file| file.path == path)
+                .map(|file| file.contents.clone())
+                .unwrap()
+        };
+        let sources = file("Makefile")
+            .lines()
+            .find_map(|line| line.strip_prefix("SOURCES := ").map(str::len))
+            .unwrap();
+        (file("README.md"), sources)
+    };
+    let (short, _) = readme(&std::fs::read(repo_root().join("examples/hello_world.b2c")).unwrap());
+    assert!(!short.contains(note), "{short}");
+    // 100 modules with short names: about 1,500 characters of sources.
+    let (hundred, sources) = readme(&with_modules(100, |index| format!("m{index:03}")));
+    assert!(sources > 1_000, "{sources}");
+    assert!(!hundred.contains(note), "{hundred}");
+    // 110 modules with 60-character names: past 8,000.
+    let (long, sources) = readme(&with_modules(110, |index| {
+        format!("m{index:03}{}", "x".repeat(56))
+    }));
+    assert!(sources > 7_000, "{sources}");
+    assert!(long.contains(note), "{long}");
+    assert!(long.contains("MSYS2 shell,\nor build with CMake."), "{long}");
 }

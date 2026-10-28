@@ -94,7 +94,8 @@ pub(crate) fn generate(path: &Path, out_dir: &Path) -> Status {
 
 /// `b2c generate --export`: export the project as a C++ project into a
 /// folder that is missing or empty, or with `replace`, over an earlier
-/// export (only the files it wrote).
+/// export (only the files it wrote that nobody changed since; each file
+/// kept is named on standard error).
 pub(crate) fn export(path: &Path, out_dir: &Path, replace: bool) -> Status {
     let bytes = match project_file::read(path) {
         Ok(bytes) => bytes,
@@ -138,8 +139,13 @@ pub(crate) fn export(path: &Path, out_dir: &Path, replace: bool) -> Status {
     }
     match b2c_build::export::write(out_dir, &export, mode) {
         Ok(written) => {
-            for name in written {
+            for name in &written.files {
                 out(&format!("{}\n", shown(&out_dir.join(name))));
+            }
+            // A file of the earlier export that may hold the student's own
+            // changes is kept, and named (w3-modules.md §2.8).
+            for kept in &written.kept {
+                fail(&report::terminal_safe(&kept.to_string()));
             }
             Status::Success
         }

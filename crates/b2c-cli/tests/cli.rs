@@ -331,7 +331,21 @@ fn generate_writes_cpp() {
     let refused = again(false);
     assert_eq!(refused.status.code(), Some(2));
     assert!(stderr(&refused).contains("--replace"), "{}", stderr(&refused));
-    assert_eq!(again(true).status.code(), Some(0));
+    // A replacement keeps a file the student changed, and says so.
+    std::fs::write(export.join("Makefile"), "edited").unwrap();
+    let replaced = again(true);
+    assert_eq!(replaced.status.code(), Some(0), "{}", stderr(&replaced));
+    assert!(
+        stderr(&replaced).contains(
+            "Makefile was kept because it was changed after the earlier export (this export's version of it was not written)"
+        ),
+        "{}",
+        stderr(&replaced)
+    );
+    assert_eq!(
+        std::fs::read_to_string(export.join("Makefile")).unwrap(),
+        "edited"
+    );
     // --replace needs --export.
     let output = b2c(&[
         "generate",

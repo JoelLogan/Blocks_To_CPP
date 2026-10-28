@@ -7,7 +7,8 @@
 //! ├── CMakeLists.txt    CMake 3.20 or newer
 //! ├── Makefile          g++ and GNU make (<program>-<config>[-nosanitize][-noharden])
 //! ├── README.md         how to build it
-//! └── .b2c-export.json  the project's ID and the files this export wrote
+//! └── .b2c-export.json  the project's ID, and the files this export wrote with
+//!                       the SHA-256 of each
 //! ```
 //!
 //! * [`prepare`] runs the front end with the export's options and makes
@@ -26,17 +27,23 @@
 //! * [`write()`] writes the files into a folder: a new one (missing or empty),
 //!   or, with [`ExportMode::Replace`], one that holds an earlier export of
 //!   the same project, where only the files its `.b2c-export.json` lists are
-//!   replaced or removed. It never follows a link (it checks the folders
-//!   before it removes or writes anything), writes each file through a
-//!   temporary file and a rename, and writes the manifest last.
+//!   replaced or removed, and of those only the ones whose content still has
+//!   the SHA-256 the manifest records: a file the student changed (or whose
+//!   content an older manifest did not record) is kept and named in the
+//!   result ([`Written::kept`]), and the rest of the export goes on
+//!   (`docs/plans/m3-contracts/w3-modules.md` §2.8). It never follows a link
+//!   (it checks the folders before it removes or writes anything), writes
+//!   each file through a temporary file and a rename, and writes the
+//!   manifest last.
 
 use std::collections::BTreeSet;
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use b2c_ir::sast::CppStandard;
+use b2c_ir::source_map::GeneratedProject;
 use b2c_ir::text::is_device_name;
 use b2c_ir::{DiagSource, Diagnostic, Location};
 use b2c_model::{BuildConfiguration, Define, DefineValue, Document, Sanitizer};
@@ -44,6 +51,7 @@ use b2c_toolchain::codes;
 use b2c_toolchain::command::{ENCODING_FLAGS, is_debug_like, optimisation_flags, warning_flags};
 use b2c_toolchain::flags::ValidDefine;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 
 use crate::frontend::{FrontendOptions, run_frontend};
 
@@ -53,12 +61,23 @@ pub const EXPORT_MANIFEST: &str = ".b2c-export.json";
 /// The manifest's `format` tag.
 const MANIFEST_FORMAT: &str = "blocks2cpp/export";
 
-/// The largest manifest read back (it lists a few file names).
-const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+/// The largest manifest read back: 1,024 entries with their hashes fit.
+const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 
-/// The manifest's `formatVersion`: 2 names the project; 1 (read only) did
-/// not.
-const MANIFEST_VERSION: u32 = 2;
+/// The most files a manifest read back may list: an export writes at most
+/// 516 (256 sources and headers, `b2c_support.hpp` and three build files),
+/// and keeps listing the files of earlier exports that a student changed.
+const MAX_MANIFEST_ENTRIES: usize = 1024;
+
+/// The manifest's `formatVersion`: 3 records each file's SHA-256; 2 (read
+/// only) named the project but recorded no hashes; 1 (read only) named
+/// neither.
+const MANIFEST_VERSION: u32 = 3;
+
+/// The longest build command the README says nothing about: cmd.exe takes
+/// 8,191 characters, and the `Makefile` runs its one command there unless an
+/// `sh.exe` is on `PATH` (w3-modules.md §2.8).
+const CMD_EXE_COMMAND_LIMIT: usize = 8_000;
 
 /// The folder of the generated sources.
 const SOURCE_DIR: &str = "src";
@@ -159,16 +178,103 @@ pub enum FolderState {
     Other,
 }
 
+/// What [`write()`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Written {
+    /// The paths written, the manifest last.
+    pub files: Vec<String>,
+    /// The files of the earlier export that were left as they are, because
+    /// they may hold the student's own changes, in the earlier manifest's
+    /// order.
+    pub kept: Vec<KeptFile>,
+}
+
+/// A file of an earlier export that [`write()`] did not replace or remove.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeptFile {
+    /// Its path in the export folder (`src/utils.cpp`).
+    pub path: String,
+    /// Why it was kept.
+    pub reason: KeptReason,
+    /// Whether this export no longer writes the file (a renamed or deleted
+    /// module's), rather than having a new version of it.
+    pub no_longer_written: bool,
+}
+
+/// Why a file of an earlier export was kept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeptReason {
+    /// Its content is not what the earlier export wrote.
+    Changed,
+    /// The earlier export's manifest (format 1 or 2) did not record what it
+    /// wrote, so the file may have been changed.
+    NotRecorded,
+}
+
+impl fmt::Display for KeptFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let reason = match self.reason {
+            KeptReason::Changed => "it was changed after the earlier export",
+            KeptReason::NotRecorded => {
+                "the earlier export did not record its content, so it may have been changed"
+            }
+        };
+        let what = if self.no_longer_written {
+            "this export no longer has the file"
+        } else {
+            "this export's version of it was not written"
+        };
+        write!(f, "{} was kept because {reason} ({what})", self.path)
+    }
+}
+
 /// The manifest's shape.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Manifest {
     format: String,
     format_version: u32,
-    /// The project's ID (format 2; format 1 did not record it).
+    /// The project's ID (format 2 and later; format 1 did not record it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     project_id: Option<String>,
-    files: Vec<String>,
+    files: Vec<ManifestEntry>,
+}
+
+/// One file a manifest lists: its path alone (formats 1 and 2), or its path
+/// and the SHA-256 of what the export wrote (format 3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+enum ManifestEntry {
+    /// Formats 1 and 2.
+    Path(String),
+    /// Format 3.
+    Hashed(HashedEntry),
+}
+
+/// A format 3 entry. `sha256` is missing only for a file an earlier export
+/// (format 1 or 2) wrote without recording it, which a later export kept
+/// ([`KeptReason::NotRecorded`]): such a file is never replaced or removed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct HashedEntry {
+    path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
+}
+
+/// A file an earlier export listed, with the SHA-256 (lower-case hex) of
+/// what it wrote when the manifest records it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Listed {
+    path: String,
+    sha256: Option<String>,
+}
+
+/// An earlier export's manifest, checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EarlierExport {
+    project_id: Option<String>,
+    files: Vec<Listed>,
 }
 
 /// Runs the front end on the project file `bytes` with the export's options
@@ -193,6 +299,21 @@ pub fn prepare(bytes: &[u8], indent_width: u8, app_version: &str) -> Result<Expo
     ) else {
         return Err(ExportError::ProjectErrors(frontend.diagnostics));
     };
+    assemble(document, generated, app_version)
+}
+
+/// The export of `document` whose C++ is `generated` (generated without the
+/// banner, as [`prepare`] does): the generated files under `src/`, and the
+/// build files and README made for them. [`prepare`] runs the front end and
+/// calls this; tests call it with a project they made by hand.
+///
+/// # Errors
+/// As [`prepare`], for the project's defines.
+pub fn assemble(
+    document: &Document,
+    generated: &GeneratedProject,
+    app_version: &str,
+) -> Result<Export, ExportError> {
     let mut problems = Vec::new();
     let mut not_exportable = Vec::new();
     let defines: Vec<ValidDefine> = document
@@ -245,9 +366,10 @@ pub fn prepare(bytes: &[u8], indent_width: u8, app_version: &str) -> Result<Expo
         path: String::from("Makefile"),
         contents: makefile(&name, &sources, &flags, app_version),
     });
+    let long_command = longest_command(&name, &sources, &flags) > CMD_EXE_COMMAND_LIMIT;
     files.push(ExportFile {
         path: String::from("README.md"),
-        contents: readme(&document.project.name, &name, app_version),
+        contents: readme(&document.project.name, &name, app_version, long_command),
     });
     Ok(Export {
         folder_name: folder_name(&document.project.name).unwrap_or_else(|| name.clone()),
@@ -693,6 +815,49 @@ $(OUT): $(SOURCES) $(HEADERS)
     tidy
 }
 
+/// The length of the longest command the `Makefile`'s one recipe runs, for
+/// any configuration and choice of `SANITIZE` and `HARDEN`, on Linux or
+/// Windows, with `CXX` as `g++` and no `CXXFLAGS` or `LDFLAGS`: about 75
+/// characters per module, so more than cmd.exe takes for a project of about
+/// a hundred modules with long names.
+fn longest_command(name: &str, sources: &[String], flags: &Flags<'_>) -> usize {
+    let words = |list: &[&str]| list.iter().map(|word| word.len() + 1).sum::<usize>();
+    let common = std_flag(flags.standard, flags.gnu).len()
+        + 1
+        + words(&ENCODING_FLAGS)
+        + flags
+            .defines
+            .iter()
+            .map(|define| make_shell_word(&format!("-D{define}")).len() + 1)
+            .sum::<usize>();
+    let config = flags
+        .configurations()
+        .iter()
+        .map(|(_, settings)| {
+            let mut list = warning_flags(settings);
+            list.extend(optimisation_flags(settings));
+            let (linux_sanitizers, windows_sanitizers) = sanitizer_flags(settings);
+            let (compile, both, link) = linux_hardening(settings);
+            let (windows_both, windows_link) = windows_hardening(settings);
+            // Sanitizers and the hardening flags for both are given when
+            // compiling and when linking; `-static` only on Windows.
+            let linux = 2 * words(&linux_sanitizers) + words(&compile) + 2 * words(&both) + words(&link);
+            let windows = 2 * words(&windows_sanitizers)
+                + 2 * words(&windows_both)
+                + words(&windows_link)
+                + words(&["-static"]);
+            words(&list) + linux.max(windows)
+        })
+        .max()
+        .unwrap_or(0);
+    let program = format!("{name}-release-nosanitize-noharden.exe");
+    words(&["g++"])
+        + common
+        + config
+        + words(&sources.iter().map(String::as_str).collect::<Vec<_>>())
+        + words(&["-o", &program])
+}
+
 /// `text` with Markdown's special characters escaped.
 fn markdown_text(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
@@ -705,15 +870,23 @@ fn markdown_text(text: &str) -> String {
     escaped
 }
 
-/// `README.md`.
-fn readme(project_name: &str, name: &str, app_version: &str) -> String {
+/// `README.md`. `long_command` adds that the build command is too long
+/// for cmd.exe ([`longest_command`]).
+fn readme(project_name: &str, name: &str, app_version: &str, long_command: bool) -> String {
+    let shell = if long_command {
+        "\nThis project has so many modules that its build command is longer than\ncmd.exe takes (8,191 characters): on Windows, run `make` in an MSYS2 shell,\nor build with CMake.\n"
+    } else {
+        ""
+    };
     format!(
         r"# {title}
 
 This is the C++ of a Blocks2Cpp project, exported by Blocks2Cpp {app_version}.
 It is ordinary C++ that builds without Blocks2Cpp, with the same flags the
-app uses. `src/` holds the code; edit it as you like, but exporting the
-project again replaces these files (other files in this folder are kept).
+app uses. `src/` holds the code; edit it as you like. Exporting the project
+again replaces only the files it wrote that nobody has changed since: a file
+you changed is kept as it is, and Blocks2Cpp says which (other files in this
+folder are kept too).
 
 ## Build with CMake (3.20 or newer)
 
@@ -742,7 +915,7 @@ and the like, so a change of choice always builds again.
 On Windows, run `make` in an MSYS2 shell, or with another `sh.exe` on
 `PATH`. `mingw32-make` from cmd.exe or PowerShell builds a project without
 defines, but a project with defines, and `make clean`, need a POSIX shell.
-",
+{shell}",
         title = markdown_text(project_name),
     )
 }
@@ -766,7 +939,8 @@ pub fn folder_state(folder: &Path) -> FolderState {
 }
 
 /// Writes `export` into `folder` (see the module documentation). Returns
-/// the paths written, the manifest last.
+/// the paths written, the manifest last, and the files of the earlier
+/// export that were kept because they may hold changes of the student's.
 ///
 /// # Errors
 /// [`ExportError::NotEmpty`] for [`ExportMode::New`] and a folder that is
@@ -775,7 +949,7 @@ pub fn folder_state(folder: &Path) -> FolderState {
 /// [`ExportError::NotWrittenByExport`] for a file in the way that the earlier
 /// export did not write, [`ExportError::NotAPlainFile`] for a link (the folder or
 /// anything to be written or removed), and [`ExportError::Io`].
-pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Vec<String>, ExportError> {
+pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Written, ExportError> {
     let io = |action: &'static str| move |source: io::Error| ExportError::Io { action, source };
     let earlier = match (mode, folder_state(folder)) {
         (ExportMode::New, FolderState::Empty) => Vec::new(),
@@ -789,6 +963,7 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Vec<Str
         }
         (ExportMode::Replace, _) => return Err(ExportError::NoEarlierExport),
     };
+    let listed = |path: &str| earlier.iter().any(|old| old.path == path);
     if !folder.exists() {
         fs::create_dir(folder).map_err(io("create the export folder"))?;
     }
@@ -798,7 +973,11 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Vec<Str
     let new: BTreeSet<&str> = export.files.iter().map(|file| file.path.as_str()).collect();
     // Every folder a file is written into or removed from is a real one (or
     // missing) before anything is touched: a linked `src` is never followed.
-    for path in new.iter().copied().chain(earlier.iter().map(String::as_str)) {
+    for path in new
+        .iter()
+        .copied()
+        .chain(earlier.iter().map(|old| old.path.as_str()))
+    {
         let path = target(folder, path).ok_or(ExportError::NotAPlainFile)?;
         if let Some(parent) = path.parent()
             && parent != folder
@@ -809,26 +988,20 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Vec<Str
         }
     }
     // A file someone added after the earlier export is never written over.
-    for path in new.iter().filter(|path| !earlier.iter().any(|old| old == *path)) {
+    for path in new.iter().filter(|path| !listed(path)) {
         let target = target(folder, path).ok_or(ExportError::NotAPlainFile)?;
         if fs::symlink_metadata(&target).is_ok() {
             return Err(ExportError::NotWrittenByExport((*path).to_owned()));
         }
     }
-    // Files of the earlier export that this one does not write.
-    for old in earlier.iter().filter(|old| !new.contains(old.as_str())) {
-        let path = target(folder, old).ok_or(ExportError::NotAPlainFile)?;
-        match fs::symlink_metadata(&path) {
-            Ok(metadata) if metadata.is_file() && !is_link(&metadata) => {
-                fs::remove_file(&path).map_err(io("remove a file of the earlier export"))?;
-            }
-            Ok(_) => return Err(ExportError::NotAPlainFile),
-            Err(_) => {}
-        }
+    let plan = plan_replacement(folder, export, &earlier)?;
+    for path in &plan.remove {
+        fs::remove_file(path).map_err(io("remove a file of the earlier export"))?;
     }
     let mode = file_mode();
     let mut written = Vec::new();
-    for file in &export.files {
+    let mut entries = Vec::new();
+    for file in export.files.iter().filter(|file| !plan.keep.contains(&file.path)) {
         let path = target(folder, &file.path).ok_or(ExportError::NotAPlainFile)?;
         if let Some(parent) = path.parent()
             && parent != folder
@@ -844,19 +1017,112 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Vec<Str
         }
         replace_file(&path, file.contents.as_bytes(), mode)?;
         written.push(file.path.clone());
+        entries.push(ManifestEntry::Hashed(HashedEntry {
+            path: file.path.clone(),
+            sha256: Some(sha256_hex(file.contents.as_bytes())),
+        }));
     }
+    // A kept file stays listed as the earlier export recorded it, so a later
+    // export keeps it too while it differs, and replaces it once it is back
+    // to what was written. Past the manifest's limit a kept file is no longer
+    // listed, which makes it one of the student's own files.
+    let room = MAX_MANIFEST_ENTRIES.saturating_sub(entries.len());
+    entries.extend(plan.carried.into_iter().take(room).map(|old| {
+        ManifestEntry::Hashed(HashedEntry {
+            path: old.path,
+            sha256: old.sha256,
+        })
+    }));
     let manifest = Manifest {
         format: String::from(MANIFEST_FORMAT),
         format_version: MANIFEST_VERSION,
         project_id: Some(export.project_id.clone()),
-        files: written.clone(),
+        files: entries,
     };
     let mut text = serde_json::to_string_pretty(&manifest)
         .map_err(|error| io("write the export manifest")(io::Error::other(error)))?;
     text.push('\n');
     replace_file(&folder.join(EXPORT_MANIFEST), text.as_bytes(), mode)?;
     written.push(String::from(EXPORT_MANIFEST));
-    Ok(written)
+    Ok(Written {
+        files: written,
+        kept: plan.kept,
+    })
+}
+
+/// What a replacement does with the files an earlier export listed.
+#[derive(Debug, Default)]
+struct Replacement {
+    /// Unchanged files this export no longer writes, to delete.
+    remove: Vec<PathBuf>,
+    /// Changed files this export would write: left alone.
+    keep: BTreeSet<String>,
+    /// The files kept, for the result.
+    kept: Vec<KeptFile>,
+    /// The entries of the kept files, for the new manifest.
+    carried: Vec<Listed>,
+}
+
+/// Decides, before anything is written, what happens to each file the
+/// earlier export listed: a missing one is forgotten; one whose content
+/// still has the recorded SHA-256 is replaced, or deleted when this export
+/// no longer writes it; one that already holds exactly what this export
+/// writes is written again; any other is kept (w3-modules.md §2.8).
+fn plan_replacement(folder: &Path, export: &Export, earlier: &[Listed]) -> Result<Replacement, ExportError> {
+    let mut plan = Replacement::default();
+    for old in earlier {
+        let path = target(folder, &old.path).ok_or(ExportError::NotAPlainFile)?;
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_file() && !is_link(&metadata) => {}
+            Ok(_) => return Err(ExportError::NotAPlainFile),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(source) => {
+                return Err(ExportError::Io {
+                    action: "inspect a file of the earlier export",
+                    source,
+                });
+            }
+        }
+        let current = file_sha256(&path).map_err(|source| ExportError::Io {
+            action: "read a file of the earlier export",
+            source,
+        })?;
+        let replacement = export.files.iter().find(|file| file.path == old.path);
+        if old.sha256.as_deref() == Some(current.as_str()) {
+            if replacement.is_none() {
+                plan.remove.push(path);
+            }
+            continue;
+        }
+        if replacement.is_some_and(|file| sha256_hex(file.contents.as_bytes()) == current) {
+            continue;
+        }
+        plan.kept.push(KeptFile {
+            path: old.path.clone(),
+            reason: if old.sha256.is_some() {
+                KeptReason::Changed
+            } else {
+                KeptReason::NotRecorded
+            },
+            no_longer_written: replacement.is_none(),
+        });
+        if replacement.is_some() {
+            plan.keep.insert(old.path.clone());
+        }
+        plan.carried.push(old.clone());
+    }
+    Ok(plan)
+}
+
+/// The SHA-256 of `bytes`, in lower-case hex.
+fn sha256_hex(bytes: &[u8]) -> String {
+    b2c_model::hex(&Sha256::digest(bytes))
+}
+
+/// The SHA-256 of the regular file at `path`, in lower-case hex, read in
+/// pieces.
+fn file_sha256(path: &Path) -> io::Result<String> {
+    crate::manifest::digest_file(path).map(|digest| b2c_model::hex(&digest.sha256))
 }
 
 /// The project an earlier export in `folder` was made from: `Some(None)`
@@ -866,9 +1132,13 @@ pub fn earlier_export_project(folder: &Path) -> Option<Option<String>> {
     read_manifest(folder).map(|manifest| manifest.project_id)
 }
 
-/// An earlier export's manifest, when it is a regular file that reads as
-/// one and every name in it is one an export writes.
-fn read_manifest(folder: &Path) -> Option<Manifest> {
+/// An earlier export's manifest, when it is a regular file of at most
+/// 256 KiB that reads as one: its format, version and project ID agree;
+/// every entry has the version's shape and names a file an export writes,
+/// with at most one hash (64 lower-case hex digits); no path is listed twice,
+/// even ignoring case; at most [`MAX_MANIFEST_ENTRIES`]. A manifest is
+/// untrusted input: the folder may have been copied, cloned or edited.
+fn read_manifest(folder: &Path) -> Option<EarlierExport> {
     let path = folder.join(EXPORT_MANIFEST);
     let metadata = fs::symlink_metadata(&path).ok()?;
     if !metadata.is_file() || is_link(&metadata) || metadata.len() > MAX_MANIFEST_BYTES {
@@ -878,8 +1148,36 @@ fn read_manifest(folder: &Path) -> Option<Manifest> {
     let valid = manifest.format == MANIFEST_FORMAT
         && (1..=MANIFEST_VERSION).contains(&manifest.format_version)
         && (manifest.format_version >= 2) == manifest.project_id.is_some()
-        && manifest.files.iter().all(|file| is_export_path(file));
-    valid.then_some(manifest)
+        && manifest.files.len() <= MAX_MANIFEST_ENTRIES;
+    if !valid {
+        return None;
+    }
+    let hashed = manifest.format_version >= 3;
+    let mut files = Vec::with_capacity(manifest.files.len());
+    let mut seen = BTreeSet::new();
+    for entry in manifest.files {
+        let listed = match entry {
+            ManifestEntry::Path(path) if !hashed => Listed { path, sha256: None },
+            ManifestEntry::Hashed(HashedEntry { path, sha256 }) if hashed => Listed { path, sha256 },
+            _ => return None,
+        };
+        let well_formed = is_export_path(&listed.path)
+            && listed.sha256.as_deref().is_none_or(|hash| {
+                hash.len() == 64
+                    && hash
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            })
+            && seen.insert(listed.path.to_ascii_lowercase());
+        if !well_formed {
+            return None;
+        }
+        files.push(listed);
+    }
+    Some(EarlierExport {
+        project_id: manifest.project_id,
+        files,
+    })
 }
 
 /// Whether `path` is a name an export writes: one of the build files, or
@@ -1047,6 +1345,19 @@ mod tests {
         ] {
             assert!(!is_export_path(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn kept_files_say_why() {
+        let file = KeptFile {
+            path: String::from("src/main.cpp"),
+            reason: KeptReason::NotRecorded,
+            no_longer_written: false,
+        };
+        assert_eq!(
+            file.to_string(),
+            "src/main.cpp was kept because the earlier export did not record its content, so it may have been changed (this export's version of it was not written)"
+        );
     }
 
     #[test]
