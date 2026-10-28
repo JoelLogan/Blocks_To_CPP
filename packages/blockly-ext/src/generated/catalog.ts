@@ -4238,7 +4238,7 @@ export const TOOLBOX: readonly ToolboxCategoryJson[] = [
   {
     id: 'variables',
     name: 'Variables',
-    icon: '𝑥',
+    icon: 'x',
     colour: 'variables',
     dynamic: 'variables',
     entries: [
@@ -4312,7 +4312,7 @@ export const TOOLBOX: readonly ToolboxCategoryJson[] = [
   {
     id: 'control',
     name: 'Control',
-    icon: '⑂',
+    icon: '⋔',
     colour: 'control',
     dynamic: null,
     entries: [
@@ -4403,7 +4403,7 @@ export const TOOLBOX: readonly ToolboxCategoryJson[] = [
   {
     id: 'files',
     name: 'Files',
-    icon: '🗎',
+    icon: '▤',
     colour: 'files',
     dynamic: null,
     entries: [

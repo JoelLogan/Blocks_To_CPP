@@ -41,17 +41,17 @@ describe('category styles', () => {
     }
     expect(CATEGORY_IDS.map((id) => CATEGORY_STYLE[id].icon)).toEqual([
       '▶',
-      '𝑥',
+      'x',
       '∑',
       '◇',
       '“ ”',
-      '⑂',
+      '⋔',
       '↻',
       '⌨',
       'ƒ',
       '☰',
       '◆',
-      '🗎',
+      '▤',
       '⚠',
     ]);
   });

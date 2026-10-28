@@ -24,17 +24,17 @@ export interface CategoryStyle {
 /** The style of every toolbox category, in toolbox order. */
 export const CATEGORY_STYLE: Readonly<Record<CategoryId, CategoryStyle>> = Object.freeze({
   program: { colour: { light: '#7a6001', dark: '#8b6e01' }, icon: '▶' },
-  variables: { colour: { light: '#9c4700', dark: '#b15204' }, icon: '𝑥' },
+  variables: { colour: { light: '#9c4700', dark: '#b15204' }, icon: 'x' },
   math: { colour: { light: '#497101', dark: '#548100' }, icon: '∑' },
   logic: { colour: { light: '#02707e', dark: '#068090' }, icon: '◇' },
   text: { colour: { light: '#9d2398', dark: '#ad36a7' }, icon: '“ ”' },
-  control: { colour: { light: '#04755b', dark: '#048568' }, icon: '⑂' },
+  control: { colour: { light: '#04755b', dark: '#048568' }, icon: '⋔' },
   loops: { colour: { light: '#0465af', dark: '#0574c7' }, icon: '↻' },
   io: { colour: { light: '#6741ca', dark: '#7552db' }, icon: '⌨' },
   functions: { colour: { light: '#b80049', dark: '#ca2356' }, icon: 'ƒ' },
   collections: { colour: { light: '#3b51d3', dark: '#4761e4' }, icon: '☰' },
   types: { colour: { light: '#686800', dark: '#767700' }, icon: '◆' },
-  files: { colour: { light: '#00736e', dark: '#00837e' }, icon: '🗎' },
+  files: { colour: { light: '#00736e', dark: '#00837e' }, icon: '▤' },
   errors: { colour: { light: '#ba0d01', dark: '#cc2a1b' }, icon: '⚠' },
 });
 

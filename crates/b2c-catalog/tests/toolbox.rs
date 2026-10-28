@@ -93,14 +93,14 @@ fn categories_follow_the_spec_order_with_names_and_icons() {
             (
                 Category::Variables,
                 "Variables",
-                "𝑥",
+                "x",
                 "variables",
                 Some(DynamicCategory::Variables)
             ),
             (Category::Math, "Math", "∑", "math", None),
             (Category::Logic, "Logic", "◇", "logic", None),
             (Category::Text, "Text", "“ ”", "text", None),
-            (Category::Control, "Control", "⑂", "control", None),
+            (Category::Control, "Control", "⋔", "control", None),
             (Category::Loops, "Loops", "↻", "loops", None),
             (Category::Io, "Input / Output", "⌨", "io", None),
             (
@@ -113,10 +113,56 @@ fn categories_follow_the_spec_order_with_names_and_icons() {
             // Milestone M3's second wave (w2.md §2.1).
             (Category::Collections, "Collections", "☰", "collections", None),
             (Category::Types, "Types", "◆", "types", None),
-            (Category::Files, "Files", "🗎", "files", None),
+            (Category::Files, "Files", "▤", "files", None),
             (Category::Errors, "Errors", "⚠", "errors", None),
         ]
     );
+}
+
+/// The characters a category icon may use: each has a glyph in `DejaVu Sans`
+/// 2.37 (regular and bold; the default sans font of Ubuntu 24.04, CI's Linux
+/// runner, checked with fontTools' cmap and glyf tables) and in Windows'
+/// Segoe UI (Latin) or Segoe UI Symbol (arrows, mathematical operators,
+/// miscellaneous technical, geometric shapes, miscellaneous symbols), which
+/// `WebView2` falls back to. A character outside these fonts draws as an empty
+/// box where no other font has it (⑂ and 🗎 did on CI's Linux runner), and
+/// the icon is what keeps colour from being the only cue (spec §3.7), so a
+/// new icon is checked the same way before it joins this list.
+const COVERED_ICON_CHARS: &[char] = &[
+    ' ', // between the quotes of Text
+    'x', // U+0078 Latin small letter x (Variables)
+    'ƒ', // U+0192 Latin small letter f with hook (Functions)
+    '“', // U+201C left double quotation mark (Text)
+    '”', // U+201D right double quotation mark (Text)
+    '↻', // U+21BB clockwise open circle arrow (Loops)
+    '∑', // U+2211 n-ary summation (Math)
+    '⋔', // U+22D4 pitchfork (Control: a fork in the path)
+    '⌨', // U+2328 keyboard (Input / Output)
+    '▤', // U+25A4 square with horizontal fill (Files: a page of lines)
+    '▶', // U+25B6 black right-pointing triangle (Program)
+    '◆', // U+25C6 black diamond (Types)
+    '◇', // U+25C7 white diamond (Logic)
+    '☰', // U+2630 trigram for heaven (Collections)
+    '⚠', // U+26A0 warning sign (Errors)
+];
+
+#[test]
+fn every_category_icon_is_drawn_by_the_default_fonts_of_linux_and_windows() {
+    for category in &toolbox().categories {
+        assert!(!category.icon.trim().is_empty(), "{:?} has no icon", category.id);
+        for c in category.icon.chars() {
+            assert!(
+                COVERED_ICON_CHARS.contains(&c),
+                "{:?}'s icon uses {c:?} (U+{:04X}), which is not known to be in DejaVu Sans and \
+                 Segoe UI / Segoe UI Symbol",
+                category.id,
+                u32::from(c)
+            );
+        }
+    }
+    // Two categories never share an icon.
+    let icons: BTreeSet<&str> = toolbox().categories.iter().map(|c| c.icon.as_str()).collect();
+    assert_eq!(icons.len(), toolbox().categories.len());
 }
 
 #[test]

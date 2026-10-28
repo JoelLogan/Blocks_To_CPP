@@ -38,7 +38,7 @@ block = "program.check"
 [[category]]
 id = "variables"
 name = "Variables"
-icon = "𝑥"
+icon = "x"
 colour = "variables"
 dynamic = "variables"
 
@@ -155,7 +155,7 @@ block = "text.replace"
 [[category]]
 id = "control"
 name = "Control"
-icon = "⑂"
+icon = "⋔"
 colour = "control"
 
 [[category.entry]]
@@ -307,7 +307,7 @@ block = "type.enum_value"
 [[category]]
 id = "files"
 name = "Files"
-icon = "🗎"
+icon = "▤"
 colour = "files"
 
 [[category.entry]]

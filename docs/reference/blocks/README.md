@@ -11,17 +11,17 @@ Catalog version: 1.3.0.
 | Category | Icon | Blocks |
 | --- | --- | --- |
 | [Program](program.md) | ▶ | 4 |
-| [Variables](variables.md) | 𝑥 | 6 |
+| [Variables](variables.md) | x | 6 |
 | [Math](math.md) | ∑ | 11 |
 | [Logic](logic.md) | ◇ | 4 |
 | [Text](text.md) | “ ” | 13 |
-| [Control](control.md) | ⑂ | 4 |
+| [Control](control.md) | ⋔ | 4 |
 | [Loops](loops.md) | ↻ | 9 |
 | [Input / Output](io.md) | ⌨ | 3 |
 | [Functions](functions.md) | ƒ | 4 |
 | [Collections](collections.md) | ☰ | 13 |
 | [Types](types.md) | ◆ | 6 |
-| [Files](files.md) | 🗎 | 5 |
+| [Files](files.md) | ▤ | 5 |
 | [Errors](errors.md) | ⚠ | 4 |
 
 ## How to read the tables
