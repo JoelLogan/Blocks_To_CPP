@@ -119,6 +119,15 @@ impl Scopes {
         self.global_syms = globals.values().cloned().collect();
     }
 
+    /// Adds one global to the module's globals (see [`Scopes::set_globals`]),
+    /// unless one of that name is there already: the first one keeps it.
+    pub(crate) fn add_global(&mut self, name: &str, sym: &SymbolId) {
+        if !self.globals.contains_key(name) {
+            self.globals.insert(name.to_owned(), sym.clone());
+            self.global_syms.insert(sym.clone());
+        }
+    }
+
     /// Whether a symbol is one of the module's globals.
     pub(crate) fn is_global(&self, sym: &SymbolId) -> bool {
         self.global_syms.contains(sym)

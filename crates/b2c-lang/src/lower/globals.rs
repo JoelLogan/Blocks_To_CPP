@@ -50,6 +50,16 @@ impl<'d> Lowerer<'d> {
     pub(super) fn declare_globals(&mut self) -> Vec<DeclaredGlobal<'d>> {
         let document = self.document;
         let mut names: BTreeMap<String, SymbolId> = BTreeMap::new();
+        // The structs and enums by name, the first by symbol for a name used
+        // twice: looked up for each global, not searched for.
+        let mut type_names: BTreeMap<String, SymbolId> = BTreeMap::new();
+        for (sym, symbol) in &self.symbols.symbols {
+            if matches!(symbol.kind, SymbolKind::Struct { .. } | SymbolKind::Enum { .. }) {
+                type_names
+                    .entry(symbol.name.as_str().to_owned())
+                    .or_insert_with(|| sym.clone());
+            }
+        }
         let mut declared = Vec::new();
         for (index, module) in document.modules.iter().enumerate() {
             self.enter_module(index, &module.id);
@@ -57,7 +67,7 @@ impl<'d> Lowerer<'d> {
                 if block.disabled || block.block_type != "var.global" {
                     continue;
                 }
-                if let Some(sym) = self.declare_global(block, &mut names) {
+                if let Some(sym) = self.declare_global(block, &mut names, &type_names) {
                     declared.push(DeclaredGlobal {
                         module: index,
                         block,
@@ -70,7 +80,12 @@ impl<'d> Lowerer<'d> {
     }
 
     /// Declares one global's symbol. Returns it when it is in the table.
-    fn declare_global(&mut self, block: &Block, names: &mut BTreeMap<String, SymbolId>) -> Option<SymbolId> {
+    fn declare_global(
+        &mut self,
+        block: &Block,
+        names: &mut BTreeMap<String, SymbolId>,
+        type_names: &BTreeMap<String, SymbolId>,
+    ) -> Option<SymbolId> {
         let name_loc = self.loc(&block.id, field("NAME"));
         let is_const = self.choice(block, "KIND", false, &[("variable", false), ("constant", true)]);
         let ty = self.type_setting(block, "TYPE", "int", TypeUse::Variable);
@@ -81,7 +96,7 @@ impl<'d> Lowerer<'d> {
             return None;
         };
         let ident = self.ident(&decl.name, &name_loc, true);
-        self.check_definition_name(&decl.name, &name_loc, names);
+        self.check_definition_name(&decl.name, &name_loc, names, type_names);
         let symbol = Symbol {
             name: ident,
             kind: SymbolKind::Global { is_const },
@@ -98,8 +113,9 @@ impl<'d> Lowerer<'d> {
                 .entry(decl.name.clone())
                 .or_insert_with(|| decl.sym.clone());
         }
-        let globals = self.module_globals.get(module).cloned().unwrap_or_default();
-        self.scopes.set_globals(&globals);
+        // The scopes hold this module's globals (`enter_module`): one more,
+        // not a copy of them all.
+        self.scopes.add_global(&decl.name, &decl.sym);
         Some(decl.sym.clone())
     }
 
@@ -110,6 +126,7 @@ impl<'d> Lowerer<'d> {
         name: &str,
         location: &b2c_ir::diag::Location,
         names: &BTreeMap<String, SymbolId>,
+        type_names: &BTreeMap<String, SymbolId>,
     ) {
         if let Some(other) = names.get(name).cloned() {
             let message = format!(
@@ -125,15 +142,7 @@ impl<'d> Lowerer<'d> {
             );
             return;
         }
-        let user_type = self
-            .symbols
-            .symbols
-            .iter()
-            .find(|(_, symbol)| {
-                matches!(symbol.kind, SymbolKind::Struct { .. } | SymbolKind::Enum { .. })
-                    && symbol.name.as_str() == name
-            })
-            .map(|(sym, _)| sym.clone());
+        let user_type = type_names.get(name).cloned();
         let function = self
             .module_functions
             .iter()
@@ -167,33 +176,58 @@ impl<'d> Lowerer<'d> {
                 self.global_items.insert(global.block.id.clone(), item);
             }
         }
-        let constant = |lowerer: &Self, sym: &SymbolId| {
-            matches!(
-                lowerer.symbols.get(sym).map(|symbol| &symbol.kind),
-                Some(SymbolKind::Global { is_const: true })
-            )
-        };
-        let mut waiting: Vec<BlockId> = self.global_items.keys().cloned().collect();
-        while !waiting.is_empty() {
-            let unchecked: BTreeSet<&SymbolId> = waiting
-                .iter()
-                .filter_map(|id| match self.global_items.get(id).map(|item| &item.kind) {
-                    Some(ItemKind::Global(def)) if constant(self, &def.symbol) => Some(&def.symbol),
+        // Each waiting global, in block order, with the constants of the
+        // program it reads and that are not checked yet (itself left out).
+        // Checking one makes ready each global that waits for it alone; a
+        // circle (no global ready) goes on with the first in block order.
+        let order: Vec<BlockId> = self.global_items.keys().cloned().collect();
+        let constants: BTreeMap<&SymbolId, usize> = order
+            .iter()
+            .enumerate()
+            .filter_map(
+                |(index, id)| match self.global_items.get(id).map(|item| &item.kind) {
+                    Some(ItemKind::Global(def))
+                        if matches!(
+                            self.symbols.get(&def.symbol).map(|symbol| &symbol.kind),
+                            Some(SymbolKind::Global { is_const: true })
+                        ) =>
+                    {
+                        Some((&def.symbol, index))
+                    }
                     _ => None,
-                })
-                .collect();
-            let ready = waiting.iter().position(|id| {
-                let Some(ItemKind::Global(def)) = self.global_items.get(id).map(|item| &item.kind) else {
-                    return true;
-                };
-                reads(def.init.as_ref())
-                    .iter()
-                    .all(|sym| *sym == &def.symbol || !unchecked.contains(sym))
-            });
-            let id = waiting.remove(ready.unwrap_or(0));
-            let module = modules.get(&id).copied().unwrap_or(0);
+                },
+            )
+            .collect();
+        let mut waits = vec![0usize; order.len()];
+        let mut waiting_for: Vec<Vec<usize>> = vec![Vec::new(); order.len()];
+        for (index, id) in order.iter().enumerate() {
+            let Some(ItemKind::Global(def)) = self.global_items.get(id).map(|item| &item.kind) else {
+                continue;
+            };
+            for sym in reads(def.init.as_ref()) {
+                if let Some(&constant) = constants.get(sym)
+                    && constant != index
+                {
+                    waits[index] += 1;
+                    waiting_for[constant].push(index);
+                }
+            }
+        }
+        let mut ready: BTreeSet<usize> = (0..order.len()).filter(|&index| waits[index] == 0).collect();
+        let mut left: BTreeSet<usize> = (0..order.len()).collect();
+        while let Some(index) = ready.pop_first().or_else(|| left.first().copied()) {
+            left.remove(&index);
+            ready.remove(&index);
+            for &other in &waiting_for[index] {
+                waits[other] -= 1;
+                if waits[other] == 0 && left.contains(&other) {
+                    ready.insert(other);
+                }
+            }
+            let id = &order[index];
+            let module = modules.get(id).copied().unwrap_or(0);
             self.enter_module(module, &document.modules[module].id);
-            self.check_global(&id);
+            self.check_global(id);
         }
     }
 

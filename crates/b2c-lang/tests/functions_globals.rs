@@ -1186,3 +1186,24 @@ fn a_global_built_with_a_structs_defaults_follows_the_globals_they_read() {
     assert_clean(&a);
     assert_eq!(declaration_order(&a), ["next", "Config", "z", "a"]);
 }
+
+/// A module of 5,000 globals is analysed in about linear time: each global
+/// declared or checked copied the module's whole map of globals into the
+/// scopes, and the check order rescanned every waiting global, which took
+/// about 40 s in a debug build.
+#[test]
+fn many_globals_are_analysed_in_about_linear_time() {
+    let blocks: Vec<Value> = (0..5_000)
+        .map(|index| {
+            let kind = if index % 2 == 0 { "variable" } else { "constant" };
+            global(kind, "int", &format!("g{index}"), Some(e(&index.to_string())))
+        })
+        .chain(std::iter::once(main(vec![print(vec![e("g4999 + g0")])])))
+        .collect();
+    let document = doc(blocks);
+    let started = std::time::Instant::now();
+    let analysis = analyze(&document);
+    let took = started.elapsed();
+    assert_clean(&analysis);
+    assert!(took < std::time::Duration::from_secs(10), "{took:?}");
+}

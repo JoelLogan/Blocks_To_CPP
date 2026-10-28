@@ -222,6 +222,9 @@ struct Lowerer<'d> {
     /// The globals of each module that were declared, by name (w2.md §2.7):
     /// visible in every item of their module.
     module_globals: Vec<BTreeMap<String, SymbolId>>,
+    /// The module whose globals the scopes hold, so that entering it again
+    /// does not copy them again (`None` before any).
+    globals_loaded: Option<usize>,
     /// The structs and enums of the program, by name (the first one for
     /// duplicates), known before any field, parameter or body is lowered.
     user_types: BTreeMap<String, SymbolId>,
@@ -394,6 +397,7 @@ impl<'d> Lowerer<'d> {
             decls,
             module_functions,
             module_globals: vec![BTreeMap::new(); document.modules.len()],
+            globals_loaded: None,
             user_types: BTreeMap::new(),
             global_items: BTreeMap::new(),
             functions: BTreeMap::new(),
@@ -572,11 +576,18 @@ impl<'d> Lowerer<'d> {
         false
     }
 
+    /// Makes module `index` the one being lowered, with its globals beneath
+    /// every scope. The scopes keep the globals of the module last entered:
+    /// [`Lowerer::declare_global`] adds to both, so entering the same module
+    /// again copies nothing.
     fn enter_module(&mut self, index: usize, id: &ModuleId) {
         self.module_index = index;
         self.module = id.clone();
-        if let Some(globals) = self.module_globals.get(index) {
+        if self.globals_loaded != Some(index)
+            && let Some(globals) = self.module_globals.get(index)
+        {
             self.scopes.set_globals(globals);
+            self.globals_loaded = Some(index);
         }
     }
 
