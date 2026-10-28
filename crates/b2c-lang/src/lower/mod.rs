@@ -245,6 +245,10 @@ struct Lowerer<'d> {
     /// How many catch parts are around the block being lowered: *throw the
     /// error again* needs one (w2.md §2.5).
     catch_depth: usize,
+    /// The collection variables that the *for each* loops around the block
+    /// being lowered go through, innermost last: a change that adds or
+    /// removes their items is refused there.
+    walked: Vec<SymbolId>,
     depth: usize,
     too_deep_reported: bool,
     placeholders: usize,
@@ -403,6 +407,7 @@ impl<'d> Lowerer<'d> {
             item: ItemCtx::Main,
             breakable: Vec::new(),
             catch_depth: 0,
+            walked: Vec::new(),
             depth: 0,
             too_deep_reported: false,
             placeholders: 0,
@@ -625,6 +630,7 @@ impl<'d> Lowerer<'d> {
         self.pending.clear();
         self.breakable.clear();
         self.catch_depth = 0;
+        self.walked.clear();
         self.depth = 0;
         self.too_deep_reported = false;
         self.checks.clear();

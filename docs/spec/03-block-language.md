@@ -655,7 +655,11 @@ value' for a map."), and *list of* there has no type (`B2C-E0315`). A
 read-only item is `B2C-E0308` when changed; *editable* needs a variable
 that may change (`B2C-E0308`) holding a list or a deque whose items are not
 true/false values (`B2C-E0301`: g++ cannot bind `auto&` to the items of a
-`std::vector<bool>`). The item is `[[maybe_unused]]` when the body
+`std::vector<bool>`). Inside a *for each* or *for each key, value* over a
+variable, *add*, *remove item at*, *remove* and *clear* on that variable
+are `B2C-E0308`: they may free what the loop is going through (undefined
+behaviour in C++); *set item* and *sort* keep every item where the loop
+can reach it. The item is `[[maybe_unused]]` when the body
 never mentions it, and a pair's key and value when the body mentions
 neither. **In M3** (wave W2) every block of this table is built, *wait* and
 *go on into the next case* in Control and *do … then repeat* after *repeat

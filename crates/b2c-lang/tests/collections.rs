@@ -708,6 +708,68 @@ fn loop_names_exist_only_inside_their_loop() {
 }
 
 #[test]
+fn a_collection_cannot_gain_or_lose_items_inside_a_for_each_over_it() {
+    // `for (const auto& n : numbers) { numbers.push_back(n); }` and
+    // `ids.erase(id)` inside a loop over `ids` are undefined behaviour:
+    // the change may free what the loop is going through.
+    let sort = |list: &str| {
+        json!({"id": id(), "type": "coll.sort", "v": 1,
+               "fields": {"LIST": {"ref": sym(list)}, "ORDER": "ascending"}})
+    };
+    let remove = |list: &str, value: Value| on("coll.remove_value", list, json!({ "VALUE": value }));
+    let a = check(vec![
+        create("vector<int>", "numbers", None),
+        create("vector<int>", "others", None),
+        create("set<int>", "ids", None),
+        create("map<std::string,int>", "ages", None),
+        for_each(
+            "n",
+            "read_only",
+            e("numbers"),
+            vec![
+                add("numbers", e("n")),
+                on("coll.remove_at", "numbers", json!({ "INDEX": e("0") })),
+                whole("coll.clear", "numbers"),
+                // These change no item's place in the list it goes through.
+                set_item("numbers", e("0"), e("n")),
+                sort("numbers"),
+                add("others", e("n")),
+                for_each("m", "copy", e("others"), vec![add("numbers", e("m"))]),
+            ],
+        ),
+        for_each("id", "copy", e("ids"), vec![remove("ids", e("id"))]),
+        for_each_pair("ages", "name", "age", vec![remove("ages", e("name"))]),
+        // After its loop, a collection may change again.
+        add("numbers", e("1")),
+        remove("ids", e("1")),
+    ]);
+    let refused = |name: &str| {
+        format!(
+            "`{name}` can't gain or lose items inside a 'for each' loop that goes through it: the loop would \
+             lose its place. Collect the changes in another collection and make them after the loop."
+        )
+    };
+    assert_eq!(
+        messages(&a, "B2C-E0308"),
+        [
+            refused("numbers"),
+            refused("numbers"),
+            refused("numbers"),
+            refused("numbers"),
+            refused("ids"),
+            refused("ages"),
+        ]
+    );
+    assert_codes(&a, &["B2C-E0308"; 6]);
+    let at: Vec<String> = a
+        .diagnostics
+        .iter()
+        .map(|d| format!("{:?}", d.primary.part))
+        .collect();
+    assert!(at.iter().all(|part| part.contains("LIST")), "{at:?}");
+}
+
+#[test]
 fn a_loop_item_is_not_visible_after_its_loop_in_any_mode() {
     // What is visible after a block (where a pasted block or a dropped
     // preset binds its names) holds no loop item, whatever the mode, and an

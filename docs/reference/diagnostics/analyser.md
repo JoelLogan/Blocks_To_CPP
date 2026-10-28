@@ -381,7 +381,9 @@ Codes by area:
   (or the key or value of `for each key, value`), a read-only function input,
   or the error a `catch` part caught. A `for each` loop in *editable* mode
   changes the items of its collection, so the collection must be a variable
-  that may change.
+  that may change. Inside a `for each` (or `for each key, value`) loop over
+  a variable, *add*, *remove item at*, *remove* and *clear* can't change
+  that variable: C++ may free the items the loop is going through.
 * **Example:** `set [max] to (10)` where `max` was created with *const* ticked.
 * **Message:** "`max` was created as a constant, so it can't be changed.
   Untick 'const' in its 'create' block if it needs to change." / "`score` is
@@ -393,7 +395,10 @@ Codes by area:
   / for a global constant, "`kMax` is a global constant, so it can't be
   changed. Choose 'variable' in its 'global' block if it needs to change."
   / for the program's arguments, "`args` holds the program's arguments and
-  is read-only. Create a variable set to it to change a copy."
+  is read-only. Create a variable set to it to change a copy." / inside a
+  loop over it, "`numbers` can't gain or lose items inside a 'for each'
+  loop that goes through it: the loop would lose its place. Collect the
+  changes in another collection and make them after the loop."
 * **How to fix:** untick *const*, choose *variable* in a *global* block, use
   another variable, or change the input's or the loop's mode.
 

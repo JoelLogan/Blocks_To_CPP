@@ -188,6 +188,7 @@ impl Lowerer<'_> {
         let value = self.taken(block, &mut typed, "VALUE");
         let list = list?;
         self.report_field_fit(block, &typed, &typing, "LIST");
+        self.check_not_walked(&list);
         let subject = self.item_subject(Some(&list));
         self.report_fit(&typed, &typing, "VALUE", &value, &subject);
         Some(StmtKind::CollectionOp {
@@ -225,6 +226,10 @@ impl Lowerer<'_> {
         let typing = self.type_parts(block, &mut typed, None);
         let list = list?;
         self.report_field_fit(block, &typed, &typing, "LIST");
+        // Sorting moves items, but frees nothing a loop goes through.
+        if !matches!(op, CollectionChange::Sort { .. }) {
+            self.check_not_walked(&list);
+        }
         Some(StmtKind::CollectionOp {
             collection: list.sym,
             op,
@@ -240,6 +245,7 @@ impl Lowerer<'_> {
         let index = self.taken(block, &mut typed, "INDEX");
         let list = list?;
         self.report_field_fit(block, &typed, &typing, "LIST");
+        self.check_not_walked(&list);
         let position = self.position_subject(Some(&list));
         self.report_fit(&typed, &typing, "INDEX", &index, &position);
         Some(StmtKind::CollectionOp {
@@ -257,6 +263,7 @@ impl Lowerer<'_> {
         let value = self.taken(block, &mut typed, "VALUE");
         let list = list?;
         self.report_field_fit(block, &typed, &typing, "LIST");
+        self.check_not_walked(&list);
         let subject = phrase(String::from("The value to remove"), true);
         self.report_fit(&typed, &typing, "VALUE", &value, &subject);
         Some(StmtKind::CollectionOp {
@@ -299,7 +306,11 @@ impl Lowerer<'_> {
         // A copy or an editable item is a variable, which the scope query
         // would otherwise count as visible after the loop.
         self.index.record_part_variable(&decl.sym);
-        let body = self.loop_body(block, true);
+        let walked = match &list.kind {
+            ExprKind::Var(sym) => Some(sym.clone()),
+            _ => None,
+        };
+        let body = self.walking(walked, |lowerer| lowerer.loop_body(block, true));
         self.scopes.pop();
         Some(StmtKind::RangeFor {
             vars: vec![decl.sym],
@@ -395,7 +406,7 @@ impl Lowerer<'_> {
             let ty = typing.declares.get(part).cloned().unwrap_or(Type::Error);
             self.declare_loop_item(block, part, decl, SymbolKind::LoopVariable, ty);
         }
-        let body = self.loop_body(block, true);
+        let body = self.walking(Some(map.sym.clone()), |lowerer| lowerer.loop_body(block, true));
         self.scopes.pop();
         Some(StmtKind::RangeFor {
             vars: vec![key.sym, value.sym],
@@ -403,6 +414,36 @@ impl Lowerer<'_> {
             mode: RangeMode::ReadOnly,
             body,
         })
+    }
+
+    /// Lowers a loop's body with the collection variable it goes through
+    /// (if it goes through one) on the walked stack.
+    fn walking<T>(&mut self, collection: Option<SymbolId>, body: impl FnOnce(&mut Self) -> T) -> T {
+        let pushed = collection.is_some();
+        self.walked.extend(collection);
+        let lowered = body(self);
+        if pushed {
+            self.walked.pop();
+        }
+        lowered
+    }
+
+    /// Reports a change that adds or removes items of a collection that a
+    /// *for each* around the block goes through (`B2C-E0308`): adding to a
+    /// list may move its items, and removing frees the item the loop is at,
+    /// so the loop would read freed memory (undefined behaviour). Setting
+    /// an item or sorting keeps every item where the loop can reach it.
+    fn check_not_walked(&mut self, list: &Named) {
+        if !self.checking() || !self.walked.contains(&list.sym) {
+            return;
+        }
+        let message = format!(
+            "{} can't gain or lose items inside a 'for each' loop that goes through it: the loop would lose \
+             its place. Collect the changes in another collection and make them after the loop.",
+            self.name_of(&list.sym)
+        );
+        self.diags
+            .error(codes::NOT_ASSIGNABLE, list.origin.location(), message);
     }
 
     /// Declares a name a loop over items gives its body, in the loop's item

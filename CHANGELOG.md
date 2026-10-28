@@ -499,7 +499,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   variable, function input, loop item, caught error, the program's arguments
   or a field named like a struct or enum is `B2C-E0210`; a path of _open
   file_ that reads a variable called like the file it opens is
-  `B2C-E0205`.
+  `B2C-E0205`; and _add_, _remove item at_, _remove_ and _clear_ on the
+  collection a _for each_ loop goes through, inside that loop, are
+  `B2C-E0308`.
 - C++ support helpers for text, random decimals and removing items
   (`split`, `to_lower`, `to_upper`, `trim`, `replace_all`, `starts_with`,
   `ends_with`, `random_real`, `remove_at`), each compiled and run under
