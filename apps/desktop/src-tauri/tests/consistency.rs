@@ -32,7 +32,7 @@ fn contract() -> BTreeSet<String> {
         .iter()
         .map(|&name| name.to_owned())
         .collect();
-    assert_eq!(names.len(), 36);
+    assert_eq!(names.len(), 39);
     names
 }
 
@@ -73,7 +73,7 @@ fn build_rs_takes_the_command_table() {
 #[test]
 fn the_handler_list_is_the_command_table() {
     let handlers = handler_list();
-    assert_eq!(handlers.len(), 36, "{handlers:?}");
+    assert_eq!(handlers.len(), 39, "{handlers:?}");
     let set: BTreeSet<String> = handlers.iter().cloned().collect();
     assert_eq!(set.len(), handlers.len(), "a command is registered twice");
     assert_eq!(set, contract());

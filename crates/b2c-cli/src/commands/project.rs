@@ -52,7 +52,7 @@ pub(crate) fn check(path: &Path, format: Format) -> Status {
 }
 
 /// `b2c generate`: write the generated C++ into a folder.
-pub(crate) fn generate(path: &Path, out_dir: &Path, export: bool) -> Status {
+pub(crate) fn generate(path: &Path, out_dir: &Path) -> Status {
     let bytes = match project_file::read(path) {
         Ok(bytes) => bytes,
         Err(message) => {
@@ -60,11 +60,7 @@ pub(crate) fn generate(path: &Path, out_dir: &Path, export: bool) -> Status {
             return Status::Usage;
         }
     };
-    let options = FrontendOptions {
-        do_not_edit_banner: !export,
-        ..FrontendOptions::default()
-    };
-    let frontend = run_frontend(&bytes, &options);
+    let frontend = run_frontend(&bytes, &FrontendOptions::default());
     let file = shown(path);
     err(&report::render_text(
         &file,
@@ -88,6 +84,71 @@ pub(crate) fn generate(path: &Path, out_dir: &Path, export: bool) -> Status {
         }
         Err(error) => {
             fail(&report::terminal_safe(&error.to_string()));
+            Status::Usage
+        }
+    }
+}
+
+/// `b2c generate --export`: export the project as a C++ project into a
+/// folder that is missing or empty, or with `replace`, over an earlier
+/// export (only the files it wrote).
+pub(crate) fn export(path: &Path, out_dir: &Path, replace: bool) -> Status {
+    let bytes = match project_file::read(path) {
+        Ok(bytes) => bytes,
+        Err(message) => {
+            fail(&message);
+            return Status::Usage;
+        }
+    };
+    let file = shown(path);
+    let export = match b2c_build::export::prepare(&bytes, 4, env!("CARGO_PKG_VERSION")) {
+        Ok(export) => export,
+        Err(
+            b2c_build::export::ExportError::ProjectErrors(diagnostics)
+            | b2c_build::export::ExportError::DefineNotExportable(diagnostics),
+        ) => {
+            let document = b2c_model::load(&bytes).ok();
+            err(&report::render_text(
+                &file,
+                &diagnostics,
+                &BlockIndex::new(document.as_ref()),
+            ));
+            fail(&format!("{file} has errors; nothing was exported"));
+            return Status::ProjectErrors;
+        }
+        Err(error) => {
+            fail(&report::terminal_safe(&error.to_string()));
+            return Status::Usage;
+        }
+    };
+    let mode = if replace {
+        b2c_build::export::ExportMode::Replace
+    } else {
+        b2c_build::export::ExportMode::New
+    };
+    // `--out` is created if missing (export::write makes its last level).
+    if let Some(parent) = out_dir.parent().filter(|parent| !parent.as_os_str().is_empty())
+        && let Err(error) = std::fs::create_dir_all(parent)
+    {
+        fail(&format!("cannot create {}: {error}", shown(parent)));
+        return Status::Usage;
+    }
+    match b2c_build::export::write(out_dir, &export, mode) {
+        Ok(written) => {
+            for name in written {
+                out(&format!("{}\n", shown(&out_dir.join(name))));
+            }
+            Status::Success
+        }
+        Err(b2c_build::export::ExportError::NotEmpty) => {
+            fail(&format!(
+                "{} is not empty; export into a new folder, or add --replace to replace an earlier export there",
+                shown(out_dir)
+            ));
+            Status::Usage
+        }
+        Err(error) => {
+            fail(&report::terminal_safe(&format!("{}: {error}", shown(out_dir))));
             Status::Usage
         }
     }

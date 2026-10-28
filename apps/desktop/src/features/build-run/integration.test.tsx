@@ -95,6 +95,8 @@ describe('build and run with the real console', () => {
         containment: 'processGroupOnly',
         mode: 'pty',
         ideHelpers: true,
+        inputFile: false,
+        externalTerminal: false,
       });
     });
     const header = screen.getByTestId('console-header');
@@ -208,7 +210,14 @@ async function startProgram(
     throw new Error('no run');
   }
   act(() => {
-    program.send({ kind: 'started', containment: 'cgroup', mode: 'pty', ideHelpers: false });
+    program.send({
+      kind: 'started',
+      containment: 'cgroup',
+      mode: 'pty',
+      ideHelpers: false,
+      inputFile: false,
+      externalTerminal: false,
+    });
   });
   await eventually(() => {
     expect(useAppStore.getState().run.status).toBe('running');

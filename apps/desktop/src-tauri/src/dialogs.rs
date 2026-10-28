@@ -185,6 +185,36 @@ impl<R: Runtime> Dialogs for NativeDialogs<R> {
         local_path(picked)
     }
 
+    fn pick_input_file(&self, folder: Option<&Path>) -> Option<PathBuf> {
+        let mut builder = self.file_dialog("Choose the program's input")?;
+        if let Some(folder) = self.project_folder(folder) {
+            builder = builder.set_directory(folder);
+        }
+        let picked = wait(|reply| builder.pick_file(move |path| send(&reply, path))).flatten()?;
+        local_path(picked)
+    }
+
+    fn pick_export_folder(&self, folder: Option<&Path>) -> Option<PathBuf> {
+        let mut builder = self.file_dialog("Export as C++ project")?;
+        if let Some(folder) = self.project_folder(folder) {
+            builder = builder.set_directory(folder);
+        }
+        let picked = wait(|reply| builder.pick_folder(move |path| send(&reply, path))).flatten()?;
+        local_path(picked)
+    }
+
+    fn confirm_replace_export(&self, folder_name: &str) -> bool {
+        let shown = display_text(folder_name, MAX_SHOWN_NAME_CHARS);
+        self.confirm(
+            "Replace the earlier export?",
+            &format!(
+                "The folder “{shown}” holds an earlier export of this project. Replacing it rewrites the files that export made; other files in it are kept."
+            ),
+            "Replace",
+            "Cancel",
+        )
+    }
+
     fn confirm_trust(&self, prompt: &TrustPrompt) -> TrustChoice {
         let (title, body) = trust_dialog_text(prompt);
         #[cfg(windows)]

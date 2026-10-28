@@ -24,6 +24,7 @@
 //! | `project_save_as_dialog` | [`Backend::project_save_as_dialog`] | 05 §5.10, 08 §8.3.1 |
 //! | `project_close` | [`Backend::project_close`] | 07 §7.5.4, 05 §5.10 |
 //! | `project_set_dirty` | [`Backend::project_set_dirty`] | 02 §2.6 |
+//! | `project_export_dialog` | [`Backend::project_export_dialog`] | 06 §6.11 (M3) |
 //! | `recent_list` | [`Backend::recent_list`] | 05 §5.9, 04 §4.10 |
 //! | `recent_remove` | [`Backend::recent_remove`] | 05 §5.9 |
 //! | `recovery_save` | [`Backend::recovery_save`] | 05 §5.10 |
@@ -46,6 +47,8 @@
 //! | `run_resize` | [`Backend::run_resize`] | 02 §2.5.6 |
 //! | `run_stop` | [`Backend::run_stop`] | 07 §7.5.4, §7.6.4 |
 //! | `run_ack` | [`Backend::run_ack`] | 02 §2.5.3, 07 §7.6.5 |
+//! | `run_close_input` | [`Backend::run_close_input`] | 07 §7.6.5 (M3) |
+//! | `run_input_file` | [`Backend::run_input_file`] | 07 §7.6.2 (M3) |
 //! | `settings_get` | [`Backend::settings_get`] | 05 §5.9 |
 //! | `settings_update` | [`Backend::settings_update`] | 05 §5.9 |
 //! | `open_help_link` | [`Backend::open_help_link`] | 08 §8.8 |
@@ -93,10 +96,12 @@ mod build_run;
 mod dialogs;
 mod errors;
 mod events;
+mod export;
 pub mod limits;
 mod projects;
 mod recent;
 mod recovery;
+mod run_options;
 mod settings;
 mod templates;
 mod toolchains;

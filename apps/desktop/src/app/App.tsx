@@ -12,6 +12,7 @@ const SCREEN_LABELS: Record<ScreenId, string> = {
   editor: 'Block editor',
   toolchainSetup: 'Set up a C++ compiler',
   settings: 'Settings',
+  projectSettings: 'Project settings',
 };
 
 /**

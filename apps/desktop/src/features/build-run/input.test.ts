@@ -165,3 +165,59 @@ describe('InputSender', () => {
     expect(input.pendingBytes).toBe(0);
   });
 });
+
+describe('ending the input', () => {
+  it('ends the input after what was typed before, and drops what is typed after', async () => {
+    const order: string[] = [];
+    const send = vi.fn<(data: string) => Promise<void>>((data) => {
+      order.push(decoder.decode(fromBase64(data)));
+      return Promise.resolve();
+    });
+    const close = vi.fn<() => Promise<void>>(() => {
+      order.push('<close>');
+      return Promise.resolve();
+    });
+    const input = new InputSender(send, systemClock, close);
+    input.push('a\r');
+    input.close();
+    input.push('b\r');
+    input.close();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(order).toEqual([]);
+    input.ready();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(order).toEqual(['a\r', '<close>']);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('tries the end again while the backend says rateLimited', async () => {
+    const send = vi.fn<(data: string) => Promise<void>>(() => Promise.resolve());
+    const close = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new IpcCallError('run_close_input', { code: 'rateLimited' }))
+      .mockResolvedValue(undefined);
+    const input = new InputSender(send, systemClock, close);
+    input.ready();
+    input.close();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(close).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
+    expect(close).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(10 * FIRST_RETRY_DELAY_MS);
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up quietly when the program has ended', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const close = vi.fn<() => Promise<void>>(() =>
+      Promise.reject(new IpcCallError('run_close_input', { code: 'notRunning' })),
+    );
+    const input = new InputSender(() => Promise.resolve(), systemClock, close);
+    input.ready();
+    input.close();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});

@@ -47,7 +47,7 @@ export function settingsFixture(overrides: Partial<Settings> = {}): Settings {
   return {
     formatVersion: 1,
     codeStyle: { indentWidth: 4 },
-    run: { onErrors: 'disableRun' },
+    run: { onErrors: 'disableRun', externalTerminal: false },
     console: { scrollbackLines: 10000 },
     toolchain: { selectedId: null },
     newProject: { standard: 'c++20' },

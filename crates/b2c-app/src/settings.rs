@@ -83,6 +83,7 @@ pub(crate) fn settings_to_dto(settings: &Settings) -> DtoSettings {
                 OnErrors::DisableRun => DtoOnErrors::DisableRun,
                 OnErrors::ShowProblems => DtoOnErrors::ShowProblems,
             },
+            external_terminal: settings.run.external_terminal,
         },
         console: ConsoleSettings {
             scrollback_lines: settings.console.scrollback_lines,
@@ -145,6 +146,7 @@ pub(crate) fn patch_from_dto(patch: &DtoPatch) -> SettingsPatch {
                 DtoOnErrors::DisableRun => OnErrors::DisableRun,
                 DtoOnErrors::ShowProblems => OnErrors::ShowProblems,
             }),
+            external_terminal: run.external_terminal,
         }),
         console: patch.console.map(|console| ConsolePatch {
             scrollback_lines: console.scrollback_lines,
@@ -240,7 +242,7 @@ mod tests {
             serde_json::json!({
                 "formatVersion": 1,
                 "codeStyle": {"indentWidth": 4},
-                "run": {"onErrors": "disableRun"},
+                "run": {"onErrors": "disableRun", "externalTerminal": false},
                 "console": {"scrollbackLines": 10000},
                 "toolchain": {"selectedId": null},
                 "newProject": {"standard": "c++20"},
@@ -386,6 +388,7 @@ mod tests {
             }),
             run: Some(RunSettingsPatch {
                 on_errors: Some(DtoOnErrors::ShowProblems),
+                external_terminal: Some(true),
             }),
             console: Some(DtoConsole {
                 scrollback_lines: Some(5000),
@@ -401,6 +404,7 @@ mod tests {
         });
         assert_eq!(patch.code_style.and_then(|s| s.indent_width), Some(2));
         assert_eq!(patch.run.and_then(|r| r.on_errors), Some(OnErrors::ShowProblems));
+        assert_eq!(patch.run.and_then(|r| r.external_terminal), Some(true));
         assert_eq!(patch.console.and_then(|c| c.scrollback_lines), Some(5000));
         assert_eq!(patch.appearance.and_then(|a| a.theme), Some(Theme::Light));
         assert_eq!(patch.editor.and_then(|e| e.block_labels), Some(BlockLabels::Cpp));

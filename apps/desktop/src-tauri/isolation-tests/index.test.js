@@ -143,7 +143,7 @@ describe('the isolation page', () => {
 
 describe('the hook', () => {
   test('passes every command with its sample payload, unchanged', () => {
-    assert.equal(Object.keys(samples).length, 36);
+    assert.equal(Object.keys(samples).length, 39);
     for (const [cmd, payload] of Object.entries(samples)) {
       const msg = message(cmd, payload);
       assert.equal(frame.hook(msg), msg, cmd);

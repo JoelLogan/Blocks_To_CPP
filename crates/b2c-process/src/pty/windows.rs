@@ -33,6 +33,7 @@ use std::io::{self, Read, Write as _};
 use std::mem::{size_of, size_of_val};
 use std::os::windows::io::{AsHandle as _, AsRawHandle as _, OwnedHandle};
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
@@ -41,8 +42,8 @@ use windows_sys::Win32::System::Console::{
     COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON, ResizePseudoConsole,
 };
 use windows_sys::Win32::System::Threading::{
-    CREATE_NO_WINDOW, INFINITE, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-    STARTF_USESTDHANDLES,
+    CREATE_NEW_CONSOLE, CREATE_NO_WINDOW, INFINITE, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+    PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, STARTF_USESTDHANDLES,
 };
 
 use super::session::{Shared, Supervised};
@@ -75,7 +76,7 @@ type SharedConsole = Arc<Mutex<Option<PseudoConsole>>>;
 
 /// Starts `command` suspended, connected as `io` says, contains it in a new
 /// Job Object and resumes it.
-pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> {
+pub(super) fn spawn(command: &Command, io: Io, input_file: Option<File>) -> Result<Spawned, ProcessError> {
     let program = command.program().to_path_buf();
     let plan = containment::plan(command, Kind::Run)?;
     let mut launch = Launch::new(&plan.command)?;
@@ -85,7 +86,8 @@ pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> 
     })?;
     let connected = match io {
         Io::Pty(size) => in_console(&mut launch, size),
-        Io::Pipes => with_pipes(&mut launch),
+        Io::Pipes => with_pipes(&mut launch, input_file),
+        Io::NewConsole => in_new_console(&mut launch),
     };
     let Connected {
         created,
@@ -122,7 +124,10 @@ pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> 
         pid,
         started,
         output: OutputEnd(File::from(output)),
-        input: InputEnd(File::from(input)),
+        input: InputEnd {
+            file: File::from(input),
+            console: console.is_some(),
+        },
         terminal: Terminal { console },
         level: plan.level,
     })
@@ -186,10 +191,15 @@ fn in_console(launch: &mut Launch, size: PtySize) -> Result<Connected, Failure> 
     }
 }
 
-/// Creates the program with pipes: standard input from one pipe, standard
-/// output and error into another, and no other handle inherited.
-fn with_pipes(launch: &mut Launch) -> Result<Connected, Failure> {
-    let (child_input, input) = create::pipe(PIPE_BUFFER).map_err(Failure::Spawn)?;
+/// Creates the program with pipes: standard input from one pipe (or from
+/// `input_file`), standard output and error into another, and no other
+/// handle inherited.
+fn with_pipes(launch: &mut Launch, input_file: Option<File>) -> Result<Connected, Failure> {
+    let (pipe_input, input) = create::pipe(PIPE_BUFFER).map_err(Failure::Spawn)?;
+    let child_input = match input_file {
+        Some(file) => OwnedHandle::from(file),
+        None => pipe_input,
+    };
     let (output, child_output) = create::pipe(PIPE_BUFFER).map_err(Failure::Spawn)?;
     let handles: [HANDLE; 2] = [child_input.as_raw_handle(), child_output.as_raw_handle()];
     let created = create::set_inheritable(&child_input)
@@ -221,6 +231,27 @@ fn with_pipes(launch: &mut Launch) -> Result<Connected, Failure> {
     // sees end-of-file when the program's tree has ended.
     drop(child_input);
     drop(child_output);
+    Ok(Connected {
+        created: created.map_err(Failure::Spawn)?,
+        output,
+        input,
+        console: None,
+    })
+}
+
+/// Creates the program in a console window of its own, inheriting no
+/// handle: it gets its standard handles from the new console. This process
+/// keeps ends of two pipes nobody else holds, so the reader sees end-of-file
+/// at once and writes fail.
+fn in_new_console(launch: &mut Launch) -> Result<Connected, Failure> {
+    let (unused_input, input) = create::pipe(PIPE_BUFFER).map_err(Failure::Spawn)?;
+    let (output, unused_output) = create::pipe(PIPE_BUFFER).map_err(Failure::Spawn)?;
+    drop(unused_input);
+    drop(unused_output);
+    let created = AttributeList::new().and_then(|mut attributes| {
+        let startup = create::startup_info(&mut attributes);
+        launch.create(&startup, false, CREATE_NEW_CONSOLE)
+    });
     Ok(Connected {
         created: created.map_err(Failure::Spawn)?,
         output,
@@ -351,34 +382,93 @@ impl OutputEnd {
     }
 }
 
-/// The end this process writes the program's input to.
-pub(super) struct InputEnd(File);
+/// The end this process writes the program's input to: the pseudo
+/// console's input pipe, or the program's.
+pub(super) struct InputEnd {
+    file: File,
+    console: bool,
+}
 
 impl InputEnd {
     pub(super) fn into_writer(self, shared: &Arc<Shared>) -> Writer {
         Writer {
-            file: self.0,
+            file: Mutex::new(Some(Arc::new(self.file))),
+            console: self.console,
+            closed: AtomicBool::new(false),
+            line_pending: AtomicBool::new(false),
             shared: Arc::clone(shared),
         }
     }
 }
 
+/// `Ctrl+Z` then Enter: end-of-file for a console read in cooked mode.
+const CONSOLE_EOF: &[u8] = b"\x1a\r";
+
 /// Writes the program's input (see [`super::PtyWriter`]).
 pub(super) struct Writer {
-    file: File,
+    /// `None` once a pipe's input has been closed; the pseudo console's
+    /// input stays open.
+    file: Mutex<Option<Arc<File>>>,
+    console: bool,
+    /// Set by [`Writer::close_input`]: later writes fail.
+    closed: AtomicBool,
+    /// Whether the last byte written may have left a partly typed line
+    /// (anything but `\r` or `\n`).
+    line_pending: AtomicBool,
     shared: Arc<Shared>,
 }
 
 impl Writer {
     pub(super) fn write(&self, buf: &[u8]) -> io::Result<usize> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err(io::ErrorKind::BrokenPipe.into());
+        }
+        self.write_raw(buf)
+    }
+
+    /// Ends the program's input (see [`super::PtyWriter::close_input`]): a
+    /// pipe's end is closed once writes in flight have finished; the pseudo
+    /// console gets `Ctrl+Z` and Enter, after an Enter of its own when a
+    /// partly typed line may be waiting (`Ctrl+Z` means end-of-file only at
+    /// the start of a line).
+    pub(super) fn close_input(&self) -> io::Result<()> {
+        if self.closed.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+        if !self.console {
+            // Dropped here, or by the last write still in flight.
+            self.file.lock().unwrap_or_else(PoisonError::into_inner).take();
+            return Ok(());
+        }
+        let mut bytes = Vec::with_capacity(3);
+        if self.line_pending.load(Ordering::Acquire) {
+            bytes.push(b'\r');
+        }
+        bytes.extend_from_slice(CONSOLE_EOF);
+        let mut written = 0;
+        while written < bytes.len() {
+            written += self.write_raw(&bytes[written..])?;
+        }
+        Ok(())
+    }
+
+    fn write_raw(&self, buf: &[u8]) -> io::Result<usize> {
         if buf.is_empty() {
             return Ok(0);
         }
         if self.shared.has_ended() {
             return Err(io::ErrorKind::BrokenPipe.into());
         }
+        let Some(file) = self.file.lock().unwrap_or_else(PoisonError::into_inner).clone() else {
+            return Err(io::ErrorKind::BrokenPipe.into());
+        };
         // A closed reader (the program's tree or the pseudo console has
         // gone) is reported by std as `BrokenPipe`.
-        (&self.file).write(buf)
+        let written = (&*file).write(buf)?;
+        if let Some(last) = written.checked_sub(1).and_then(|last| buf.get(last)) {
+            self.line_pending
+                .store(!matches!(last, b'\r' | b'\n'), Ordering::Release);
+        }
+        Ok(written)
     }
 }

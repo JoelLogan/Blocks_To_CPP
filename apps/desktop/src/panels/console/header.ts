@@ -8,8 +8,11 @@ import type { ExitStatus, RunExit } from '../types';
 /** Where the program is. */
 export type ConsoleState = 'idle' | 'running' | 'exited';
 
-/** Notices next to the state: IDE helpers linked in, and no cgroup on Linux (08 §8.14). */
-export type ConsoleNotice = 'ideHelpers' | 'processGroupOnly';
+/**
+ * Notices next to the state: IDE helpers linked in, no cgroup on Linux (08 §8.14), input from a
+ * file, and a program in a terminal window of its own.
+ */
+export type ConsoleNotice = 'ideHelpers' | 'processGroupOnly' | 'inputFile' | 'externalTerminal';
 
 /** What the header shows. */
 export interface ConsoleHeader {
@@ -19,6 +22,11 @@ export interface ConsoleHeader {
   /** How long the current or last run took. */
   elapsedMs: number;
   notices: readonly ConsoleNotice[];
+  /**
+   * While a program runs: whether its input is still open, so *End input* can end it. Absent
+   * means closed.
+   */
+  inputOpen?: boolean;
 }
 
 /** How an exit is highlighted; the icon and the text always say the same as the colour. */
@@ -39,6 +47,8 @@ export const MAX_EXIT_MESSAGE_CHARS = 300;
 export const NOTICE_TEXT: Readonly<Record<ConsoleNotice, string>> = {
   ideHelpers: 'Running with IDE helpers',
   processGroupOnly: 'Process group only',
+  inputFile: 'Input from a file',
+  externalTerminal: 'In a separate window',
 };
 
 /** A longer explanation of each notice, for its tooltip. */
@@ -47,7 +57,16 @@ export const NOTICE_DETAIL: Readonly<Record<ConsoleNotice, string>> = {
     'A small helper is linked into IDE runs (it sets up the console); the C++ you see is unchanged.',
   processGroupOnly:
     'This Linux system cannot put the program in a cgroup, so it is contained by its process group only.',
+  inputFile:
+    'The program reads its input from the file chosen in Project settings, so typing here does not reach it.',
+  externalTerminal:
+    'The program runs in a terminal window of its own (Settings); its output is there, and this console shows how it ended.',
 };
+
+/** Whether the running program reads what is typed in the console (not a file, not a window). */
+export function takesTyping(header: ConsoleHeader): boolean {
+  return !header.notices.includes('inputFile') && !header.notices.includes('externalTerminal');
+}
 
 /** The state line for a header. */
 export function headerStatus(header: ConsoleHeader): HeaderStatus {
@@ -55,7 +74,13 @@ export function headerStatus(header: ConsoleHeader): HeaderStatus {
     case 'idle':
       return { text: 'Not running', tone: 'neutral', icon: '' };
     case 'running':
-      return { text: 'Running', tone: 'neutral', icon: '▶' };
+      // Said here, in the status line that is announced, once End input has ended it.
+      return {
+        text:
+          header.inputOpen === false && takesTyping(header) ? 'Running, input ended' : 'Running',
+        tone: 'neutral',
+        icon: '▶',
+      };
     case 'exited':
       return header.exit === null
         ? { text: 'Finished', tone: 'neutral', icon: '' }

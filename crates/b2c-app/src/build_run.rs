@@ -1,5 +1,6 @@
 //! Building and running: `build_start`, `build_cancel`, `build_cache_clear`,
-//! `run_start`, `run_input`, `run_resize`, `run_stop` and `run_ack`
+//! `run_start`, `run_input`, `run_close_input`, `run_resize`, `run_stop` and
+//! `run_ack`
 //! (`docs/spec/02-architecture.md` §2.4.2–§2.4.3 and §2.5,
 //! `docs/spec/07-toolchain-build-run.md` §7.5–§7.6, `docs/spec/08-security.md`
 //! §8.3 and §8.7).
@@ -11,7 +12,9 @@
 //! (`unknownBuild`), the project is trusted now (`restricted`), the build
 //! succeeded (`buildNotSuccessful`), it is of the latest document the backend
 //! received for the project and its program still matches its build manifest
-//! (`staleBuild`), and the analyser reports no errors (`projectErrors`).
+//! (`staleBuild`), and the analyser reports no errors (`projectErrors`); the
+//! build's own analysis of that document is reused unless the generator
+//! options changed since (S7-5).
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -19,13 +22,13 @@ use std::sync::Arc;
 
 use b2c_build::cache;
 use b2c_build::{
-    BuildJob, BuildRecord, FrontendOptions, PtySize, RunEnvOptions, RunSpec, StaleReason, run_environment,
-    run_frontend, sandbox_dir,
+    BuildJob, BuildRecord, ExternalTerminal, FrontendOptions, PtySize, RunEnvOptions, RunSpec, StaleReason,
+    run_environment, run_frontend, sandbox_dir,
 };
 use b2c_ipc::dto::{
     BuildCacheClearResponse, BuildCancelRequest, BuildEvent, BuildStartRequest, BuildStartResponse, Empty,
-    RunAckRequest, RunEvent, RunInputRequest, RunResizeRequest, RunStartRequest, RunStartResponse,
-    RunStopRequest,
+    RunAckRequest, RunCloseInputRequest, RunEvent, RunInputRequest, RunResizeRequest, RunStartRequest,
+    RunStartResponse, RunStopRequest,
 };
 use b2c_ipc::{ByteSink, EventSink, Handle, IpcError};
 use b2c_model::{Document, WorkingDirectory};
@@ -261,25 +264,31 @@ impl Backend {
                 _ => IpcError::StaleBuild,
             }
         })?;
-        let errors = analyser_errors(&latest, self.frontend_options().indent_width);
-        if errors > 0 {
-            return Err(IpcError::ProjectErrors {
-                count: u32::try_from(errors).unwrap_or(u32::MAX),
-            });
+        // The build's own analysis found no errors in this very document;
+        // only when what the analysis depends on has changed since is it
+        // run again (S7-5).
+        let options = self.frontend_options();
+        if record.analysed_with.as_ref() != Some(&options) {
+            self.run_analyses
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let errors = analyser_errors(&latest, options.indent_width);
+            if errors > 0 {
+                return Err(IpcError::ProjectErrors {
+                    count: u32::try_from(errors).unwrap_or(u32::MAX),
+                });
+            }
         }
         if self.is_shut_down() {
             return Err(IpcError::Internal);
         }
-        let working_dir = match (built.project.run.working_directory, project_path) {
-            (WorkingDirectory::Project, Some(path)) => {
-                path.parent().map(PathBuf::from).ok_or(IpcError::Internal)?
-            }
-            _ => sandbox_dir(self.cache_root(), &built.project.id).map_err(|error| {
-                tracing::debug!(%error, "cannot prepare the sandbox folder");
-                IpcError::Io {
-                    kind: b2c_ipc::IoKind::Other,
-                }
-            })?,
+        let (working_dir, sandbox_hold) = self.working_dir(built, project_path.as_deref())?;
+        // The input file wins over the external terminal: the program then
+        // runs in the console, reading the file.
+        let input_file = self.input_files.get(built.project.id.as_str());
+        let external = if self.settings.get().run.external_terminal && input_file.is_none() {
+            Some(ExternalTerminal::find().ok_or(IpcError::NoExternalTerminal)?)
+        } else {
+            None
         };
         let env = run_environment(
             std::env::vars_os(),
@@ -304,6 +313,9 @@ impl Backend {
             ide_helpers: record.ide,
             prefer_pty: true,
             hold,
+            sandbox_hold,
+            input_file,
+            external,
         };
         let run_id = self.runs.start(spec, output, events)?;
         if let Err(error) = self.still_open(&handle, IpcError::UnknownBuild) {
@@ -318,6 +330,13 @@ impl Backend {
         Ok(RunStartResponse { run_id })
     }
 
+    /// How often `run_start` has analysed a project again because the
+    /// generator options changed after its build (S7-5). For tests.
+    #[doc(hidden)]
+    pub fn run_analyses(&self) -> usize {
+        self.run_analyses.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// `run_input`: sends bytes to the program's terminal.
     ///
     /// # Errors
@@ -329,6 +348,43 @@ impl Backend {
         let _span = command_span("run_input");
         let bytes = request.bytes()?;
         self.runs.input(&request.run_id, &bytes)?;
+        Ok(Empty {})
+    }
+
+    /// The working folder for a run of `built`: the folder of the project's
+    /// file (`project_path`) for `workingDirectory: project`, otherwise (and
+    /// for a project that was never saved) its sandbox folder in the cache,
+    /// with the run's claim on it, so startup pruning leaves it alone while
+    /// the program runs (and for 30 days after).
+    fn working_dir(
+        &self,
+        built: &Document,
+        project_path: Option<&std::path::Path>,
+    ) -> Result<(PathBuf, Option<cache::RunHold>), IpcError> {
+        if let (WorkingDirectory::Project, Some(path)) = (built.project.run.working_directory, project_path) {
+            return Ok((path.parent().map(PathBuf::from).ok_or(IpcError::Internal)?, None));
+        }
+        let sandbox_error = |error: &dyn std::fmt::Display| {
+            tracing::debug!(%error, "cannot prepare the sandbox folder");
+            IpcError::Io {
+                kind: b2c_ipc::IoKind::Other,
+            }
+        };
+        let dir = sandbox_dir(self.cache_root(), &built.project.id).map_err(|error| sandbox_error(&error))?;
+        let hold = cache::hold_sandbox(&dir).map_err(|error| sandbox_error(&error))?;
+        Ok((dir, Some(hold)))
+    }
+
+    /// `run_close_input`: ends the program's input after the input sent
+    /// before it, so its next read gives end-of-file. Later `run_input`
+    /// calls give `inputClosed`; ending it again does nothing.
+    ///
+    /// # Errors
+    /// [`IpcError::UnknownRun`], [`IpcError::NotRunning`],
+    /// [`IpcError::RateLimited`] while 64 input calls wait for the program.
+    pub fn run_close_input(&self, request: RunCloseInputRequest) -> Result<Empty, IpcError> {
+        let _span = command_span("run_close_input");
+        self.runs.close_input(&request.run_id)?;
         Ok(Empty {})
     }
 

@@ -106,6 +106,22 @@ expression: render(&values)
 {
   "code": "notRunning"
 }
+--- inputClosed
+{
+  "code": "inputClosed"
+}
+--- noExternalTerminal
+{
+  "code": "noExternalTerminal"
+}
+--- inputFileUnreadable
+{
+  "code": "inputFileUnreadable"
+}
+--- defineNotExportable
+{
+  "code": "defineNotExportable"
+}
 --- rateLimited
 {
   "code": "rateLimited"

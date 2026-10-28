@@ -94,6 +94,8 @@ describe('the connected console', () => {
       startedAt: 100_000 - 65_000,
       containment: 'processGroupOnly',
       ideHelpers: true,
+      // As the started event sets it for a program that reads the console.
+      inputOpen: true,
     });
     renderPanels();
 

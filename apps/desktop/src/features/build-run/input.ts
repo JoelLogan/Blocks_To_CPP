@@ -64,10 +64,17 @@ export function encodeInput(text: string): string[] {
 /** Sends one chunk (base64) to the program. */
 export type SendInput = (data: string) => Promise<unknown>;
 
+/** Ends the program's input (`run_close_input`). */
+export type SendClose = () => Promise<unknown>;
+
 /** Sends typed text to the program; see the module documentation. */
 export class InputSender {
   readonly #send: SendInput;
+  readonly #sendClose: SendClose | null;
   readonly #clock: Clock;
+  /** *End input* was asked for: it goes once the queue is empty, and nothing is queued after it. */
+  #closeRequested = false;
+  #closeSent = false;
   /** Bytes waiting, oldest first. */
   #queue: Uint8Array[] = [];
   #queued = 0;
@@ -79,9 +86,10 @@ export class InputSender {
   #windowBytes = 0;
   #windowCalls = 0;
 
-  constructor(send: SendInput, clock: Clock) {
+  constructor(send: SendInput, clock: Clock, sendClose: SendClose | null = null) {
     this.#send = send;
     this.#clock = clock;
+    this.#sendClose = sendClose;
   }
 
   /** How many bytes are waiting to be sent. */
@@ -97,7 +105,7 @@ export class InputSender {
 
   /** Queues what the person typed. Dropped (with one warning) when too much is waiting. */
   push(text: string): void {
-    if (this.#disposed || text === '') {
+    if (this.#disposed || this.#closeRequested || text === '') {
       return;
     }
     const bytes = encoder.encode(text);
@@ -110,6 +118,15 @@ export class InputSender {
     }
     this.#queue.push(bytes);
     this.#queued += bytes.length;
+    void this.#pump();
+  }
+
+  /** Ends the program's input once everything queued has been sent; later input is dropped. */
+  close(): void {
+    if (this.#disposed || this.#closeRequested || this.#sendClose === null) {
+      return;
+    }
+    this.#closeRequested = true;
     void this.#pump();
   }
 
@@ -181,6 +198,38 @@ export class InputSender {
     return 0;
   }
 
+  #closePending(): boolean {
+    return this.#closeRequested && !this.#closeSent;
+  }
+
+  /**
+   * Sends the end of the input. Returns `false` after a `rateLimited` answer, having waited
+   * `retryDelay`, so the caller tries again; any other answer ends the attempt.
+   */
+  async #trySendClose(retryDelay: number): Promise<boolean> {
+    const sendClose = this.#sendClose;
+    if (sendClose === null) {
+      this.#closeSent = true;
+      return true;
+    }
+    try {
+      await sendClose();
+      this.#closeSent = true;
+      return true;
+    } catch (error: unknown) {
+      const code = error instanceof IpcCallError ? error.error.code : 'transport';
+      if (code === 'rateLimited') {
+        await sleep(this.#clock, retryDelay);
+        return false;
+      }
+      this.#closeSent = true;
+      if (code !== 'notRunning' && code !== 'unknownRun') {
+        console.warn("The program's input could not be ended", code);
+      }
+      return true;
+    }
+  }
+
   async #pump(): Promise<void> {
     if (this.#pumping || !this.#ready) {
       return;
@@ -188,7 +237,15 @@ export class InputSender {
     this.#pumping = true;
     let retryDelay = FIRST_RETRY_DELAY_MS;
     try {
-      while (!this.#disposed && this.#queue.length > 0) {
+      while (!this.#disposed && (this.#queue.length > 0 || this.#closePending())) {
+        if (this.#queue.length === 0) {
+          if (await this.#trySendClose(retryDelay)) {
+            retryDelay = FIRST_RETRY_DELAY_MS;
+          } else {
+            retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY_MS);
+          }
+          continue;
+        }
         const chunk = this.#take();
         const wait = this.#budgetWait(chunk.length);
         if (wait > 0) {
@@ -205,7 +262,8 @@ export class InputSender {
             this.#putBack(chunk);
             await sleep(this.#clock, retryDelay);
             retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY_MS);
-          } else if (code === 'notRunning' || code === 'unknownRun') {
+          } else if (code === 'notRunning' || code === 'unknownRun' || code === 'inputClosed') {
+            // Nothing more can reach the program.
             this.dispose();
           } else {
             console.warn('Typed input could not be sent to the program', code);

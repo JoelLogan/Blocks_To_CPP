@@ -165,7 +165,8 @@ pub fn type_decls() -> Vec<TypeDecl> {
         Template, ProjectNewRequest, ProjectNewResponse, ProjectOpened, ProjectOpenDialogResponse,
         ProjectOpenRecentRequest, ProjectReloadRequest, ProjectReloadResponse, ProjectSaveRequest,
         ProjectSaveResponse, ProjectSaveAsDialogRequest, ProjectSavedAs, ProjectSaveAsDialogResponse,
-        ProjectCloseRequest, ProjectSetDirtyRequest,
+        ProjectCloseRequest, ProjectSetDirtyRequest, ProjectExportDialogRequest,
+        ProjectExportDialogResponse,
         // Recent projects and recovery.
         RecentEntry, RecentListResponse, RecentRemoveRequest,
         RecoverySaveRequest, SnapshotInfo, RecoveryListResponse, RecoveryRestoreRequest,
@@ -181,8 +182,8 @@ pub fn type_decls() -> Vec<TypeDecl> {
         BuildConfig, BuildStartRequest, BuildStartResponse, BuildCancelRequest,
         BuildCacheClearResponse, BuildStage, BuildOutcome, BuildEvent,
         // Runs.
-        RunOptions, RunStartRequest, RunStartResponse, RunInputRequest, RunResizeRequest,
-        RunStopRequest, RunAckRequest, Containment, RunMode, ExitStatus, Crash, SanitizerTool,
+        RunOptions, RunStartRequest, RunStartResponse, RunInputRequest, RunCloseInputRequest, RunResizeRequest,
+        RunStopRequest, RunAckRequest, RunInputFileAction, RunInputFileRequest, RunInputFileResponse, Containment, RunMode, ExitStatus, Crash, SanitizerTool,
         SanitizerKind, SanitizerReport, RunEvent,
         // Settings and help.
         Settings, CodeStyle, IndentWidth, RunSettings, OnErrors, ConsoleSettings, ToolchainSettings,
@@ -211,6 +212,7 @@ pub fn request_types() -> Vec<(&'static str, String)> {
         entry::<ProjectSaveAsDialogRequest>(&cfg),
         entry::<ProjectCloseRequest>(&cfg),
         entry::<ProjectSetDirtyRequest>(&cfg),
+        entry::<ProjectExportDialogRequest>(&cfg),
         entry::<RecentRemoveRequest>(&cfg),
         entry::<RecoverySaveRequest>(&cfg),
         entry::<RecoveryRestoreRequest>(&cfg),
@@ -223,9 +225,11 @@ pub fn request_types() -> Vec<(&'static str, String)> {
         entry::<BuildCancelRequest>(&cfg),
         entry::<RunStartRequest>(&cfg),
         entry::<RunInputRequest>(&cfg),
+        entry::<RunCloseInputRequest>(&cfg),
         entry::<RunResizeRequest>(&cfg),
         entry::<RunStopRequest>(&cfg),
         entry::<RunAckRequest>(&cfg),
+        entry::<RunInputFileRequest>(&cfg),
         entry::<SettingsPatch>(&cfg),
         entry::<OpenHelpLinkRequest>(&cfg),
     ]

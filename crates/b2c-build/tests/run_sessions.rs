@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use b2c_build::{PtySize, RunEnvOptions, RunSessions, RunSpec, run_environment};
 use b2c_ipc::dto::{Containment, Crash, ExitStatus, RunEvent, RunMode, SanitizerReport};
-use b2c_ipc::{ByteSink, EventSink, RunId};
+use b2c_ipc::{ByteSink, EventSink, IpcError, RunId};
 use b2c_toolchain::target::Platform;
 
 /// The longest any test waits for something a program does.
@@ -265,6 +265,9 @@ fn spec(program: &Path, args: &[&str]) -> RunSpec {
         ide_helpers: false,
         prefer_pty: true,
         hold: None,
+        sandbox_hold: None,
+        input_file: None,
+        external: None,
     }
 }
 
@@ -352,6 +355,17 @@ int main(int argc, char** argv) {
         std::cout << "name? " << std::flush;
         std::getline(std::cin, line);
         std::cout << "hello " << line << std::endl;
+        return 0;
+    }
+    if (std::strcmp(what, "count") == 0) {
+        std::string line;
+        std::string last;
+        int lines = 0;
+        while (std::getline(std::cin, line)) {
+            ++lines;
+            last = line;
+        }
+        std::cout << "lines " << lines << " last [" << last << "]" << std::endl;
         return 0;
     }
     if (std::strcmp(what, "null") == 0) {
@@ -472,7 +486,10 @@ fn an_echo_program_reads_a_line_through_the_terminal() {
             containment,
             mode,
             ide_helpers,
+            input_file,
+            external_terminal,
         } => {
+            assert!(!input_file && !external_terminal);
             assert_eq!(mode, RunMode::Pty);
             assert!(ide_helpers);
             // The cgroup scope (w2-containment) may report `cgroup` instead.
@@ -481,6 +498,87 @@ fn an_echo_program_reads_a_line_through_the_terminal() {
         other => panic!("{other:?}"),
     }
     assert!(!sessions.is_running("project"));
+}
+
+/// `text` without the terminal's control sequences (CSI, and OSC ended by
+/// BEL or ST), which `ConPTY` may put anywhere, even inside a line.
+fn without_escapes(text: &str) -> String {
+    let mut plain = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            plain.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' || (c == '\u{1b}' && chars.next_if_eq(&'\\').is_some()) {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    plain
+}
+
+#[test]
+fn escapes_are_left_out_of_the_text_compared() {
+    assert_eq!(
+        without_escapes("a\u{1b}[?25lb\r\nlines 2\u{1b}]0;C:\\x.exe\u{7}\u{1b}[?25h last\u{1b}]0;t\u{1b}\\!"),
+        "ab\r\nlines 2 last!"
+    );
+}
+
+#[test]
+fn close_input_ends_a_programs_input() {
+    let Some(program) = helper(Flavour::Release) else {
+        return;
+    };
+    // Whole lines, then a partly typed one, in a terminal (Enter is a
+    // carriage return there) and with pipes.
+    for (prefer_pty, typed) in [
+        (true, &b"a\rb\r"[..]),
+        (true, &b"a\rb"[..]),
+        (false, &b"a\nb\n"[..]),
+        (false, &b"a\nb"[..]),
+    ] {
+        let sessions = RunSessions::new();
+        let mut spec = spec(program, &["count"]);
+        spec.prefer_pty = prefer_pty;
+        let (id, console) = start(&sessions, spec);
+        sessions.input(&id, typed).unwrap();
+        sessions.close_input(&id).unwrap();
+        // Ending it again does nothing; more input is refused.
+        sessions.close_input(&id).unwrap();
+        assert_eq!(sessions.input(&id, b"c\r"), Err(IpcError::InputClosed));
+        let exit = console.wait_for_exit();
+        assert_eq!(
+            exit.status,
+            ExitStatus::Exited { code: 0 },
+            "{:?}",
+            console.text()
+        );
+        assert!(
+            without_escapes(&console.text()).contains("lines 2 last [b]"),
+            "pty {prefer_pty}, {typed:?}: {:?}",
+            console.text()
+        );
+        assert_eq!(sessions.close_input(&id), Err(IpcError::NotRunning));
+    }
+    assert_eq!(
+        RunSessions::new().close_input(&RunId::example()),
+        Err(IpcError::UnknownRun)
+    );
 }
 
 #[test]
@@ -1066,4 +1164,162 @@ mod linux {
             other => panic!("{other:?}"),
         }
     }
+}
+
+#[test]
+fn a_program_reads_its_input_file_with_pipes() {
+    let Some(program) = helper(Flavour::Release) else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.txt");
+    std::fs::write(&input, "x\ny\nlast").unwrap();
+    let sessions = RunSessions::new();
+    let mut with_file = spec(program, &["count"]);
+    with_file.input_file = Some(input.clone());
+    // An input file wins over an external terminal.
+    with_file.external = Some(b2c_build::ExternalTerminal::emulator_for_tests(PathBuf::from(
+        "/nowhere/term",
+    )));
+    let (id, console) = start(&sessions, with_file);
+    let exit = console.wait_for_exit();
+    assert_eq!(exit.status, ExitStatus::Exited { code: 0 });
+    assert!(
+        console.text().contains("lines 3 last [last]"),
+        "{:?}",
+        console.text()
+    );
+    match console.started() {
+        RunEvent::Started {
+            mode,
+            input_file,
+            external_terminal,
+            ..
+        } => {
+            assert_eq!(mode, RunMode::Pipes);
+            assert!(input_file && !external_terminal);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        sessions.input(&id, b"more"),
+        Err(IpcError::NotRunning | IpcError::InputClosed)
+    ));
+    // A missing file stops the program from starting.
+    let mut missing = spec(program, &["count"]);
+    missing.input_file = Some(dir.path().join("missing.txt"));
+    let output: Arc<dyn ByteSink> = Arc::new(Console::default());
+    let events: Arc<dyn EventSink<RunEvent>> = Arc::new(Console::default());
+    let log = LogText::default();
+    let started = tracing::subscriber::with_default(log.clone(), || sessions.start(missing, output, events));
+    assert!(matches!(started, Err(IpcError::InputFileUnreadable)));
+    // The log names the file, never the folder it is in.
+    let log = log.0.lock().unwrap();
+    assert!(log.contains("missing.txt"), "{log}");
+    let folder = dir.path().to_string_lossy();
+    assert!(!log.contains(folder.as_ref()), "{log}");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_external_terminal_shows_nothing_here_and_reports_the_programs_status() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let Some(program) = helper(Flavour::Release) else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    // A "terminal" that drops `-e` and runs the command, saying something of
+    // its own first (which must not reach the console). Its window's
+    // keyboard is /dev/null: the script's wait for Enter ends at once.
+    let terminal = dir.path().join("term");
+    std::fs::write(
+        &terminal,
+        "#!/bin/sh\necho terminal-chatter >&2\nshift\nexec \"$@\" </dev/null\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&terminal, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let sessions = RunSessions::new();
+    let mut external = spec(program, &["exit"]);
+    external.external = Some(b2c_build::ExternalTerminal::emulator_for_tests(terminal));
+    let (id, console) = start(&sessions, external);
+    // What is typed in the console never reaches a program in a window.
+    assert!(matches!(
+        sessions.input(&id, b"\n"),
+        Err(IpcError::InputClosed | IpcError::NotRunning)
+    ));
+    let exit = console.wait_for_exit();
+    assert_eq!(exit.status, ExitStatus::Exited { code: 42 }, "{exit:?}");
+    assert_eq!(exit.message, "Finished with exit code 42");
+    assert!(console.text().is_empty(), "{:?}", console.text());
+    assert!(matches!(
+        console.started(),
+        RunEvent::Started {
+            external_terminal: true,
+            input_file: false,
+            ..
+        }
+    ));
+}
+
+/// The text of every log event and span field, for checking what is logged.
+#[derive(Clone, Default)]
+struct LogText(Arc<Mutex<String>>);
+
+/// Writes ` name=value` for each field.
+struct FieldText<'a>(&'a mut String);
+
+impl tracing::field::Visit for FieldText<'_> {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        use std::fmt::Write as _;
+        let _ = write!(self.0, " {}={value:?}", field.name());
+    }
+}
+
+impl tracing::Subscriber for LogText {
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        span.record(&mut FieldText(&mut self.0.lock().unwrap()));
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _: &tracing::span::Id, values: &tracing::span::Record<'_>) {
+        values.record(&mut FieldText(&mut self.0.lock().unwrap()));
+    }
+
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        event.record(&mut FieldText(&mut self.0.lock().unwrap()));
+    }
+
+    fn enter(&self, _: &tracing::span::Id) {}
+
+    fn exit(&self, _: &tracing::span::Id) {}
+}
+
+/// A terminal that ends without running the script (closed at once, or one
+/// that handed the window elsewhere): how the program ended is not known,
+/// which is neither a success nor a crash.
+#[cfg(unix)]
+#[test]
+fn an_external_terminal_that_ran_nothing_reports_no_status_of_its_own() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let Some(program) = helper(Flavour::Release) else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let terminal = dir.path().join("term");
+    std::fs::write(&terminal, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&terminal, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let sessions = RunSessions::new();
+    let mut external = spec(program, &["exit"]);
+    external.external = Some(b2c_build::ExternalTerminal::emulator_for_tests(terminal));
+    let (_id, console) = start(&sessions, external);
+    let exit = console.wait_for_exit();
+    assert_eq!(exit.status, ExitStatus::Stopped, "{exit:?}");
+    assert_eq!(exit.crash, None);
+    assert!(exit.message.contains("not known"), "{exit:?}");
 }

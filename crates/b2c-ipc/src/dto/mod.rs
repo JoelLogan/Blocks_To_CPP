@@ -32,10 +32,10 @@ pub use build::{
 };
 pub use help::OpenHelpLinkRequest;
 pub use project::{
-    ProjectCloseRequest, ProjectNewRequest, ProjectNewResponse, ProjectOpenDialogResponse,
-    ProjectOpenRecentRequest, ProjectOpened, ProjectReloadRequest, ProjectReloadResponse,
-    ProjectSaveAsDialogRequest, ProjectSaveAsDialogResponse, ProjectSaveRequest, ProjectSaveResponse,
-    ProjectSavedAs, ProjectSetDirtyRequest, Template,
+    ProjectCloseRequest, ProjectExportDialogRequest, ProjectExportDialogResponse, ProjectNewRequest,
+    ProjectNewResponse, ProjectOpenDialogResponse, ProjectOpenRecentRequest, ProjectOpened,
+    ProjectReloadRequest, ProjectReloadResponse, ProjectSaveAsDialogRequest, ProjectSaveAsDialogResponse,
+    ProjectSaveRequest, ProjectSaveResponse, ProjectSavedAs, ProjectSetDirtyRequest, Template,
 };
 pub use recent::{RecentEntry, RecentListResponse, RecentRemoveRequest};
 pub use recovery::{
@@ -43,9 +43,9 @@ pub use recovery::{
     RecoverySaveRequest, SnapshotInfo,
 };
 pub use run::{
-    Containment, Crash, ExitStatus, RunAckRequest, RunEvent, RunInputRequest, RunMode, RunOptions,
-    RunResizeRequest, RunStartRequest, RunStartResponse, RunStopRequest, SanitizerKind, SanitizerReport,
-    SanitizerTool,
+    Containment, Crash, ExitStatus, RunAckRequest, RunCloseInputRequest, RunEvent, RunInputFileAction,
+    RunInputFileRequest, RunInputFileResponse, RunInputRequest, RunMode, RunOptions, RunResizeRequest,
+    RunStartRequest, RunStartResponse, RunStopRequest, SanitizerKind, SanitizerReport, SanitizerTool,
 };
 pub use settings::{
     AppearancePatch, AppearanceSettings, BlockLabels, BuildCacheSettings, CodeStyle, CodeStylePatch,

@@ -22,13 +22,15 @@
 //! with `EPIPE`; like every Rust program, this process ignores `SIGPIPE`
 //! (the standard library's start-up code sets that).
 
+use std::fs::File;
 use std::io::{self, Read};
 use std::mem::MaybeUninit;
 use std::os::fd::OwnedFd;
 use std::os::unix::process::CommandExt as _;
 use std::process::{Child, Stdio};
 use std::ptr;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
@@ -74,7 +76,7 @@ pub(super) struct Spawned {
 /// Starts `command` in a new session, connected as `io` says; on Linux in a
 /// cgroup scope when [`containment::plan`] gives it one (`systemd-run`
 /// then runs in the new session and executes the program in place).
-pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> {
+pub(super) fn spawn(command: &Command, io: Io, input_file: Option<File>) -> Result<Spawned, ProcessError> {
     let program = command.program().to_path_buf();
     let spawn_error = |source: io::Error| ProcessError::Spawn {
         program: program.clone(),
@@ -97,6 +99,12 @@ pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> 
             let master = Arc::new(master);
             (Arc::clone(&master), Arc::clone(&master), Some(master))
         }
+        Io::NewConsole => {
+            return Err(ProcessError::Pty(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "a console window of its own exists only on Windows",
+            )));
+        }
         Io::Pipes => {
             let (output_read, output_write) = io::pipe().map_err(spawn_error)?;
             let (input_read, input_write) = io::pipe().map_err(spawn_error)?;
@@ -106,10 +114,11 @@ pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> 
             rustix::io::ioctl_fionbio(&output_read, true)
                 .and_then(|()| rustix::io::ioctl_fionbio(&input_write, true))
                 .map_err(|errno| spawn_error(errno.into()))?;
-            std_command
-                .stdin(input_read)
-                .stdout(output_write)
-                .stderr(error_write);
+            let stdin = match input_file {
+                Some(file) => Stdio::from(file),
+                None => Stdio::from(input_read),
+            };
+            std_command.stdin(stdin).stdout(output_write).stderr(error_write);
             new_session(&mut std_command, false);
             (
                 Arc::new(OwnedFd::from(output_read)),
@@ -142,7 +151,10 @@ pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> 
         pid,
         started,
         output: OutputEnd(output),
-        input: InputEnd(input),
+        input: InputEnd {
+            fd: input,
+            terminal: master.is_some(),
+        },
         terminal: Terminal { master },
         level: plan.level,
     })
@@ -416,13 +428,20 @@ impl OutputEnd {
     }
 }
 
-/// The end this process writes the program's input to.
-pub(super) struct InputEnd(Arc<OwnedFd>);
+/// The end this process writes the program's input to: the terminal's
+/// master side (shared with the reader), or the input pipe's write end.
+pub(super) struct InputEnd {
+    fd: Arc<OwnedFd>,
+    terminal: bool,
+}
 
 impl InputEnd {
     pub(super) fn into_writer(self, shared: &Arc<Shared>) -> Writer {
         Writer {
-            fd: self.0,
+            fd: Mutex::new(Some(self.fd)),
+            terminal: self.terminal,
+            closed: AtomicBool::new(false),
+            line_pending: AtomicBool::new(false),
             shared: Arc::clone(shared),
         }
     }
@@ -472,23 +491,78 @@ impl Read for Reader {
 
 /// Writes the program's input (see [`super::PtyWriter`]).
 pub(super) struct Writer {
-    fd: Arc<OwnedFd>,
+    /// `None` once a pipe's input has been closed; a terminal keeps its
+    /// master side (the reader shares it).
+    fd: Mutex<Option<Arc<OwnedFd>>>,
+    terminal: bool,
+    /// Set by [`Writer::close_input`]: later writes fail.
+    closed: AtomicBool,
+    /// Whether the last byte written may have left a partly typed line in
+    /// the terminal (anything but `\r` or `\n`).
+    line_pending: AtomicBool,
     shared: Arc<Shared>,
 }
 
 impl Writer {
     pub(super) fn write(&self, buf: &[u8]) -> io::Result<usize> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err(io::ErrorKind::BrokenPipe.into());
+        }
+        self.write_raw(buf)
+    }
+
+    /// Ends the program's input (see [`super::PtyWriter::close_input`]): a
+    /// pipe's end is closed once writes in flight have finished; a terminal
+    /// gets its end-of-file character (`VEOF`), twice when a partly typed
+    /// line may be waiting, because the first one then only hands that line
+    /// over.
+    pub(super) fn close_input(&self) -> io::Result<()> {
+        if self.closed.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+        if !self.terminal {
+            // Dropped here, or by the last write still in flight.
+            lock(&self.fd).take();
+            return Ok(());
+        }
+        let Some(fd) = lock(&self.fd).clone() else {
+            return Ok(());
+        };
+        let eof = end_of_file_char(&fd);
+        let count = if self.line_pending.load(Ordering::Acquire) {
+            2
+        } else {
+            1
+        };
+        let bytes = [eof; 2];
+        let mut written = 0;
+        while written < count {
+            written += self.write_raw(&bytes[written..count])?;
+        }
+        Ok(())
+    }
+
+    fn write_raw(&self, buf: &[u8]) -> io::Result<usize> {
         if buf.is_empty() {
             return Ok(0);
         }
+        let Some(fd) = lock(&self.fd).clone() else {
+            return Err(io::ErrorKind::BrokenPipe.into());
+        };
         loop {
             if self.shared.has_ended() {
                 return Err(io::ErrorKind::BrokenPipe.into());
             }
-            match rustix::io::write(&*self.fd, buf) {
-                Ok(written) => return Ok(written),
+            match rustix::io::write(&*fd, buf) {
+                Ok(written) => {
+                    if let Some(last) = written.checked_sub(1).and_then(|last| buf.get(last)) {
+                        self.line_pending
+                            .store(!matches!(last, b'\r' | b'\n'), Ordering::Release);
+                    }
+                    return Ok(written);
+                }
                 Err(Errno::AGAIN) => {
-                    let mut fds = [PollFd::new(&*self.fd, PollFlags::OUT)];
+                    let mut fds = [PollFd::new(&*fd, PollFlags::OUT)];
                     match poll(&mut fds, Some(&TICK)) {
                         Ok(_) | Err(Errno::INTR) => {}
                         Err(errno) => return Err(errno.into()),
@@ -502,4 +576,23 @@ impl Writer {
             }
         }
     }
+}
+
+/// The terminal's end-of-file character (`VEOF`), or `Ctrl+D` when it
+/// cannot be read or is disabled.
+fn end_of_file_char(master: &OwnedFd) -> u8 {
+    const CTRL_D: u8 = 0x04;
+    match rustix::termios::tcgetattr(master) {
+        Ok(termios) => match termios.special_codes[rustix::termios::SpecialCodeIndex::VEOF] {
+            // `_POSIX_VDISABLE`: no end-of-file character.
+            0 => CTRL_D,
+            eof => eof,
+        },
+        Err(_) => CTRL_D,
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    // A plain `Option` swap under the lock: a panic cannot corrupt it.
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }

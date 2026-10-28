@@ -316,23 +316,36 @@ export class EditorSession {
   }
 
   /**
-   * Gives the open project the name `info.name` (already checked by the caller): the project's
-   * document takes it at once and has unsaved changes, and the preview runs now. The canvas reads
+   * Gives the open project the name `info.name` and, when given, the project settings
+   * `info.settings` (both already checked by the caller): the project's document takes them at
+   * once and has unsaved changes, and the preview runs now. The canvas reads
    * back onto that document, so the run commits the canvas with the new name and works out
    * `dirty` exactly (renaming back to the saved name leaves nothing unsaved). While the canvas
    * does not load (`syncFailed`) the name still counts as unsaved, so it is never lost silently.
    *
    * Blockly's undo history covers the canvas only: the rename is not undone by Undo. An unchanged
-   * name, or no open project, changes nothing.
+   * name and settings, or no open project, change nothing.
    */
   updateProjectInfo(info: ProjectInfo): void {
     const project = this.store.getState().project;
-    if (this.disposed || project === null || project.document.project.name === info.name) {
+    if (this.disposed || project === null) {
+      return;
+    }
+    const current = project.document.project;
+    const settingsChanged =
+      info.settings !== undefined &&
+      JSON.stringify({
+        language: current.language,
+        options: current.options,
+        build: current.build,
+        run: current.run,
+      }) !== JSON.stringify(info.settings);
+    if (current.name === info.name && !settingsChanged) {
       return;
     }
     const document: BdmDocument = {
       ...project.document,
-      project: { ...project.document.project, name: info.name },
+      project: { ...current, ...(settingsChanged ? info.settings : {}), name: info.name },
     };
     this.store.getState().actions.updateProject({ document, dirty: true });
     void this.pipeline.runNow();

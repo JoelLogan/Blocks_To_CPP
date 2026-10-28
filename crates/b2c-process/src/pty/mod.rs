@@ -98,6 +98,9 @@ pub enum IoMode {
     /// Pipes: standard output and error merged, standard input a pipe. The
     /// fallback when no terminal can be created.
     Pipes,
+    /// A console window of its own (Windows, [`spawn_in_new_console`]): the
+    /// reader gives end-of-file at once and the writer's input is closed.
+    NewConsole,
 }
 
 /// How a session's program ended.
@@ -145,6 +148,49 @@ pub struct PtyWriter {
 impl fmt::Debug for PtyWriter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PtyWriter").finish_non_exhaustive()
+    }
+}
+
+impl PtyWriter {
+    /// Ends the program's input: its next read of standard input gives
+    /// end-of-file, as when its input came from a file that has ended.
+    /// Writes that are still in flight finish first; later writes, through
+    /// any clone, fail with [`std::io::ErrorKind::BrokenPipe`]. Calling it
+    /// again does nothing.
+    ///
+    /// * **Pipes:** this process's end of the input pipe is closed.
+    /// * **Linux terminal:** the terminal's end-of-file character (`VEOF`,
+    ///   normally `Ctrl+D`) is typed, twice when the last byte written was
+    ///   not a line break, because the first one then only hands the partly
+    ///   typed line over (without a line break), as in any terminal. A
+    ///   program that put its terminal out of canonical mode gets the
+    ///   characters as keystrokes.
+    /// * **Windows pseudo console:** `Ctrl+Z` and Enter are typed, after an
+    ///   Enter of their own when the last byte written was not a line break
+    ///   (the partly typed line then reaches the program with a line break).
+    ///
+    /// ```
+    /// # #[cfg(unix)] {
+    /// use std::io::Write as _;
+    /// use b2c_process::{Command, PtySize, spawn_pty};
+    ///
+    /// let command = Command::new("/bin/cat", std::env::temp_dir())?;
+    /// let mut child = spawn_pty(&command, PtySize::default())?;
+    /// let _output = child.take_reader().expect("first call");
+    /// let mut input = child.writer();
+    /// input.write_all(b"one\n").expect("cat is running");
+    /// input.close_input().expect("cat is running");
+    /// assert!(child.wait()?.status.success());
+    /// assert!(input.write_all(b"two\n").is_err());
+    /// # }
+    /// # Ok::<(), b2c_process::ProcessError>(())
+    /// ```
+    ///
+    /// # Errors
+    /// The error of writing the end-of-file characters to a terminal, for
+    /// example [`std::io::ErrorKind::BrokenPipe`] once the program has ended.
+    pub fn close_input(&self) -> io::Result<()> {
+        self.inner.close_input()
     }
 }
 
@@ -280,14 +326,58 @@ pub fn spawn_pty(command: &Command, size: PtySize) -> Result<PtyChild, ProcessEr
 }
 
 /// Starts `command` with pipes: standard output and standard error merged
-/// into the one reader, standard input from [`PtyChild::writer`]. Otherwise
+/// into the one reader, standard input from [`PtyChild::writer`], or from a
+/// file when the command's standard input is [`Stdin::File`] (a regular
+/// file only; the writer's input is then closed from the start). Otherwise
 /// the same as [`spawn_pty`]; [`PtyChild::resize`] does nothing.
 ///
 /// # Errors
 /// As for [`spawn_pty`], except [`ProcessError::Pty`] and
-/// [`ProcessError::InvalidPtySize`].
+/// [`ProcessError::InvalidPtySize`]; [`ProcessError::StdinFile`] when the
+/// input file cannot be opened or is not a regular file.
 pub fn spawn_piped(command: &Command) -> Result<PtyChild, ProcessError> {
     start(command, Io::Pipes)
+}
+
+/// Opens a session's input file: read-only, and only a regular file (a
+/// FIFO or a device could block the program, or this process, forever). On
+/// Unix it is opened without blocking, so a FIFO cannot hold up the open.
+fn open_input_file(path: &std::path::Path) -> Result<std::fs::File, ProcessError> {
+    let error = |source: io::Error| ProcessError::StdinFile {
+        path: path.to_path_buf(),
+        source,
+    };
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path).map_err(error)?;
+    if !file.metadata().map_err(error)?.is_file() {
+        return Err(error(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a regular file",
+        )));
+    }
+    #[cfg(unix)]
+    rustix::io::ioctl_fionbio(&file, false).map_err(|errno| error(errno.into()))?;
+    Ok(file)
+}
+
+/// Starts `command` in a console window of its own (Windows only:
+/// `CREATE_NEW_CONSOLE`, the user's default terminal), contained like any
+/// session (suspended, put in its Job Object, then resumed), so stopping the
+/// session or closing the app ends it. The program reads and writes its own
+/// window: [`PtyChild::take_reader`] gives end-of-file at once, and the
+/// writer's input is closed. Its standard input must be [`Stdin::Null`].
+///
+/// # Errors
+/// [`ProcessError::Pty`] (kind [`std::io::ErrorKind::Unsupported`]) on
+/// other systems; otherwise as for [`spawn_piped`].
+pub fn spawn_in_new_console(command: &Command) -> Result<PtyChild, ProcessError> {
+    start(command, Io::NewConsole)
 }
 
 /// How the platform modules connect the program.
@@ -295,6 +385,7 @@ pub fn spawn_piped(command: &Command) -> Result<PtyChild, ProcessError> {
 enum Io {
     Pty(PtySize),
     Pipes,
+    NewConsole,
 }
 
 fn start(command: &Command, io: Io) -> Result<PtyChild, ProcessError> {
@@ -302,13 +393,18 @@ fn start(command: &Command, io: Io) -> Result<PtyChild, ProcessError> {
         return Err(ProcessError::Cancelled);
     }
     let program = command.program().to_path_buf();
-    if *command.get_stdin() != Stdin::Null {
-        return Err(ProcessError::InvalidCommand {
-            program,
-            reason: "a session's input comes from its writer, so the command's standard input must be Stdin::Null",
-        });
-    }
-    let spawned = platform::spawn(command, io)?;
+    let input_file = match (command.get_stdin(), io) {
+        (Stdin::Null, _) => None,
+        (Stdin::File(path), Io::Pipes) => Some(open_input_file(path)?),
+        _ => {
+            return Err(ProcessError::InvalidCommand {
+                program,
+                reason: "a session's input comes from its writer (with pipes also from a file), so the command's standard input must be Stdin::Null or, with pipes, Stdin::File",
+            });
+        }
+    };
+    let closed_from_start = input_file.is_some() || io == Io::NewConsole;
+    let spawned = platform::spawn(command, io, input_file)?;
     let limits = command.get_limits();
     let grace = limits.grace.unwrap_or(DEFAULT_INTERACTIVE_GRACE);
     let shared = session::Shared::new(spawned.tree, spawned.started, grace);
@@ -316,6 +412,10 @@ fn start(command: &Command, io: Io) -> Result<PtyChild, ProcessError> {
     let writer = PtyWriter {
         inner: Arc::new(spawned.input.into_writer(&shared)),
     };
+    if closed_from_start {
+        // The program reads the file or its own window; nothing is written.
+        let _ = writer.close_input();
+    }
     let supervision = session::Supervision {
         timeout: limits.timeout,
         cancel: command.get_cancel().cloned(),
@@ -332,6 +432,7 @@ fn start(command: &Command, io: Io) -> Result<PtyChild, ProcessError> {
         mode: match io {
             Io::Pty(_) => IoMode::Pty,
             Io::Pipes => IoMode::Pipes,
+            Io::NewConsole => IoMode::NewConsole,
         },
         pid: spawned.pid,
         containment: spawned.level,
@@ -351,7 +452,7 @@ impl PtyChild {
     }
 
     /// A writer for the program's input. All clones write to the same
-    /// program.
+    /// program; [`PtyWriter::close_input`] ends the input for all of them.
     pub fn writer(&self) -> PtyWriter {
         self.writer.clone()
     }

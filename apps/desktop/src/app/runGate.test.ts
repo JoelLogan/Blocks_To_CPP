@@ -98,7 +98,9 @@ describe('runGate', () => {
 
   it('stays open while there are errors, with "Show problems"', () => {
     const state = readyState();
-    state.settings.value = settingsFixture({ run: { onErrors: 'showProblems' } });
+    state.settings.value = settingsFixture({
+      run: { onErrors: 'showProblems', externalTerminal: false },
+    });
     state.analysis.preview = previewFixture([diagnosticFixture()]);
     expect(runGate(state)).toEqual({
       enabled: true,

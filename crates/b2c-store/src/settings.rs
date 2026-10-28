@@ -29,6 +29,7 @@
 //!   a newer one wrote. A newer `formatVersion` is read the same way (its
 //!   known keys), gives a [`NoticeReason::NewerVersion`] notice, and is kept
 //!   on save.
+//! * `run.externalTerminal` (M3) is written only while it is `true`.
 //! * `ui.layout` holds the sizes of the editor's toolbox and docks, and
 //!   whether each dock is hidden (04 §4.1). Each of its keys is optional: an
 //!   absent key means the app's first-start size, and `ui` is written only
@@ -143,6 +144,9 @@ pub enum OnErrors {
 pub struct RunSettings {
     /// What Run does while the project has errors.
     pub on_errors: OnErrors,
+    /// Whether programs run in a terminal window of their own rather than
+    /// the app's console (07 §7.6.2, M3-D5). Off by default.
+    pub external_terminal: bool,
 }
 
 /// Program console settings.
@@ -299,6 +303,9 @@ pub struct RunPatch {
     /// A new Run on errors choice.
     #[serde(default)]
     pub on_errors: Option<OnErrors>,
+    /// Whether to run programs in an external terminal.
+    #[serde(default)]
+    pub external_terminal: Option<bool>,
 }
 
 /// Console setting changes.
@@ -445,7 +452,7 @@ const LAYOUT_KEYS: [&str; 5] = [
 /// The known sections, in file order, with their known keys in file order.
 const SECTIONS: [(&str, &[&str]); 8] = [
     ("codeStyle", &["indentWidth"]),
-    ("run", &["onErrors"]),
+    ("run", &["onErrors", "externalTerminal"]),
     ("console", &["scrollbackLines"]),
     ("toolchain", &["selectedId"]),
     ("newProject", &["standard"]),
@@ -538,6 +545,9 @@ impl SettingsStore {
             }
             if let Some(on_errors) = patch.run.and_then(|run| run.on_errors) {
                 settings.run.on_errors = on_errors;
+            }
+            if let Some(external) = patch.run.and_then(|run| run.external_terminal) {
+                settings.run.external_terminal = external;
             }
             if let Some(lines) = patch.console.and_then(|console| console.scrollback_lines) {
                 settings.console.scrollback_lines = lines;
@@ -738,6 +748,10 @@ fn apply(settings: &mut Settings, section: &str, key: &str, value: &Value) -> bo
             Ok(on_errors) => settings.run.on_errors = on_errors,
             Err(_) => return false,
         },
+        ("run", "externalTerminal") => match value {
+            Value::Bool(external) => settings.run.external_terminal = *external,
+            _ => return false,
+        },
         ("console", "scrollbackLines") => match value.as_u64().and_then(|lines| u32::try_from(lines).ok()) {
             Some(lines) if SCROLLBACK_LINES.contains(&lines) => settings.console.scrollback_lines = lines,
             _ => return false,
@@ -784,6 +798,7 @@ fn to_json(state: &State) -> Result<Vec<u8>, StoreError> {
         Ok(match (section, key) {
             ("codeStyle", "indentWidth") => Value::from(settings.code_style.indent_width),
             ("run", "onErrors") => serde_json::to_value(settings.run.on_errors)?,
+            ("run", "externalTerminal") => Value::from(settings.run.external_terminal),
             ("console", "scrollbackLines") => Value::from(settings.console.scrollback_lines),
             ("toolchain", "selectedId") => settings
                 .toolchain
@@ -804,6 +819,11 @@ fn to_json(state: &State) -> Result<Vec<u8>, StoreError> {
     for (section, keys) in SECTIONS {
         let mut entries: Vec<(&str, Entry<'_>)> = Vec::new();
         for &key in keys {
+            // Written only once set, so files that do not use it stay as
+            // they are.
+            if (section, key) == ("run", "externalTerminal") && !settings.run.external_terminal {
+                continue;
+            }
             entries.push((key, Entry::Plain(known(section, key).map_err(unserialisable)?)));
         }
         if let Some(extra) = state.extras.sections.get(section) {
@@ -1333,6 +1353,32 @@ mod tests {
 
     fn layout_patch(json: &str) -> SettingsPatch {
         serde_json::from_str(&format!(r#"{{"ui": {{"layout": {json}}}}}"#)).unwrap()
+    }
+
+    #[test]
+    fn the_external_terminal_is_written_only_while_on() {
+        let (dir, store, _) = store_with(None);
+        let file_path = dir.path().join(SETTINGS_FILE);
+        let patch = |json: &str| serde_json::from_str::<SettingsPatch>(json).unwrap();
+        let settings = store
+            .update(&patch(r#"{"run": {"externalTerminal": true}}"#))
+            .unwrap();
+        assert!(settings.run.external_terminal);
+        assert_eq!(settings.run.on_errors, OnErrors::DisableRun);
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            DEFAULT_FILE.replace(
+                "\"onErrors\": \"disableRun\"\n",
+                "\"onErrors\": \"disableRun\",\n    \"externalTerminal\": true\n"
+            )
+        );
+        let (reloaded, notices) = SettingsStore::open(dir.path());
+        assert!(notices.is_empty());
+        assert!(reloaded.get().run.external_terminal);
+        store
+            .update(&patch(r#"{"run": {"externalTerminal": false}}"#))
+            .unwrap();
+        assert_eq!(fs::read_to_string(&file_path).unwrap(), DEFAULT_FILE);
     }
 
     #[test]

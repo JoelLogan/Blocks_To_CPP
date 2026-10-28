@@ -9,7 +9,7 @@
  */
 import { useSyncExternalStore } from 'react';
 
-/** Every command the M2 editor has. */
+/** Every command the editor has. */
 export type CommandId =
   | 'project.new'
   | 'project.open'
@@ -17,10 +17,13 @@ export type CommandId =
   | 'project.saveAs'
   | 'project.close'
   | 'project.rename'
+  | 'project.settings'
+  | 'project.export'
   | 'build.start'
   | 'run.start'
   | 'run.stop'
   | 'run.again'
+  | 'run.endInput'
   | 'settings.open'
   | 'problems.focusFirstError'
   | 'edit.copy'

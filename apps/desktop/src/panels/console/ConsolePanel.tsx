@@ -11,6 +11,7 @@ import {
   NOTICE_DETAIL,
   NOTICE_TEXT,
   skippedMarker,
+  takesTyping,
   type ConsoleHeader,
 } from './header';
 import { LinkDialog } from './LinkDialog';
@@ -97,6 +98,11 @@ export interface ConsolePanelProps {
   onStop: () => void;
   /** ⟲ Run again. */
   onRunAgain: () => void;
+  /**
+   * *End input*: the program's next read gives end-of-file (shown while a program runs). Without
+   * it the button is not shown.
+   */
+  onEndInput?: () => void;
   /** Clear (the terminal is cleared as well). */
   onClear: () => void;
   /**
@@ -269,6 +275,7 @@ export function ConsolePanel({
   theme,
   onStop,
   onRunAgain,
+  onEndInput,
   onClear,
   mode = 'pty',
   onBeforeLinkDialog,
@@ -547,6 +554,25 @@ export function ConsolePanel({
           <button type="button" disabled={!running} onClick={onStop} data-testid="console-stop">
             <span aria-hidden="true">■ </span>Stop
           </button>{' '}
+          {running && onEndInput !== undefined && takesTyping(header) && (
+            <>
+              {/* aria-disabled, so the button keeps the focus; the status line says it ended. */}
+              <button
+                type="button"
+                aria-disabled={header.inputOpen !== true}
+                onClick={() => {
+                  if (header.inputOpen === true) {
+                    onEndInput();
+                    terminal.current?.focus();
+                  }
+                }}
+                title="Tell the program that nothing more will be typed: its next read ends."
+                data-testid="console-end-input"
+              >
+                {header.inputOpen === true ? 'End input' : 'Input ended'}
+              </button>{' '}
+            </>
+          )}
           <button
             type="button"
             disabled={header.state === 'idle'}

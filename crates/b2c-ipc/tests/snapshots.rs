@@ -159,6 +159,7 @@ fn settings() -> Settings {
         },
         run: RunSettings {
             on_errors: OnErrors::DisableRun,
+            external_terminal: false,
         },
         console: ConsoleSettings {
             scrollback_lines: 10_000,
@@ -213,6 +214,10 @@ fn every_error() -> Vec<IpcError> {
         IpcError::BuildNotSuccessful,
         IpcError::ProjectErrors { count: 3 },
         IpcError::NotRunning,
+        IpcError::InputClosed,
+        IpcError::NoExternalTerminal,
+        IpcError::InputFileUnreadable,
+        IpcError::DefineNotExportable,
         IpcError::RateLimited,
         IpcError::Busy,
         IpcError::TooManyHandles,
@@ -290,6 +295,8 @@ fn events() {
             containment: Containment::ProcessGroupOnly,
             mode: RunMode::Pty,
             ide_helpers: true,
+            input_file: false,
+            external_terminal: false,
         },
         RunEvent::Skipped {
             lines: 52_113,

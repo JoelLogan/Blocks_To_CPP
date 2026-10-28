@@ -8,6 +8,8 @@
 //!   `coalesce` for batching and flood protection, `rate` for the input
 //!   limits and `exit` for decoding the end).
 //! * [`run_environment`]: the environment of an IDE run (`env`).
+//! * [`ExternalTerminal`]: a terminal window of the program's own
+//!   (`external`).
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -18,11 +20,13 @@ use b2c_process::{Command, ExitStatus, Limits, PtyExit, Stdin};
 mod coalesce;
 mod env;
 mod exit;
+mod external;
 mod rate;
 mod session;
 
 pub use b2c_process::PtySize;
 pub use env::{ASAN_OPTIONS, ASAN_OPTIONS_NO_LEAKS, RunEnvOptions, TERM, UBSAN_OPTIONS, run_environment};
+pub use external::{EXTERNAL_TERMINAL_VAR, ExternalTerminal};
 pub use session::{RunSessions, RunSpec};
 
 /// Where the program's standard input comes from.

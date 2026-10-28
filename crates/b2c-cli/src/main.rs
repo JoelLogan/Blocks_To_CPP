@@ -57,9 +57,15 @@ enum Command {
         /// The folder to write into (created if missing).
         #[arg(long)]
         out: PathBuf,
-        /// Leave out the "edit the blocks, not this file" banner.
+        /// Export as a C++ project: `src/`, `CMakeLists.txt`, `Makefile` and
+        /// `README.md`, without the "edit the blocks, not this file" banner,
+        /// into a folder that is missing or empty.
         #[arg(long)]
         export: bool,
+        /// With `--export`: replace an earlier export in the folder (only the
+        /// files it wrote).
+        #[arg(long, requires = "export")]
+        replace: bool,
     },
     /// Compile a project into an executable.
     Build {
@@ -175,7 +181,18 @@ fn main() -> ExitCode {
     };
     let status = match cli.command {
         Command::Check { project, format } => commands::check(&project, format),
-        Command::Generate { project, out, export } => commands::generate(&project, &out, export),
+        Command::Generate {
+            project,
+            out,
+            export,
+            replace,
+        } => {
+            if export {
+                commands::export(&project, &out, replace)
+            } else {
+                commands::generate(&project, &out)
+            }
+        }
         Command::Build {
             project,
             config,

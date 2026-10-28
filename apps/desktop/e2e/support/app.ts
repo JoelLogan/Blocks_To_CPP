@@ -74,6 +74,9 @@ export interface DialogScript {
   readonly saveAs?: readonly (string | null)[];
   readonly pickCompiler?: readonly (string | null)[];
   readonly trust?: readonly ('trustProject' | 'trustFolder' | 'stayRestricted')[];
+  readonly inputFile?: readonly (string | null)[];
+  readonly exportFolder?: readonly (string | null)[];
+  readonly replaceExport?: readonly boolean[];
 }
 
 /** Options of {@link launchApp}. */

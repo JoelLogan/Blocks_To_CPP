@@ -70,7 +70,7 @@ function method(client: IpcClient, command: string): AnyMethod {
 describe('the command table', () => {
   it('carries the IPC version and every command once', () => {
     expect(IPC_VERSION).toBe(1);
-    expect(COMMAND_NAMES).toHaveLength(36);
+    expect(COMMAND_NAMES).toHaveLength(39);
     expect(new Set(COMMAND_NAMES).size).toBe(COMMAND_NAMES.length);
     expect(COMMAND_NAMES).toContain('build_start');
     expect(COMMAND_NAMES).not.toContain('app_version');
@@ -238,7 +238,7 @@ describe('errors', () => {
     for (const code of IPC_ERROR_CODES) {
       expect(isIpcError({ code })).toBe(true);
     }
-    expect(IPC_ERROR_CODES).toHaveLength(25);
+    expect(IPC_ERROR_CODES).toHaveLength(29);
     for (const value of [null, undefined, 'internal', { code: 'transport' }, {}, { reason: 'x' }]) {
       expect(isIpcError(value)).toBe(false);
     }

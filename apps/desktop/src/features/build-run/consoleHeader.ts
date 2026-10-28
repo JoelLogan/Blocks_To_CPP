@@ -18,6 +18,12 @@ function noticesOf(run: RunState): readonly ConsoleNotice[] {
   if (run.containment === 'processGroupOnly') {
     notices.push('processGroupOnly');
   }
+  if (run.inputFile) {
+    notices.push('inputFile');
+  }
+  if (run.externalTerminal) {
+    notices.push('externalTerminal');
+  }
   return notices.length === 0 ? NO_NOTICES : notices;
 }
 
@@ -34,6 +40,7 @@ export function consoleHeaderFrom(run: RunState, now: number): ConsoleHeader {
         exit: null,
         elapsedMs: run.startedAt === null ? 0 : Math.max(0, now - run.startedAt),
         notices: noticesOf(run),
+        inputOpen: run.inputOpen,
       };
     case 'exited':
     case 'starting':

@@ -130,7 +130,7 @@ row of the [results](#results): **pass**, or **fail** with what you saw.
    [07 §7.2](../spec/07-toolchain-build-run.md#72-discovery) whatever the
    path says (`/usr/bin`, `/usr/local/bin`, MSYS2, Scoop, Chocolatey,
    WinGet's WinLibs, TDM-GCC, Strawberry Perl), and on Linux under the names
-   `g++` and `g++-16` down to `g++-11`. Instead:
+   `g++` and every `g++-N` from `g++-11` up. Instead:
    - Debian and Ubuntu (L1, L2): `sudo apt remove g++-N`, with N the major
      version from step 3 of [Before you start](#before-you-start) (`g++-12`
      on Debian 12, `g++-14` on Debian 13); apt also removes `g++` and

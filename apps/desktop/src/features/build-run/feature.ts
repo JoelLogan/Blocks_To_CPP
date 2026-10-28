@@ -8,6 +8,7 @@
  * | `run.start` | F5 | Stops a running program, builds when needed, then runs it in the console. |
  * | `run.again` | | The same as `run.start` (⟲ Run again in the console). |
  * | `run.stop` | Shift+F5 | Cancels the running build and stops the running program. |
+ * | `run.endInput` | | Ends the running program's input (*End input* in the console). |
  * | `problems.focusFirstError` | | Shows the first error in Problems and on its block. |
  *
  * Each command checks the run gate again (./gate.ts). The console panel connects through the
@@ -147,6 +148,9 @@ export function createBuildRunFeature(options: BuildRunFeatureOptions = {}): Fea
       ctx.commands.registerCommand('run.again', run),
       ctx.commands.registerCommand('run.stop', () => {
         runs.stop();
+      }),
+      ctx.commands.registerCommand('run.endInput', () => {
+        runs.endInput();
       }),
       ctx.commands.registerCommand('problems.focusFirstError', () => {
         focusFirstError(ctx);

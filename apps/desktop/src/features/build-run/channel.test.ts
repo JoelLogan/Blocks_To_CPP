@@ -133,6 +133,8 @@ describe('checkRunEvent', () => {
       containment: 'processGroupOnly',
       mode: 'pipes',
       ideHelpers: false,
+      inputFile: true,
+      externalTerminal: false,
     };
     const skipped = { kind: 'skipped', lines: 0, afterSeq: 2 };
     expect(checkRunEvent(started)).toEqual(started);
@@ -159,9 +161,36 @@ describe('checkRunEvent', () => {
     ['an unknown kind', { kind: 'output' }],
     [
       'an unknown containment',
-      { kind: 'started', containment: 'none', mode: 'pty', ideHelpers: true },
+      {
+        kind: 'started',
+        containment: 'none',
+        mode: 'pty',
+        ideHelpers: true,
+        inputFile: false,
+        externalTerminal: false,
+      },
     ],
-    ['an unknown mode', { kind: 'started', containment: 'cgroup', mode: 'tty', ideHelpers: true }],
+    [
+      'no inputFile',
+      {
+        kind: 'started',
+        containment: 'cgroup',
+        mode: 'pty',
+        ideHelpers: true,
+        externalTerminal: false,
+      },
+    ],
+    [
+      'an unknown mode',
+      {
+        kind: 'started',
+        containment: 'cgroup',
+        mode: 'tty',
+        ideHelpers: true,
+        inputFile: false,
+        externalTerminal: false,
+      },
+    ],
     [
       'ideHelpers that is not a boolean',
       { kind: 'started', containment: 'cgroup', mode: 'pty', ideHelpers: 1 },

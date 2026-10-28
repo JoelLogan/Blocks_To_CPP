@@ -7,7 +7,7 @@ use std::io::Write as _;
 use std::time::Duration;
 
 pub(crate) use build::{build, run, toolchains};
-pub(crate) use project::{check, fmt, generate, migrate};
+pub(crate) use project::{check, export, fmt, generate, migrate};
 
 /// Writes text to standard output. A closed pipe (`b2c check … | head`) is
 /// not an error worth reporting, so write failures are ignored.

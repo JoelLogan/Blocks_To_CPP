@@ -270,6 +270,10 @@ function runAgain(): void {
   triggerCommand('run.again');
 }
 
+function endInput(): void {
+  triggerCommand('run.endInput');
+}
+
 function consoleCleared(): void {
   consoleBridge.cleared();
 }
@@ -314,6 +318,7 @@ export function ConnectedConsolePanel() {
       scrollbackLines={scrollbackLines}
       onStop={stopRun}
       onRunAgain={runAgain}
+      onEndInput={endInput}
       onClear={consoleCleared}
       mode={mode}
       theme={theme}

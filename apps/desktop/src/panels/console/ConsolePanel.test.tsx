@@ -507,6 +507,42 @@ describe('ConsolePanel', () => {
     expect(props.onRunAgain).toHaveBeenCalledTimes(1);
   });
 
+  it('offers End input while a program runs with its input open', () => {
+    const onEndInput = vi.fn();
+    const { rerender, props } = renderConsole({
+      header: { ...RUNNING, inputOpen: true },
+      onEndInput,
+    });
+    const button = screen.getByRole('button', { name: 'End input' });
+    button.focus();
+    fireEvent.click(button);
+    expect(onEndInput).toHaveBeenCalledTimes(1);
+    // The focus goes to the terminal, never to the page.
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).not.toBeNull();
+    rerender(<ConsolePanel {...props} header={{ ...RUNNING, inputOpen: false }} />);
+    const ended = screen.getByRole('button', { name: 'Input ended' });
+    // Still focusable; it does nothing, and the announced status line says it.
+    expect(ended.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(ended);
+    expect(onEndInput).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status').textContent).toContain('input ended');
+    rerender(<ConsolePanel {...props} header={{ ...RUNNING, state: 'idle', inputOpen: false }} />);
+    expect(screen.queryByTestId('console-end-input')).toBeNull();
+  });
+
+  it('offers no End input to a program that reads a file or runs in its own window', () => {
+    for (const notice of ['inputFile', 'externalTerminal'] as const) {
+      const { unmount } = renderConsole({
+        header: { ...RUNNING, notices: [notice], inputOpen: false },
+        onEndInput: vi.fn(),
+      });
+      expect(screen.queryByTestId('console-end-input')).toBeNull();
+      expect(screen.getByTestId('console-state').textContent).toBe('▶ Running');
+      unmount();
+    }
+  });
+
   it('shows the header text for each kind of exit, highlighting a non-zero exit', () => {
     const { rerender, props } = renderConsole();
     const cases: [ConsoleHeader, string, string][] = [

@@ -36,6 +36,7 @@ describe('consoleHeaderFrom', () => {
           startedAt: 1000,
           containment: 'processGroupOnly',
           ideHelpers: true,
+          inputOpen: true,
         }),
         5200,
       ),
@@ -44,6 +45,7 @@ describe('consoleHeaderFrom', () => {
       exit: null,
       elapsedMs: 4200,
       notices: ['ideHelpers', 'processGroupOnly'],
+      inputOpen: true,
     });
     expect(consoleHeaderFrom(run({ status: 'running', startedAt: 9000 }), 5000).elapsedMs).toBe(0);
     expect(consoleHeaderFrom(run({ status: 'running' }), 5000).elapsedMs).toBe(0);

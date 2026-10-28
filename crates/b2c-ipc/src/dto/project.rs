@@ -189,6 +189,31 @@ document_request!(
     ProjectSaveRequest, command = "project_save"
 );
 
+document_request!(
+    /// The request of `project_export_dialog`: export the document as a C++
+    /// project (generated sources, `CMakeLists.txt`, `Makefile`,
+    /// `README.md`) into a folder named after the project (its name made a
+    /// plain file name, else the program's name), inside a folder the user
+    /// picks in a native dialog
+    /// (`docs/spec/06-compiler-pipeline.md` §6.11).
+    ProjectExportDialogRequest, command = "project_export_dialog"
+);
+
+/// The response of `project_export_dialog`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectExportDialogResponse {
+    /// Whether the user cancelled a dialog (the folder picker or the question
+    /// whether to replace an earlier export); nothing was written.
+    pub cancelled: bool,
+    /// The name of the folder the export was written into (never its path),
+    /// with hidden characters made visible; `null` when cancelled.
+    pub folder_name: Option<String>,
+    /// How many files were written, the manifest included.
+    pub files: u32,
+}
+
 /// The response of `project_save`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

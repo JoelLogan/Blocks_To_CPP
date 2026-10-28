@@ -302,12 +302,56 @@ fn generate_writes_cpp() {
         export.to_str().unwrap(),
         "--export",
     ]);
-    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert!(
-        !std::fs::read_to_string(export.join("main.cpp"))
+        !std::fs::read_to_string(export.join("src").join("main.cpp"))
             .unwrap()
             .contains("Edit the blocks")
     );
+    for file in ["CMakeLists.txt", "Makefile", "README.md", ".b2c-export.json"] {
+        assert!(export.join(file).is_file(), "{file}");
+    }
+    // Not over an earlier export, unless asked to replace it.
+    let again = |replace: bool| {
+        let mut args = vec![
+            "generate",
+            example("hello_world").to_str().unwrap(),
+            "--out",
+            export.to_str().unwrap(),
+            "--export",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+        if replace {
+            args.push(String::from("--replace"));
+        }
+        b2c(&args.iter().map(String::as_str).collect::<Vec<_>>())
+    };
+    let refused = again(false);
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(stderr(&refused).contains("--replace"), "{}", stderr(&refused));
+    assert_eq!(again(true).status.code(), Some(0));
+    // --replace needs --export.
+    let output = b2c(&[
+        "generate",
+        example("hello_world").to_str().unwrap(),
+        "--out",
+        export.to_str().unwrap(),
+        "--replace",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    // --out is created with its missing parents, as without --export.
+    let deep = dir.path().join("a").join("b");
+    let output = b2c(&[
+        "generate",
+        example("hello_world").to_str().unwrap(),
+        "--out",
+        deep.to_str().unwrap(),
+        "--export",
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(deep.join("CMakeLists.txt").is_file());
 }
 
 /// Every file below `dir` (recursively), with its contents.

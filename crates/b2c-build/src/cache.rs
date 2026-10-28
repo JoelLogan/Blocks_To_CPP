@@ -20,6 +20,7 @@
 //! | [`prune_and_evict_keeping`], [`evict_to_cap_keeping`] | the same, but never the given entry (the build that just finished) |
 //! | [`clear`] | everything in `builds/` except entries in use |
 //! | [`usage`] | nothing; it measures `builds/` |
+//! | [`prune_sandboxes`] | sandbox folders unused for 30 days, unless a program runs in one |
 //!
 //! The size of the cache is the sum of the lengths of the regular files in
 //! `builds/`. Links count as nothing and are never followed, so a link inside
@@ -40,9 +41,10 @@
 //!
 //! # Safety rules (08 §8.6)
 //!
-//! * Only `builds/` is touched. `sandbox/`, `toolchains.json` and everything
-//!   else at the cache root never are (on Windows the cache root is also the
-//!   machine folder with the trust store and the recovery snapshots).
+//! * Only `builds/` is touched, and by [`prune_sandboxes`] only `sandbox/`.
+//!   `toolchains.json` and everything else at the cache root never are (on
+//!   Windows the cache root is also the machine folder with the trust store
+//!   and the recovery snapshots).
 //! * Links and junctions are never followed. Every item is examined with
 //!   [`fs::symlink_metadata`]; on Windows every reparse point
 //!   (`FILE_ATTRIBUTE_REPARSE_POINT`) counts as a link. A link is never
@@ -281,7 +283,7 @@ pub fn clear(cache_root: &Path) -> io::Result<ClearReport> {
     let Some(layout) = Layout::open(cache_root)? else {
         return Ok(report);
     };
-    for project in list(&layout.builds)? {
+    for project in list(&layout.top)? {
         if project.kind != Kind::Dir {
             report.record(remove_stray(&layout, &project, 0));
             continue;
@@ -310,7 +312,7 @@ pub fn clear(cache_root: &Path) -> io::Result<ClearReport> {
 /// # Errors
 /// As [`prune_and_evict`].
 pub fn usage(cache_root: &Path) -> io::Result<u64> {
-    Ok(Layout::open(cache_root)?.map_or(0, |layout| tree_size(&layout.builds)))
+    Ok(Layout::open(cache_root)?.map_or(0, |layout| tree_size(&layout.top)))
 }
 
 /// A running program's claim on its build folder; see [`hold_for_run`].
@@ -352,6 +354,159 @@ pub fn hold_for_run(entry: &Path) -> io::Result<RunHold> {
     }
     lock.set_modified(SystemTime::now())?;
     Ok(RunHold { _lock: lock })
+}
+
+/// The folder below the cache root that holds the sandbox folders.
+const SANDBOX_DIR: &str = "sandbox";
+
+/// The extension of a sandbox's lock file, which lies next to the sandbox
+/// (`sandbox/<name>.lock`), outside the folder the program sees.
+const SANDBOX_LOCK_EXTENSION: &str = "lock";
+
+/// The lock file of the sandbox folder `sandbox`: `<sandbox>.lock`.
+fn sandbox_lock(sandbox: &Path) -> Option<PathBuf> {
+    let name = sandbox.file_name()?.to_str()?;
+    Some(sandbox.with_file_name(format!("{name}.{SANDBOX_LOCK_EXTENSION}")))
+}
+
+/// Marks the sandbox folder `sandbox` (`<cache>/sandbox/<projectFolder>/`,
+/// from [`crate::sandbox_dir`]) as used now and keeps [`prune_sandboxes`]
+/// away from it while the program that runs in it runs: it takes a shared
+/// lock on the sandbox's lock file, `<sandbox>.lock` next to the folder
+/// (created owner-only when missing; an existing one must be a regular
+/// file), waiting for a pruning that holds it, then sets the lock file's
+/// modification time to now and creates the folder again should the pruning
+/// have removed it. The returned hold is released when dropped.
+///
+/// # Errors
+/// [`CacheError::RelativePath`]; [`CacheError::NotAFolder`] when `sandbox`
+/// or its parent is a link or not a folder; [`CacheError::LockNotAFile`];
+/// and I/O errors.
+pub fn hold_sandbox(sandbox: &Path) -> io::Result<RunHold> {
+    if !sandbox.is_absolute() {
+        return Err(CacheError::RelativePath.into());
+    }
+    let lock_path = sandbox_lock(sandbox).ok_or(CacheError::NotAFolder("sandbox folder"))?;
+    if let Some(parent) = sandbox.parent()
+        && !dir_or_missing(parent, "sandbox folder")?
+    {
+        return Err(CacheError::NotAFolder("sandbox folder").into());
+    }
+    let lock = open_lock_at(&lock_path, true)?;
+    lock.lock_shared()?;
+    lock.set_modified(SystemTime::now())?;
+    #[allow(unused_mut)] // set owner-only on Unix
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt as _;
+        builder.mode(0o700);
+    }
+    ignore_existing(builder.create(sandbox))?;
+    if !dir_or_missing(sandbox, "sandbox folder")? {
+        return Err(CacheError::NotAFolder("sandbox folder").into());
+    }
+    Ok(RunHold { _lock: lock })
+}
+
+/// Treats "it exists already" as success.
+fn ignore_existing(result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        other => other,
+    }
+}
+
+/// Removes the sandbox folders of `<cache_root>/sandbox/` unused for at
+/// least `max_age` as of `now` (at startup: [`DEFAULT_MAX_AGE`]). A
+/// sandbox's last use is its lock file's modification time
+/// ([`hold_sandbox`]); a sandbox without one (made before M3) is given one
+/// and so a full `max_age` from now. A sandbox whose lock is held (a program runs in it) is kept,
+/// and so is one used again between the look and the deletion. The
+/// deletion keeps this module's safety rules: no link is followed, every
+/// level is checked to be a real folder inside the canonical `sandbox/`, the
+/// lock is held exclusively while the folder is deleted, and the lock file
+/// goes last. A link in `sandbox/` is removed itself, never what it points
+/// to. Only the app prunes; the CLI never does.
+///
+/// # Errors
+/// As [`prune_and_evict`], for the `sandbox` folder.
+pub fn prune_sandboxes(cache_root: &Path, max_age: Duration, now: SystemTime) -> io::Result<EvictionReport> {
+    let mut report = EvictionReport::default();
+    let Some(layout) = Layout::open_in(cache_root, SANDBOX_DIR, "sandbox folder")? else {
+        return Ok(report);
+    };
+    for item in list(&layout.top)? {
+        match item.kind {
+            Kind::Dir => {
+                let Some(lock_path) = sandbox_lock(&item.path) else {
+                    continue;
+                };
+                let Some(lock_time) = lock_modified(&lock_path) else {
+                    // A sandbox from before locks (M2): its folder's time says
+                    // nothing about its use, so it gets a lock, and a full
+                    // `max_age` from now.
+                    if layout.holds_dir(&item.path, 1) {
+                        drop(open_lock_at(&lock_path, true));
+                    }
+                    continue;
+                };
+                if expired(Some(lock_time), now, max_age) {
+                    report.record(remove_sandbox(&layout, &item.path, &lock_path, Some(lock_time)));
+                }
+            }
+            Kind::Link => report.record(remove_stray(&layout, &item, 0)),
+            Kind::File | Kind::Other => {}
+        }
+    }
+    Ok(report)
+}
+
+/// The modification time of a lock file that is a regular file.
+fn lock_modified(path: &Path) -> Option<SystemTime> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if kind_of(&metadata) == Kind::File => metadata.modified().ok(),
+        _ => None,
+    }
+}
+
+/// Deletes the sandbox folder `sandbox` (one level below `sandbox/`) and
+/// then its lock file, holding the lock exclusively, unless it is in use,
+/// was used since its lock read `seen`, or is no longer where it should be.
+fn remove_sandbox(layout: &Layout, sandbox: &Path, lock_path: &Path, seen: Option<SystemTime>) -> Removal {
+    if !layout.holds_dir(sandbox, 1) {
+        return Removal::kept_unless_gone(sandbox);
+    }
+    let Ok(Some(lock)) = claim_at(lock_path) else {
+        return Removal::kept_unless_gone(sandbox);
+    };
+    // A run that started and ended between the look and the claim touched
+    // the lock; a lock that was missing has just been created.
+    if seen.is_some() && lock_modified(lock_path) != seen {
+        return Removal::Kept { freed: 0 };
+    }
+    if !layout.holds_dir(sandbox, 1) {
+        return Removal::kept_unless_gone(sandbox);
+    }
+    let before = tree_size(sandbox);
+    if ignore_missing(fs::remove_dir_all(sandbox)).is_err() {
+        let left = if is_plain_dir(sandbox) {
+            tree_size(sandbox)
+        } else {
+            0
+        };
+        return Removal::Kept {
+            freed: before.saturating_sub(left),
+        };
+    }
+    // As for a build folder's lock (see `delete_locked_entry`): without
+    // POSIX delete semantics on Windows the name goes once the handle is
+    // closed. A lock file left behind is harmless; the next run reuses it.
+    if ignore_missing(fs::remove_file(lock_path)).is_err() {
+        drop(lock);
+        let _ = ignore_missing(fs::remove_file(lock_path));
+    }
+    Removal::Removed { freed: before }
 }
 
 /// What a directory item is, judged without following links.
@@ -425,15 +580,21 @@ fn ignore_missing(result: io::Result<()>) -> io::Result<()> {
     }
 }
 
-/// The cache's `builds` folder, canonical and checked.
+/// The cache's `builds` (or `sandbox`) folder, canonical and checked.
 struct Layout {
-    builds: PathBuf,
+    top: PathBuf,
 }
 
 impl Layout {
     /// Checks the cache root and its `builds` folder. `None` when either
     /// does not exist (an empty cache).
     fn open(cache_root: &Path) -> io::Result<Option<Self>> {
+        Self::open_in(cache_root, BUILDS_DIR, "build cache folder")
+    }
+
+    /// Checks the cache root and its folder `name` (`what` in errors).
+    /// `None` when either does not exist.
+    fn open_in(cache_root: &Path, name: &str, what: &'static str) -> io::Result<Option<Self>> {
         if !cache_root.is_absolute() {
             return Err(CacheError::RelativePath.into());
         }
@@ -441,29 +602,30 @@ impl Layout {
             return Ok(None);
         }
         let root = fs::canonicalize(cache_root)?;
-        let builds = root.join(BUILDS_DIR);
-        if !dir_or_missing(&builds, "build cache folder")? {
+        let top = root.join(name);
+        if !dir_or_missing(&top, what)? {
             return Ok(None);
         }
-        let builds = fs::canonicalize(&builds)?;
-        if builds.parent() != Some(root.as_path()) {
-            return Err(CacheError::NotAFolder("build cache folder").into());
+        let top = fs::canonicalize(&top)?;
+        if top.parent() != Some(root.as_path()) {
+            return Err(CacheError::NotAFolder(what).into());
         }
-        Ok(Some(Self { builds }))
+        Ok(Some(Self { top }))
     }
 
-    /// Whether `dir` is still exactly `depth` real folders below `builds/`,
-    /// with no level (`builds/` included) a link or junction, and resolves to
-    /// a place that deep inside `builds/`. Checked right before deleting.
+    /// Whether `dir` is still exactly `depth` real folders below the top
+    /// folder (`builds/`), with no level (the top included) a link or
+    /// junction, and resolves to a place that deep inside it. Checked right
+    /// before deleting.
     fn holds_dir(&self, dir: &Path, depth: usize) -> bool {
-        let Ok(relative) = dir.strip_prefix(&self.builds) else {
+        let Ok(relative) = dir.strip_prefix(&self.top) else {
             return false;
         };
         let components: Vec<Component<'_>> = relative.components().collect();
         if components.len() != depth || !components.iter().all(is_plain_name) {
             return false;
         }
-        let mut level = self.builds.clone();
+        let mut level = self.top.clone();
         if !is_plain_dir(&level) {
             return false;
         }
@@ -475,7 +637,7 @@ impl Layout {
         }
         fs::canonicalize(dir).is_ok_and(|canonical| {
             canonical
-                .strip_prefix(&self.builds)
+                .strip_prefix(&self.top)
                 .is_ok_and(|inside| inside.components().count() == depth)
         })
     }
@@ -565,12 +727,17 @@ fn tree_size(dir: &Path) -> u64 {
     total
 }
 
-/// Opens `<entry>/lock` without following a link (for writing when `write`
-/// is set). An existing lock must be a regular file, checked again after
-/// opening; a missing one is created exclusively (`O_EXCL`, which never
-/// follows a link), owner-only on Unix.
+/// Opens `<entry>/lock` (see [`open_lock_at`]).
 fn open_lock(entry: &Path, write: bool) -> io::Result<File> {
-    let path = entry.join(LOCK_FILE);
+    open_lock_at(&entry.join(LOCK_FILE), write)
+}
+
+/// Opens the lock file `path` without following a link (for writing when
+/// `write` is set). An existing lock must be a regular file, checked again
+/// after opening; a missing one is created exclusively (`O_EXCL`, which
+/// never follows a link), owner-only on Unix.
+fn open_lock_at(path: &Path, write: bool) -> io::Result<File> {
+    let path = path.to_path_buf();
     // A second round only when a build creates the lock between our look
     // and our exclusive create.
     for _ in 0..2 {
@@ -604,7 +771,13 @@ fn open_lock(entry: &Path, write: bool) -> io::Result<File> {
 /// Takes `entry`'s lock exclusively without waiting. `None` when someone
 /// else holds it.
 fn claim(entry: &Path) -> io::Result<Option<File>> {
-    let lock = match open_lock(entry, false) {
+    claim_at(&entry.join(LOCK_FILE))
+}
+
+/// Takes the lock file `path` exclusively without waiting (see
+/// [`open_lock_at`]). `None` when someone else holds it.
+fn claim_at(path: &Path) -> io::Result<Option<File>> {
+    let lock = match open_lock_at(path, false) {
         Ok(lock) => lock,
         Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(None),
         Err(error) => return Err(error),
@@ -772,7 +945,7 @@ struct Scan {
 /// Lists the entries of the cache and measures it (as [`usage`] does).
 fn scan(layout: &Layout) -> io::Result<Scan> {
     let mut scan = Scan::default();
-    for project in list(&layout.builds)? {
+    for project in list(&layout.top)? {
         match project.kind {
             Kind::File => scan.total = scan.total.saturating_add(project.len),
             Kind::Dir => {
@@ -926,29 +1099,29 @@ mod tests {
         let entry = cache.path().join("builds/prj_a-00000000/debug-00000000");
         fs::create_dir_all(&entry).unwrap();
         let layout = Layout::open(cache.path()).unwrap().unwrap();
-        let entry = layout.builds.join("prj_a-00000000/debug-00000000");
+        let entry = layout.top.join("prj_a-00000000/debug-00000000");
         assert!(layout.holds_dir(&entry, 2));
         assert!(!layout.holds_dir(&entry, 1));
         assert!(layout.holds_dir(entry.parent().unwrap(), 1));
-        assert!(layout.holds_dir(&layout.builds, 0));
+        assert!(layout.holds_dir(&layout.top, 0));
         // Spelled by hand: on Windows `join` onto the verbatim (`\\?\`) root
         // would resolve the `..` and give the real folder back.
         for odd in [
             "prj_a-00000000/../prj_a-00000000",
             &format!("prj_a-00000000{MAIN_SEPARATOR}..{MAIN_SEPARATOR}prj_a-00000000"),
         ] {
-            let mut path = layout.builds.clone().into_os_string();
+            let mut path = layout.top.clone().into_os_string();
             path.push(MAIN_SEPARATOR_STR);
             path.push(odd);
             assert!(!layout.holds_dir(Path::new(&path), 1), "{odd}");
         }
-        assert!(!layout.holds_dir(&layout.builds.join("missing/entry"), 2));
+        assert!(!layout.holds_dir(&layout.top.join("missing/entry"), 2));
         assert!(!layout.holds_dir(cache.path(), 0));
         #[cfg(unix)]
         {
             let outside = tempfile::tempdir().unwrap();
             fs::create_dir(outside.path().join("entry")).unwrap();
-            let link = layout.builds.join("prj_link-00000000");
+            let link = layout.top.join("prj_link-00000000");
             std::os::unix::fs::symlink(outside.path(), &link).unwrap();
             assert!(!layout.holds_dir(&link, 1));
             assert!(!layout.holds_dir(&link.join("entry"), 2));

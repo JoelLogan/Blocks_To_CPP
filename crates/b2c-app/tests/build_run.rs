@@ -168,13 +168,31 @@ fn a_new_project_builds_and_runs_in_its_sandbox() {
     assert_eq!(exit_status(&all), ExitStatus::Exited { code: 0 });
     let text = String::from_utf8_lossy(&output.concat()).into_owned();
     assert!(text.contains("Hello, world!"), "{text:?}");
-    // A project that was never saved runs in its sandbox folder.
+    // A project that was never saved runs in its sandbox folder, whose lock
+    // file lies next to it and marks it used.
     let sandbox = app.dirs.sandbox();
-    let folders: Vec<_> = std::fs::read_dir(&sandbox).unwrap().collect();
-    assert_eq!(folders.len(), 1);
+    let mut names: Vec<String> = std::fs::read_dir(&sandbox)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert!(
+        std::path::Path::new(&sandbox).join(&names[0]).is_dir(),
+        "{names:?}"
+    );
+    assert_eq!(names[1], format!("{}.lock", names[0]));
     // A second build of the same content is up to date.
     let (_, again, _) = build(&app, &created.handle, &created.document);
     assert_eq!(again, BuildOutcome::UpToDate);
+    // The run reused the build's analysis (S7-5); after a change of the
+    // generator options, a run analyses the project again.
+    assert_eq!(app.backend.run_analyses(), 0);
+    let patch = decode::<SettingsPatch>(json!({"codeStyle": {"indentWidth": 2}})).unwrap();
+    app.backend.settings_update(patch).unwrap();
+    let (_, _, rerun) = run(&app, &build_id).unwrap();
+    assert_eq!(exit_status(&wait_exit(&rerun)), ExitStatus::Exited { code: 0 });
+    assert_eq!(app.backend.run_analyses(), 1);
 
     // The empty template builds and runs too.
     let empty = app
@@ -596,4 +614,82 @@ fn generated_files(builds: &Path) -> BTreeMap<String, String> {
             )
         })
         .collect()
+}
+
+#[test]
+fn the_input_file_is_chosen_in_a_dialog_and_read_by_the_program() {
+    use b2c_ipc::dto::{RunInputFileAction, RunInputFileRequest};
+    if gxx().is_none() {
+        return;
+    }
+    let app = TestApp::with(Compiler::spy(), TestProber::new());
+    let created = app
+        .backend
+        .project_new(ProjectNewRequest {
+            template: Template::HelloWorld,
+        })
+        .unwrap();
+    let ask = |action| {
+        app.backend.run_input_file(RunInputFileRequest {
+            handle: created.handle.clone(),
+            action,
+        })
+    };
+    let none = ask(RunInputFileAction::Get).unwrap();
+    assert_eq!((none.file_name, none.cancelled), (None, false));
+    // Cancelled: nothing changes.
+    app.dialogs.will_pick_input(None);
+    let cancelled = ask(RunInputFileAction::Choose).unwrap();
+    assert_eq!((cancelled.file_name, cancelled.cancelled), (None, true));
+    // A folder is not an input file.
+    let folder = app.root.path().join("inputs");
+    std::fs::create_dir(&folder).unwrap();
+    app.dialogs.will_pick_input(Some(&folder));
+    assert!(matches!(
+        ask(RunInputFileAction::Choose),
+        Err(IpcError::Io { .. })
+    ));
+
+    let file = app.write("numbers.txt", b"1\n2\n");
+    app.dialogs.will_pick_input(Some(&file));
+    let chosen = ask(RunInputFileAction::Choose).unwrap();
+    assert_eq!(chosen.file_name.as_deref(), Some("numbers.txt"));
+    assert_eq!(
+        ask(RunInputFileAction::Get).unwrap().file_name.as_deref(),
+        Some("numbers.txt")
+    );
+
+    // The program runs with pipes, reading the file.
+    let (build_id, result, events) = build(&app, &created.handle, &created.document);
+    assert_eq!(result, BuildOutcome::Built, "{events:#?}");
+    let (_, output, run_events) = run(&app, &build_id).unwrap();
+    let all = wait_exit(&run_events);
+    assert_eq!(exit_status(&all), ExitStatus::Exited { code: 0 });
+    assert!(
+        matches!(
+            all.first(),
+            Some(RunEvent::Started {
+                input_file: true,
+                external_terminal: false,
+                mode: b2c_ipc::dto::RunMode::Pipes,
+                ..
+            })
+        ),
+        "{all:#?}"
+    );
+    assert!(String::from_utf8_lossy(&output.concat()).contains("Hello, world!"));
+
+    // A file that is gone stops the program from starting.
+    std::fs::remove_file(&file).unwrap();
+    assert!(matches!(run(&app, &build_id), Err(IpcError::InputFileUnreadable)));
+    let cleared = ask(RunInputFileAction::Clear).unwrap();
+    assert_eq!(cleared.file_name, None);
+    let (_, _, again) = run(&app, &build_id).unwrap();
+    assert!(matches!(
+        wait_exit(&again).first(),
+        Some(RunEvent::Started {
+            input_file: false,
+            ..
+        })
+    ));
 }

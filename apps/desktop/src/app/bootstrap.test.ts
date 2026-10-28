@@ -76,7 +76,7 @@ describe('starting the window', () => {
     const toolchain = toolchainFixture();
     ipc.toolchainList.mockResolvedValue({ toolchains: [toolchain], discovering: true });
     ipc.settingsGet.mockResolvedValue({
-      settings: settingsFixture({ run: { onErrors: 'showProblems' } }),
+      settings: settingsFixture({ run: { onErrors: 'showProblems', externalTerminal: false } }),
       notices: [{ key: 'console.scrollbackLines', reason: 'invalidValue' }],
     });
     expect(runtime.getPhase()).toEqual({ kind: 'starting' });

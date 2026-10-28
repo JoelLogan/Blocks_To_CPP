@@ -298,6 +298,7 @@ expression: render(&values)
       "standard": "c++20"
     },
     "run": {
+      "externalTerminal": false,
       "onErrors": "disableRun"
     },
     "toolchain": {
@@ -335,6 +336,7 @@ expression: render(&values)
       "standard": "c++20"
     },
     "run": {
+      "externalTerminal": false,
       "onErrors": "disableRun"
     },
     "toolchain": {
