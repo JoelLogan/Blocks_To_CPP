@@ -53,7 +53,7 @@ vi.mock('#glue', () => ({
           app: `instance ${String(instance)}`,
           catalog: '1.0.0',
           formatVersion: 1,
-          sourceMapVersion: 1,
+          sourceMapVersion: 2,
         }),
       load: () => call({ ok: false, diagnostics: [] }),
       canonical: () => call({ ok: false, diagnostics: [] }),

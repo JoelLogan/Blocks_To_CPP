@@ -30,7 +30,7 @@ fn version_reports_the_crate_versions() {
     assert_eq!(
         version,
         format!(
-            r#"{{"app":"{}","catalog":"{}","formatVersion":{},"sourceMapVersion":1}}"#,
+            r#"{{"app":"{}","catalog":"{}","formatVersion":{},"sourceMapVersion":2}}"#,
             env!("CARGO_PKG_VERSION"),
             b2c_catalog::CATALOG_VERSION,
             b2c_model::MAX_FORMAT_VERSION
@@ -83,9 +83,11 @@ fn preview_files_and_source_map_equal_the_native_pipeline() {
                 "{} at indent {indent_width}",
                 example.name
             );
+            // The preview's compact form holds exactly the IR's map (M3-5).
+            assert_eq!(result["sourceMap"]["version"], 2);
             assert_eq!(
-                result["sourceMap"],
-                serde_json::to_value(&native.project.source_map).unwrap(),
+                b2c_core_wasm::compact::expand(&result["sourceMap"].to_string()),
+                Some(native.project.source_map.clone()),
                 "{} at indent {indent_width}",
                 example.name
             );

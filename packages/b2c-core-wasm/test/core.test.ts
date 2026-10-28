@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCore, type GlueFunctions, MAX_DOCUMENT_BYTES } from '../src/core';
 import { CoreError, CoreTrap } from '../src/errors';
 
-const VERSION = '{"app":"0.1.0","catalog":"1.0.0","formatVersion":1,"sourceMapVersion":1}';
+const VERSION = '{"app":"0.1.0","catalog":"1.0.0","formatVersion":1,"sourceMapVersion":2}';
 
 function fakeGlue(overrides: Partial<GlueFunctions> = {}): GlueFunctions {
   return {
@@ -31,7 +31,7 @@ describe('createCore', () => {
       app: '0.1.0',
       catalog: '1.0.0',
       formatVersion: 1,
-      sourceMapVersion: 1,
+      sourceMapVersion: 2,
     });
     expect(core.load(new Uint8Array([1, 2]))).toEqual({ ok: false, diagnostics: [] });
     expect(handle.trapped).toBe(false);

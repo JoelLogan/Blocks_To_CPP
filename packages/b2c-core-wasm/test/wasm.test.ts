@@ -11,7 +11,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { CoreWasm, Diagnostic } from '../src/index';
 import {
+  COMPACT_RANGE_STRIDE,
   CoreError,
+  expandSourceMap,
   initCore,
   initCoreFromBytes,
   MAX_DOCUMENT_BYTES,
@@ -138,7 +140,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
       app: expect.stringMatching(/^\d+\.\d+\.\d+/) as unknown,
       catalog: '1.3.0',
       formatVersion: MAX_FORMAT_VERSION,
-      sourceMapVersion: 1,
+      sourceMapVersion: 2,
     });
   });
 
@@ -173,10 +175,17 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     const main = preview.files.find((file) => file.path === 'main.cpp');
     expect(main?.kind).toBe('source');
     expect(main?.contents === golden).toBe(true);
-    expect(preview.sourceMap?.version).toBe(1);
-    expect(preview.sourceMap?.files.map((file) => file.path)).toEqual(
-      preview.files.map((file) => file.path),
-    );
+    // The compact form (M3-5): every range of every file, seven numbers each, its indexes in range.
+    const map = preview.sourceMap;
+    expect(map?.version).toBe(2);
+    expect(map?.files.map((file) => file.path)).toEqual(preview.files.map((file) => file.path));
+    if (map !== null) {
+      const expanded = expandSourceMap(map);
+      expect(expanded.files.map((file) => file.ranges.length)).toEqual(
+        map.files.map((file) => file.ranges.length / COMPACT_RANGE_STRIDE),
+      );
+      expect(expanded.files.flatMap((file) => file.ranges).length).toBeGreaterThan(0);
+    }
     const saved = core.canonical(exampleText(name));
     expect(saved.ok && preview.contentHash === saved.hash).toBe(true);
     // One load gives both hashes: the text hash is canonical()'s, the SHA-256 of the file text.

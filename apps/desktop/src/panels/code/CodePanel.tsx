@@ -1,12 +1,12 @@
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { type RefObject, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { startSpan } from '../../lib/timing';
 import '../panels.css';
 import { copyPlainText } from '../shared/clipboard';
 import { useTransientStatus } from '../shared/useTransientStatus';
-import type { Diagnostic, GeneratedFile, SourceMap } from '../types';
+import type { CompactSourceMap, Diagnostic, GeneratedFile, SourceMap } from '../types';
 import { codeViewExtensions, setCodeViewData, type CodeViewCallbacks } from './codeView';
 import { buildSourceMapIndex } from './sourcemap';
 
@@ -27,7 +27,7 @@ export interface CodePanelProps {
   /** The person picked another file. */
   onActivePathChange: (path: string) => void;
   /** The preview's source map, or `null` when the preview has none (it failed to load). */
-  sourceMap: SourceMap | null;
+  sourceMap: SourceMap | CompactSourceMap | null;
   /** Whether the preview could be built; if not, the code carries a "Not buildable" label. */
   buildable: boolean;
   /** Diagnostics to show as gutter markers and underlines (those with a block). */
@@ -46,6 +46,10 @@ export interface CodePanelProps {
  *
  * A copy says *Copied* for 3 s, or *Could not copy* until the next copy, just below the bar's
  * right end, over the code, so the message never moves the code (panels.css).
+ *
+ * While the panel cannot be seen (its dock folded, or another tab shown), it pauses (M3-5): new
+ * code, diagnostics and highlights only wait, and the source map is not indexed; when it is shown
+ * again it takes the latest at once, in one update.
  */
 export function CodePanel(props: CodePanelProps) {
   const {
@@ -59,6 +63,8 @@ export function CodePanel(props: CodePanelProps) {
     onSelectBlock,
   } = props;
 
+  const root = useRef<HTMLDivElement>(null);
+  const shown = useShown(root);
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const shownHighlight = useRef<string | null>(null);
@@ -79,7 +85,11 @@ export function CodePanel(props: CodePanelProps) {
   const visibleFiles = useMemo(() => files.filter((file) => !isHiddenFile(file.path)), [files]);
   const activeFile =
     visibleFiles.find((file) => file.path === activePath) ?? visibleFiles[0] ?? null;
-  const index = useMemo(() => buildSourceMapIndex(sourceMap, files), [sourceMap, files]);
+  // Indexed only while the panel is shown, and once for each preview.
+  const index = useMemo(
+    () => (shown ? buildSourceMapIndex(sourceMap, files) : null),
+    [shown, sourceMap, files],
+  );
 
   useEffect(() => {
     const parent = host.current;
@@ -105,7 +115,7 @@ export function CodePanel(props: CodePanelProps) {
   // Shows new code, diagnostics or a highlight: the User Timing span `b2c:code-panel`.
   useEffect(() => {
     const editor = view.current;
-    if (editor === null) {
+    if (editor === null || index === null) {
       return;
     }
     const span = startSpan('b2c:code-panel');
@@ -160,7 +170,7 @@ export function CodePanel(props: CodePanelProps) {
   };
 
   return (
-    <div className="b2c-panel b2c-code-panel" data-testid="code-panel">
+    <div className="b2c-panel b2c-code-panel" data-testid="code-panel" ref={root}>
       <div className="b2c-panel-bar">
         <label className="b2c-code-file" htmlFor={fileSelectId}>
           File
@@ -208,6 +218,31 @@ export function CodePanel(props: CodePanelProps) {
       <div className="b2c-code-editor" ref={host} hidden={activeFile === null} />
     </div>
   );
+}
+
+/**
+ * Whether `element` can be seen: not inside a folded dock or a tab that is not shown. Watched with
+ * an `IntersectionObserver`; without one (as in tests) it always counts as shown.
+ */
+function useShown(element: RefObject<HTMLElement | null>): boolean {
+  const [shown, setShown] = useState(true);
+  useEffect(() => {
+    const target = element.current;
+    if (target === null || typeof IntersectionObserver !== 'function') {
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      const last = entries[entries.length - 1];
+      if (last !== undefined) {
+        setShown(last.isIntersecting);
+      }
+    });
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+    };
+  }, [element]);
+  return shown;
 }
 
 /**

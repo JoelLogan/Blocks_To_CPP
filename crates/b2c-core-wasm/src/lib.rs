@@ -63,6 +63,7 @@
 
 pub mod args;
 pub mod clipboard;
+pub mod compact;
 mod cut;
 pub mod error;
 pub mod facade;
@@ -79,6 +80,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 pub use args::PasteTarget;
 pub use clipboard::{NOT_DECLARED, Unresolved};
+pub use compact::PREVIEW_SOURCE_MAP_VERSION;
 pub use error::{FacadeError, Failure};
 pub use facade::{
     APP_VERSION, Canonical, GENERATOR_INCOMPLETE, Loaded, Preview, SOURCE_MAP_VERSION, Stage, Update,
@@ -116,7 +118,7 @@ fn with_session(call: impl FnOnce(&mut Session) -> String) -> String {
 
 /// The versions of the app, the catalog, the newest project format and the
 /// source map format this core implements:
-/// `{"app": "0.1.0", "catalog": "1.3.0", "formatVersion": 2, "sourceMapVersion": 1}`.
+/// `{"app": "0.1.0", "catalog": "1.3.0", "formatVersion": 2, "sourceMapVersion": 2}`.
 #[wasm_bindgen]
 pub fn version() -> String {
     wire::version(&version_info())

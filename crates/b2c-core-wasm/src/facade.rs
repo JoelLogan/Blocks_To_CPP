@@ -62,7 +62,10 @@ pub struct VersionInfo {
     /// ([`b2c_model::MAX_FORMAT_VERSION`]). A document is saved as the
     /// lowest version whose keys cover it (ADR-0013).
     pub format_version: u32,
-    /// The source-map format version ([`SOURCE_MAP_VERSION`]).
+    /// The format version of the preview's source map
+    /// ([`PREVIEW_SOURCE_MAP_VERSION`](crate::PREVIEW_SOURCE_MAP_VERSION), the
+    /// compact form); the IR's map, and so a build's, is
+    /// [`SOURCE_MAP_VERSION`].
     pub source_map_version: u32,
 }
 
@@ -72,7 +75,7 @@ pub fn version_info() -> VersionInfo {
         app: APP_VERSION,
         catalog: b2c_catalog::CATALOG_VERSION,
         format_version: b2c_model::MAX_FORMAT_VERSION,
-        source_map_version: SOURCE_MAP_VERSION,
+        source_map_version: crate::compact::PREVIEW_SOURCE_MAP_VERSION,
     }
 }
 
@@ -167,7 +170,9 @@ pub struct Preview {
     /// The generated files; empty only when loading failed.
     pub files: Vec<GeneratedFile>,
     /// The map from generated text back to blocks; absent only when loading
-    /// failed.
+    /// failed. Its JSON is the compact form of version 2 (`compact.rs`,
+    /// M3-5); the map itself is the IR's.
+    #[serde(serialize_with = "crate::compact::serialize")]
     pub source_map: Option<SourceMap>,
     /// Whether a build would accept the generated code: no diagnostic is an
     /// error and the generator needed no placeholders.
@@ -389,7 +394,7 @@ mod tests {
         assert_eq!(info.app, "0.1.0");
         assert_eq!(info.catalog, b2c_catalog::CATALOG_VERSION);
         assert_eq!(info.format_version, 2);
-        assert_eq!(info.source_map_version, 1);
+        assert_eq!(info.source_map_version, 2);
     }
 
     #[test]

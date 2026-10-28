@@ -19,6 +19,7 @@ export type {
   Severity,
 } from '@blocks2cpp/ipc-types';
 export type {
+  CompactSourceMap,
   FileMap,
   GeneratedFile,
   MappedRange,
