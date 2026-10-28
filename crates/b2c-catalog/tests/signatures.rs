@@ -240,6 +240,8 @@ fn m2_blocks_have_the_patterns_of_w1() {
         "func.call_stmt",
         "func.return",
         "func.define",
+        // W2's package C2: main's arguments are a list of text (w2.md §1.9).
+        "program.main",
     ];
     for (id, sig) in sigs
         .iter()

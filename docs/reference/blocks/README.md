@@ -11,7 +11,7 @@ Catalog version: 1.3.0.
 | Category | Icon | Blocks |
 | --- | --- | --- |
 | [Program](program.md) | ▶ | 2 |
-| [Variables](variables.md) | 𝑥 | 5 |
+| [Variables](variables.md) | 𝑥 | 6 |
 | [Math](math.md) | ∑ | 11 |
 | [Logic](logic.md) | ◇ | 4 |
 | [Text](text.md) | “ ” | 13 |

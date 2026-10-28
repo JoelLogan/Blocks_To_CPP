@@ -827,6 +827,7 @@ fn forms_program(standard: CppStandard) -> String {
     main_body.push(print(vec![sast.get(&label)]));
     let main_item = item(ItemKind::Main(MainDef {
         body: Block { stmts: main_body },
+        args: None,
     }));
     let show_item = item(ItemKind::Function(show_def.clone()));
     let program = sast.program(standard, vec![main_item.clone(), show_item.clone()]);

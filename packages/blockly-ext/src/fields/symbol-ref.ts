@@ -49,14 +49,15 @@ import { isSymbolRefValue, type SymbolRefValue } from './values';
  * - `variables`: variables, parameters and loop counters (getters, expression slots);
  * - `assignable`: what a block may change there: the same without `const` variables, `for` loop
  *   counters and read-only parameters (set, ask), which the analyser refuses (B2C-E0308);
- * - `numeric`: the assignable ones holding a whole number, a decimal number or a character, or of
- *   a type the analysis could not tell (change, the update operators): text cannot be counted with
- *   (B2C-E0302) and true/false only with a warning (B2C-W0519);
+ * - `changeable`: the assignable ones holding a whole number, a decimal number, a character or
+ *   text, or of a type the analysis could not tell (*change*: numbers count, text takes *add to
+ *   the end*, w2.md §1.9); true/false variables are flipped instead, and other types take no
+ *   operator of *change* (B2C-E0302);
  * - `functions`: functions (calls);
  * - `enums`: enum definitions, not variables of an enum type (*enum value*'s `ENUM`,
  *   docs/plans/m3-contracts/w2.md §2.3).
  */
-export type SymbolRefKinds = 'variables' | 'assignable' | 'numeric' | 'functions' | 'enums';
+export type SymbolRefKinds = 'variables' | 'assignable' | 'changeable' | 'functions' | 'enums';
 
 /** Options of a reference field. */
 export interface SymbolRefFieldConfig {
@@ -71,7 +72,7 @@ export interface SymbolRefFieldConfig {
 const KINDS: readonly SymbolRefKinds[] = [
   'variables',
   'assignable',
-  'numeric',
+  'changeable',
   'functions',
   'enums',
 ];
@@ -80,7 +81,7 @@ const KINDS: readonly SymbolRefKinds[] = [
 const MENU_LABELS: Readonly<Record<SymbolRefKinds, string>> = {
   variables: 'Variables in scope',
   assignable: 'Variables in scope',
-  numeric: 'Variables in scope',
+  changeable: 'Variables in scope',
   functions: 'Functions in scope',
   enums: 'Enums',
 };
@@ -89,13 +90,19 @@ const MENU_LABELS: Readonly<Record<SymbolRefKinds, string>> = {
 const EMPTY_LABELS: Readonly<Record<SymbolRefKinds, string>> = {
   variables: 'no variables here',
   assignable: 'no variables here',
-  numeric: 'no variables here',
+  changeable: 'no variables here',
   functions: 'no functions yet',
   enums: 'no enums yet',
 };
 
-/** The value types `change` and the update operators work on (`error`: not known). */
-const NUMERIC_TYPES: ReadonlySet<string> = new Set(['int', 'double', 'char', 'error']);
+/** The value types *change* works on (`error`: not known). */
+const CHANGEABLE_TYPES: ReadonlySet<string> = new Set([
+  'int',
+  'double',
+  'char',
+  'std::string',
+  'error',
+]);
 
 /** Whether a block may change the symbol where it is visible (03 §3.6). */
 function isAssignable(symbol: SymbolInfo): boolean {
@@ -124,9 +131,9 @@ export function symbolMatchesKinds(symbol: SymbolInfo, kinds: SymbolRefKinds): b
       return symbol.kind === 'enum';
     case 'assignable':
       return isAssignable(symbol);
-    case 'numeric':
+    case 'changeable':
       return (
-        isAssignable(symbol) && typeof symbol.type === 'string' && NUMERIC_TYPES.has(symbol.type)
+        isAssignable(symbol) && typeof symbol.type === 'string' && CHANGEABLE_TYPES.has(symbol.type)
       );
     case 'variables':
       return isVariable(symbol);

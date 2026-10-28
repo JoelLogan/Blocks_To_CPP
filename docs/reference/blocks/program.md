@@ -8,7 +8,7 @@ Toolbox icon: ▶. Back to [all categories](README.md).
 
 | Block | Friendly label | C++ form | Help | Fields | Inputs |
 | --- | --- | --- | --- | --- | --- |
-| `program.main` (hat) | `when program starts` | `int main()` | The program starts here. A project has exactly one of these blocks. | — | `BODY`: blocks. |
+| `program.main` (hat) | `when program starts %ARGS with arguments %ARGV` | `int main(%ARGS %ARGV)` | The program starts here. A project has exactly one of these blocks. Tick with arguments to read what the program was started with, as a read-only list of text whose first item is the program's own name. | `ARGS`: on or off, default off. `ARGV`: the name of the new variable. | `BODY`: blocks. |
 | `program.exit` (statement) | `stop program with exit code %CODE` | `return %CODE / std::exit(%CODE)` | Ends the program. Exit code 0 means success. | — | `CODE`: a whole number; default `0`. |
 
 ## In the toolbox

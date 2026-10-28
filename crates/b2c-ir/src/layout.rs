@@ -247,6 +247,7 @@ mod tests {
                 item(
                     ItemKind::Main(MainDef {
                         body: Block::default(),
+                        args: None,
                     }),
                     "b_main",
                 ),

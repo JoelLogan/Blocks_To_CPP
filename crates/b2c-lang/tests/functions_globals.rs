@@ -696,3 +696,146 @@ fn globals_that_need_each_other_are_a_circle() {
         ]
     );
 }
+
+// --- change's new forms, flip and the program's arguments (w2.md §1.9) ------------------
+
+/// *flip* `name`.
+fn flip(id: &str, name: &str) -> Value {
+    serde_json::json!({"id": id, "type": "var.flip", "v": 1, "fields": {"VAR": {"ref": sym(name)}}})
+}
+
+/// *change* `name` with the operator `op` by `by`, with its own block ID.
+fn change_with(id: &str, name: &str, op: &str, by: Value) -> Value {
+    serde_json::json!({"id": id, "type": "var.change", "v": 1,
+                       "fields": {"VAR": {"ref": sym(name)}, "OP": op}, "inputs": {"BY": by}})
+}
+
+#[test]
+fn text_is_added_to_the_end_and_whole_numbers_change_bitwise() {
+    let a = analyze(&doc(vec![main(vec![
+        declare("std::string", "s", Some(e("\"ab\""))),
+        declare("int", "n", Some(e("6"))),
+        declare("bool", "done", Some(e("false"))),
+        change_with("c1", "s", "append", e("\"cd\"")),
+        change_with("c2", "s", "append", e("'e'")),
+        change_with("c3", "n", "and", e("3")),
+        change_with("c4", "n", "shl", e("'a'")),
+        flip("f1", "done"),
+    ])]));
+    assert_clean(&a);
+    let stmts = main_json(&a);
+    assert_eq!(stmts[3]["kind"]["compound_assign"]["op"], "append");
+    assert_eq!(stmts[5]["kind"]["compound_assign"]["op"], "bit_and");
+    assert_eq!(stmts[7]["kind"]["flip"]["target"], sym("done"));
+}
+
+#[test]
+fn each_form_of_change_takes_its_own_types() {
+    let a = analyze(&doc(vec![main(vec![
+        declare("std::string", "s", Some(e("\"ab\""))),
+        declare("double", "x", Some(e("1.5"))),
+        declare("int", "n", Some(e("6"))),
+        change_with("c1", "n", "append", e("\"cd\"")),
+        change_with("c2", "s", "append", e("3")),
+        change_with("c3", "x", "xor", e("1")),
+        change_with("c4", "n", "or", e("1.5")),
+        change_with("c5", "s", "add", e("1")),
+    ])]));
+    let found = reported(&a);
+    assert_eq!(found.len(), 5, "{found:#?}");
+    assert_eq!(
+        found[0],
+        "error B2C-E0302 at c1: `n` holds a whole number, and 'add to the end' only works on text. Choose \
+         another operation in this block's menu."
+    );
+    assert!(
+        found[1].starts_with(
+            "error B2C-E0301 at c2 BY[0..1]: Only text or a character can be added to the end of `s`"
+        ),
+        "{found:#?}"
+    );
+    assert!(
+        found[2].starts_with("error B2C-E0302 at c3: `x` holds a decimal number, and the bitwise operations"),
+        "{found:#?}"
+    );
+    assert!(
+        found[3].starts_with("error B2C-E0301 at c4 BY[0..1]: The amount must be a whole number"),
+        "{found:#?}"
+    );
+    assert!(
+        found[4].ends_with("To add to the end of the text, choose 'add to the end' in this block's menu."),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn only_a_true_false_variable_that_may_change_is_flipped() {
+    let a = analyze(&doc(vec![main(vec![
+        declare("int", "n", Some(e("1"))),
+        declare_const("bool", "fixed", e("true")),
+        flip("f1", "n"),
+        flip("f2", "fixed"),
+    ])]));
+    let found = reported(&a);
+    assert_eq!(found.len(), 2, "{found:#?}");
+    assert_eq!(
+        found[0],
+        "error B2C-E0301 at f1 field VAR: Only a true/false variable can be flipped, but `n` holds a whole \
+         number."
+    );
+    assert!(
+        found[1].starts_with("error B2C-E0308 at f2 field VAR: `fixed` was created as a constant"),
+        "{found:#?}"
+    );
+}
+
+/// *when program starts with arguments* `args` (when `with`), with `body`.
+fn main_with_args(with: bool, body: Vec<Value>) -> Value {
+    serde_json::json!({"id": "main", "type": "program.main", "v": 1,
+                       "fields": {"ARGS": with, "ARGV": {"sym": sym("args"), "name": "args"}},
+                       "statements": {"BODY": body}})
+}
+
+#[test]
+fn the_program_reads_its_arguments_but_never_changes_them() {
+    let a = analyze(&doc(vec![main_with_args(
+        true,
+        vec![declare("auto", "copy", Some(e("args")))],
+    )]));
+    assert_clean(&a);
+    let program = serde_json::to_value(&a.program).unwrap();
+    let main_item = &program["modules"][0]["items"][0]["kind"]["main"];
+    assert_eq!(main_item["args"], sym("args"));
+    let symbols = serde_json::to_value(&a.program.symbols).unwrap();
+    assert_eq!(
+        symbols["symbols"][sym("args")]["ty"],
+        serde_json::json!({"std::vector": "std::string"})
+    );
+    // Read-only.
+    let a = analyze(&doc(vec![main_with_args(
+        true,
+        vec![
+            serde_json::json!({"id": "s1", "type": "var.set", "v": 1, "fields": {"VAR": {"ref": sym("args")}},
+                                "inputs": {"VALUE": e("args")}}),
+        ],
+    )]));
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0308 at s1 field VAR: `args` holds the program's arguments and is read-only. Create a \
+          variable set to it to change a copy."
+        ]
+    );
+    // Without the tick there are none.
+    let a = analyze(&doc(vec![main_with_args(false, vec![print(vec![e("args")])])]));
+    assert_codes(&a, &["B2C-E0201"]);
+    // Ticked without a name.
+    let a = analyze(&doc(vec![
+        serde_json::json!({"id": "main", "type": "program.main", "v": 1,
+                                                 "fields": {"ARGS": true}}),
+    ]));
+    assert_eq!(
+        reported(&a),
+        ["error B2C-E0430 at main field ARGV: The program's arguments need a name."]
+    );
+}

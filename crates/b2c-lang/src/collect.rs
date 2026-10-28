@@ -156,7 +156,14 @@ impl Collector {
         };
         match block.block_type.as_str() {
             "program.main" => {
-                let path = [ListKey::new(&block.id, "BODY")];
+                // With arguments (w2.md §1.9), `ARGV` encloses the body as a
+                // function's parameters do.
+                let mut path = Vec::new();
+                if main_has_args(block) {
+                    path.push(ListKey::new(&block.id, PARAMS_LIST));
+                    self.record(block, "ARGV", DeclKind::Variable, status, &path);
+                }
+                path.push(ListKey::new(&block.id, "BODY"));
                 self.list(block, "BODY", &path, status, 1);
                 self.other_statements(block, &["BODY"], 1, status);
             }
@@ -392,6 +399,12 @@ fn loop_item_fields(block_type: &str) -> &'static [&'static str] {
         "file.for_each_line" => &["LINE"],
         _ => &[],
     }
+}
+
+/// Whether a `when program starts` block has *with arguments* ticked
+/// (`ARGS`, w2.md §1.9); a damaged tick counts as not ticked.
+pub(crate) fn main_has_args(block: &Block) -> bool {
+    crate::access::bool_field(block, "ARGS", false).unwrap_or(false)
 }
 
 #[cfg(test)]

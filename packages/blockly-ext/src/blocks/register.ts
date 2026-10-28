@@ -20,6 +20,7 @@ import { blockLayout, type BlockLayout, type LayoutItem } from './layout';
 import { MUTATOR_FOR_BLOCK } from './mutators';
 import { registerPlaceholderBlock } from './placeholder';
 import { applyShape } from './shape';
+import { applyShownWhileTicked } from './ticked';
 
 /** A block could not be built as its definition says (a missing mutator, a bad catalog entry). */
 export class BlockRegistrationError extends Error {
@@ -54,6 +55,7 @@ export function blockDefinition(def: BlockDefJson): { init: (this: Blockly.Block
   return {
     init(this: Blockly.Block): void {
       buildInputs(this, def, layout);
+      applyShownWhileTicked(this);
       applyShape(this, def.shape);
       this.setStyle(blockStyleFor(def.category, def.shape));
       this.setTooltip(tooltip);

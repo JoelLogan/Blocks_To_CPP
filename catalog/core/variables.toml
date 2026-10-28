@@ -112,22 +112,43 @@ category = "variables"
 shape = "statement"
 label = { friendly = "change %VAR %OP %BY", cpp = "%VAR %OP %BY;" }
 lowering = "builtin"
-help = "Adds to a variable (+=); choose down by (-=), times (*=), divided by (/=) or mod (%=) in the menu to subtract, multiply, divide or keep the remainder instead."
+help = "Adds to a variable (+=); choose down by (-=), times (*=), divided by (/=) or mod (%=) in the menu to subtract, multiply, divide or keep the remainder instead, or add to the end (+=) to add text or a character to the end of a text variable. With advanced blocks shown, the menu also has the bitwise forms (&=, |=, ^=, <<=, >>=) for whole numbers."
 
 [[block.field]]
 name = "VAR"
 kind = "symbol_ref"
 
+# `append` and the bitwise forms came with W2's package C2 (catalog 1.3.0,
+# docs/plans/m3-contracts/w2.md §1.9): a compatible change, so the version
+# stays 1. The editor lists the bitwise forms only with advanced blocks
+# shown, and only the options the chosen variable's type takes.
 [[block.field]]
 name = "OP"
 kind = "dropdown"
-options = [["by", "add"], ["down by", "sub"], ["times", "mul"], ["divided by", "div"], ["mod", "mod"]]
+options = [["by", "add"], ["down by", "sub"], ["times", "mul"], ["divided by", "div"], ["mod", "mod"], ["add to the end", "append"], ["bitwise and", "and"], ["bitwise or", "or"], ["bitwise xor", "xor"], ["shifted left by", "shl"], ["shifted right by", "shr"]]
 default = "add"
 
+# Any value, so that text can be added to the end of a text variable; the
+# analyser checks it against the operator and the variable.
 [[block.input]]
 name = "BY"
-check = "number"
+check = "any"
 default = [{ num = "1" }]
+
+[[block]]
+id = "var.flip"
+version = 1
+category = "variables"
+shape = "statement"
+label = { friendly = "flip %VAR", cpp = "%VAR = !%VAR;" }
+lowering = "builtin"
+help = "Turns a true/false variable to the other value: true becomes false, and false becomes true."
+
+# The menu lists the true/false variables that can change (w2.md §1.9).
+[[block.field]]
+name = "VAR"
+kind = "symbol_ref"
+type = "bool"
 
 [[block]]
 id = "var.get"

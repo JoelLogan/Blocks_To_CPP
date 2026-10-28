@@ -15,7 +15,7 @@ import { ROOT, repoPath } from './fixture.ts';
 
 /** The blocks the editor's dynamic categories add (b2c_catalog::DynamicCategory::blocks). */
 const DYNAMIC_BLOCKS = {
-  variables: ['var.get', 'var.set', 'var.change'],
+  variables: ['var.get', 'var.set', 'var.change', 'var.flip'],
   functions: ['func.call', 'func.call_stmt'],
 } as const;
 

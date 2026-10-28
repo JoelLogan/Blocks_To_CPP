@@ -20,8 +20,8 @@ export function isCatalogBlockType(type: string): boolean {
 /**
  * Field choices by block type and field name:
  * - which symbols a reference lists (docs/spec/03-block-language.md §3.6, `SymbolRefKinds`):
- *   getters list every variable; set and ask only what may be changed there; change (with any of
- *   its operators) only that of a number or character type; calls list functions;
+ *   getters list every variable; set and ask only what may be changed there; change only that of
+ *   a number, character or text type; calls list functions;
  * - text.char takes one printable ASCII character.
  *
  * The reference fields of milestone M3's wave W2 are listed before the catalog has their blocks
@@ -37,7 +37,8 @@ export const CATALOG_FIELD_OPTIONS: Readonly<
 > = Object.freeze({
   'var.get': { VAR: { kinds: 'variables' } },
   'var.set': { VAR: { kinds: 'assignable' } },
-  'var.change': { VAR: { kinds: 'numeric' } },
+  // Numbers and text (*add to the end*, w2.md §1.9); true/false variables are flipped.
+  'var.change': { VAR: { kinds: 'changeable' } },
   'io.ask': { VAR: { kinds: 'assignable' } },
   'func.call': { FUNC: { kinds: 'functions' } },
   'func.call_stmt': { FUNC: { kinds: 'functions' } },

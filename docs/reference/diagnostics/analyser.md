@@ -254,7 +254,10 @@ Codes by area:
   but this block goes through a list, a deque, a set or text. Use 'for each
   key, value' for a map." / "The items of a list of true/false values can't
   be changed one by one in a loop. Choose 'copy', and use 'set item' to
-  change an item."
+  change an item." / "Only text or a character can be added to the end of
+  `s`, but this is a whole number. Use the 'as text' block to add it as
+  text." / "Only a true/false variable can be flipped, but `n` holds a whole
+  number."
 * **How to fix:** use a value of the right type. Use `join` to turn numbers
   into text.
 
@@ -263,14 +266,18 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** an operator does not work with these values: arithmetic or
   `mod` on text, comparing text with a number or character, `and`/`or`/`not`
-  on text, or `change by` on a text variable. Arithmetic, the signs and
+  on text, `change by` on a text variable, `change … add to the end` on a
+  variable that is not text, or a bitwise `change` (`&=`, `|=`, `^=`, `<<=`,
+  `>>=`) on a variable that is not an `int`. Arithmetic, the signs and
   `change by` need numbers (or true/false values), and `and`, `or` and `not`
   true/false values (or numbers), so a list or a struct is refused there
   too. Two values that are not numbers, true/false values or text can be
   compared only when they have the same type and that type is comparable
   (see `B2C-E0313`): "Can't compare a list of int with a list of double."
 * **Example:** `(name) - (1)` where `name` is text.
-* **Message:** "Can't subtract text: - only works with numbers."
+* **Message:** "Can't subtract text: - only works with numbers." / "`n`
+  holds a whole number, and 'add to the end' only works on text. Choose
+  another operation in this block's menu."
 * **How to fix:** use values of the right type, or a block meant for text
   (such as `join`).
 
@@ -365,6 +372,8 @@ Codes by area:
   part, so it can't be changed. Create a variable for a value that changes."
   / for a global constant, "`kMax` is a global constant, so it can't be
   changed. Choose 'variable' in its 'global' block if it needs to change."
+  / for the program's arguments, "`args` holds the program's arguments and
+  is read-only. Create a variable set to it to change a copy."
 * **How to fix:** untick *const*, choose *variable* in a *global* block, use
   another variable, or change the input's or the loop's mode.
 
@@ -728,7 +737,7 @@ Codes by area:
 * **Message:** "This block needs a condition." / "Choose a variable in this
   block." / "Choose a collection in this block." / "`pow` is not one of the
   choices for this setting." / "`kMax` is a constant, so it needs a value: give it
-  one, or choose 'variable'."
+  one, or choose 'variable'." / "The program's arguments need a name."
 * **How to fix:** fill in the missing part, or choose the setting again.
 
 ## B2C-E0431 Blocks nested too deeply

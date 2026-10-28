@@ -142,8 +142,8 @@ describe('registerB2cBlocks', () => {
     expect(kindsOf('var.get', 'VAR')).toBe('variables');
     expect(kindsOf('var.set', 'VAR')).toBe('assignable');
     expect(kindsOf('io.ask', 'VAR')).toBe('assignable');
-    // change counts with its operators: text and true/false variables cannot take part.
-    expect(kindsOf('var.change', 'VAR')).toBe('numeric');
+    // change counts numbers and adds to the end of text; true/false variables are flipped.
+    expect(kindsOf('var.change', 'VAR')).toBe('changeable');
     expect(kindsOf('func.call', 'FUNC')).toBe('functions');
     const char = workspace.newBlock('text.char').getField('VALUE');
     expect(char instanceof B2cTextField && char.singleChar).toBe(true);
@@ -225,8 +225,9 @@ describe('blockLayout', () => {
     ]);
     expect(describeLayout(def('math.arithmetic'))).toEqual(['value:A[]', 'value:B[OP]']);
     expect(describeLayout(def('text.char'))).toEqual([`dummy:b2c_row0["character '" VALUE "'"]`]);
+    // The arguments' tick and name (w2.md §1.9); the name shows only while ticked.
     expect(describeLayout(def('program.main'))).toEqual([
-      'dummy:b2c_row0["when program starts"]',
+      'dummy:b2c_row0["when program starts" ARGS "with arguments" ARGV]',
       'statement:BODY[]',
     ]);
   });

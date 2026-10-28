@@ -457,12 +457,12 @@ describe('symbol references', () => {
       symbol('s_x', 'x', 'variable', { type: 'double' }),
       symbol('s_c', 'c', 'variable', { type: 'char' }),
       symbol('s_auto', 'unknown', 'variable', { type: 'error' }),
-      symbol('s_name', 'name', 'variable', { type: 'string' }),
+      symbol('s_name', 'name', 'variable', { type: 'std::string' }),
       symbol('s_won', 'won', 'variable', { type: 'bool' }),
       symbol('s_max', 'MAX', 'variable', { isConst: true }),
       symbol('s_i', 'i', 'loopVariable'),
       symbol('s_copy', 'copy', 'parameter', { mode: 'copy' }),
-      symbol('s_edit', 'edit', 'parameter', { mode: 'editable', type: 'string' }),
+      symbol('s_edit', 'edit', 'parameter', { mode: 'editable', type: 'std::string' }),
       symbol('s_ro', 'ro', 'parameter', { mode: 'read_only' }),
       symbol('s_f', 'f', 'function'),
     ];
@@ -489,9 +489,8 @@ describe('symbol references', () => {
     const assignable = ['n', 'x', 'c', 'unknown', 'name', 'won', 'copy', 'edit'];
     expect(listed('var.set')).toEqual(assignable);
     expect(listed('io.ask')).toEqual(assignable);
-    // change (with each of its operators) also leaves out text and true/false variables.
-    const numeric = ['n', 'x', 'c', 'unknown', 'copy'];
-    expect(listed('var.change')).toEqual(numeric);
+    // change also leaves out true/false variables, which are flipped instead (w2.md §1.9).
+    expect(listed('var.change')).toEqual(['n', 'x', 'c', 'unknown', 'name', 'copy', 'edit']);
   });
 
   it('keep a chosen reference shown and first when it is not of the field’s kinds', () => {
@@ -502,14 +501,14 @@ describe('symbol references', () => {
       {
         [change.id]: [
           symbol('s_n', 'n'),
-          symbol('s_name', 'name', 'variable', { type: 'string' }),
+          symbol('s_won', 'won', 'variable', { type: 'bool' }),
           symbol('s_i', 'i', 'loopVariable'),
         ],
       },
-      { s_name: 'name', s_i: 'i' },
+      { s_won: 'won', s_i: 'i' },
     );
     for (const [ref, label] of [
-      ['s_name', 'name'],
+      ['s_won', 'won'],
       ['s_i', 'i'],
     ] as const) {
       field.setRef({ ref });
@@ -788,6 +787,13 @@ describe('dropdown fields', () => {
       ['times', 'mul'],
       ['divided by', 'div'],
       ['mod', 'mod'],
+      // W2's package C2 (w2.md §1.9): with no variable chosen, every operator is listed.
+      ['add to the end', 'append'],
+      ['bitwise and', 'and'],
+      ['bitwise or', 'or'],
+      ['bitwise xor', 'xor'],
+      ['shifted left by', 'shl'],
+      ['shifted right by', 'shr'],
     ]);
     expect(catalogBlock('var.update')).toBeUndefined();
   });

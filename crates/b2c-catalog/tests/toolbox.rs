@@ -131,9 +131,16 @@ fn every_catalog_block_is_reachable_exactly_as_planned() {
         .flat_map(|c| c.entries.iter().map(|e| e.block.as_str()))
         .collect();
     let dynamic: BTreeSet<&str> = catalog_ids.difference(&static_ids).copied().collect();
-    let expected: BTreeSet<&str> = ["var.get", "var.set", "var.change", "func.call", "func.call_stmt"]
-        .into_iter()
-        .collect();
+    let expected: BTreeSet<&str> = [
+        "var.get",
+        "var.set",
+        "var.change",
+        "var.flip",
+        "func.call",
+        "func.call_stmt",
+    ]
+    .into_iter()
+    .collect();
     assert_eq!(dynamic, expected);
     // Every entry sits in its block's own category.
     for category in &toolbox().categories {
@@ -518,7 +525,7 @@ fn bad_entries_and_categories_are_rejected() {
     // Without its dynamic kind, the Variables category no longer reaches
     // the variable blocks.
     let messages = messages_after(|t| category(t, Category::Variables).dynamic = None);
-    assert_eq!(messages.len(), 3, "{messages:?}");
+    assert_eq!(messages.len(), 4, "{messages:?}");
     // An empty toolbox.
     let messages = messages_after(|t| t.categories.clear());
     assert_eq!(messages[0], "the toolbox has no categories");

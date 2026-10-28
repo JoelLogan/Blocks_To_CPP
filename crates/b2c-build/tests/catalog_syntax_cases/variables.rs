@@ -30,6 +30,47 @@ pub(super) fn cases(b: &Blocks) -> Vec<Case> {
             "changes the int x, after create x and before a print of x, in main",
             b.with_x(b.block("var.change", &json!({ "fields": { "VAR": reference(X) } }))),
         ),
+        Case::variant(
+            "var.change",
+            "append",
+            "adds \"!\" to the end of the text t, after create t and before a print of t, in main",
+            vec![b.main(&[
+                b.block(
+                    "var.declare",
+                    &json!({ "fields": { "TYPE": "std::string", "NAME": declaration("s_t", "t") },
+                             "inputs": { "VALUE": tokens(&json!([{ "str": "hi" }])) } }),
+                ),
+                b.block(
+                    "var.change",
+                    &json!({ "fields": { "VAR": reference("s_t"), "OP": "append" },
+                             "inputs": { "BY": tokens(&json!([{ "str": "!" }])) } }),
+                ),
+                b.print(&tokens(&json!([reference("s_t")]))),
+            ])],
+        ),
+        Case::variant(
+            "var.change",
+            "bitwise",
+            "shifts the int x left by 2, after create x and before a print of x, in main",
+            b.with_x(b.block(
+                "var.change",
+                &json!({ "fields": { "VAR": reference(X), "OP": "shl" },
+                         "inputs": { "BY": tokens(&json!([{ "num": "2" }])) } }),
+            )),
+        ),
+        Case::new(
+            "var.flip",
+            "flips the bool done, after create done and before a print of done, in main",
+            vec![b.main(&[
+                b.block(
+                    "var.declare",
+                    &json!({ "fields": { "TYPE": "bool", "NAME": declaration("s_done", "done") },
+                             "inputs": { "VALUE": tokens(&json!([{ "kw": "false" }])) } }),
+                ),
+                b.block("var.flip", &json!({ "fields": { "VAR": reference("s_done") } })),
+                b.print(&tokens(&json!([reference("s_done")]))),
+            ])],
+        ),
         Case::new(
             "var.get",
             "the int x, printed after create x in main",

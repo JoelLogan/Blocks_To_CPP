@@ -303,11 +303,16 @@ impl Emitter {
             self.p.fixed("const ");
         }
         self.ty(&param.ty);
-        if param.style != ParamStyle::Value {
-            self.p.fixed("&");
+        match param.style {
+            ParamStyle::Value => {}
+            ParamStyle::Ref | ParamStyle::ConstRef => self.p.fixed("&"),
+            ParamStyle::PointerArray => self.p.fixed("*"),
         }
         self.p.fixed(" ");
         self.p.ident(&param.name);
+        if param.style == ParamStyle::PointerArray {
+            self.p.fixed("[]");
+        }
         if default && let Some(value) = &param.default {
             self.p.fixed(" = ");
             self.expr(value);

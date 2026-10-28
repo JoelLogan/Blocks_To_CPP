@@ -221,6 +221,8 @@ describe('the slot fixture', () => {
       'func.return',
       'io.decimals',
       'math.random_real',
+      // W2's package C2: main's arguments (w2.md §1.9).
+      'program.main',
       'text.case',
       'text.find',
       'text.length',
@@ -236,7 +238,8 @@ describe('the slot fixture', () => {
       'type.new',
       'type.set_field',
       'var.declare',
-      // W2's globals (w2.md §2.7).
+      // W2's flip and globals (w2.md §1.9, §2.7).
+      'var.flip',
       'var.global',
       'var.set',
     ]);

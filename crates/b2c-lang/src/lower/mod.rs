@@ -624,16 +624,52 @@ impl<'d> Lowerer<'d> {
         self.begin_item(ItemCtx::Main);
         self.record_block(&block.id);
         self.add_headers(block, true);
+        // With arguments (w2.md §1.9): `ARGV` encloses the body, as a
+        // function's parameters do.
+        let with_args = self.checkbox(block, "ARGS", false);
+        let args = if with_args {
+            self.scopes.push(ListKey::new(&block.id, PARAMS_LIST), false);
+            self.declare_main_args(block)
+        } else {
+            None
+        };
         let (body, end) = self.body_and_end(block, "BODY", false);
+        if with_args {
+            self.scopes.pop();
+        }
         // What parked blocks see (06 §6.5).
         self.index.record_main_end(end);
         Item {
-            kind: ItemKind::Main(MainDef { body }),
+            kind: ItemKind::Main(MainDef { body, args }),
             origin: self.origin(&block.id, Part::Whole),
             comment: self.comment(block),
             headers: std::mem::take(&mut self.headers),
             shared: false,
         }
+    }
+
+    /// Declares `main`'s arguments (`ARGV`), a read-only list of text.
+    fn declare_main_args(&mut self, block: &Block) -> Option<SymbolId> {
+        let location = self.loc(&block.id, field("ARGV"));
+        let Ok(decl) = access::decl_field(block, "ARGV") else {
+            self.incomplete(location, "The program's arguments need a name.");
+            return None;
+        };
+        let ident = self.ident(&decl.name, &location, false);
+        self.warn_if_hides_definition(&decl.name, &location);
+        let text = Type::String;
+        let ty = Type::lib(b2c_ir::types::LibType::Vector, vec![text]).unwrap_or(Type::Error);
+        let symbol = Symbol {
+            name: ident,
+            kind: SymbolKind::Variable { is_const: true },
+            ty,
+            origin: self.origin(&block.id, field("ARGV")),
+        };
+        if !self.insert_symbol(&decl.sym, &decl.name, symbol, location) {
+            return None;
+        }
+        self.scopes.declare(&decl.name, &decl.sym);
+        Some(decl.sym.clone())
     }
 
     fn function(&mut self, block: &Block) -> Option<Item> {

@@ -6,9 +6,10 @@
  *
  * - **Program**: *when program starts* while the project has none, otherwise a note saying where
  *   the program starts; then the category's other entries;
- * - **Variables**: *Make a variable*, the `create` block, one *set*, and, while a variable of a
- *   whole-number, decimal or character type exists, one *change* (whose menu also gives the other
- *   update operators), each preset to the first variable of `main` it fits (by name), or else to
+ * - **Variables**: *Make a variable*, the `create` and `global` blocks, one *set*, and, while a
+ *   variable of a whole-number, decimal or character type exists, one *change* (whose menu also
+ *   gives the other update operators), and while a true/false variable that may change exists, one
+ *   *flip*, each preset to the first variable of `main` it fits (by name), or else to
  *   the first one of the module it fits; then a getter for each variable of the module, grouped
  *   by where it is seen (the module's globals under *Everywhere*, w2.md §2.7, then by the function
  *   that declares it, `main` first, then the functions by name) and sorted by name
@@ -100,11 +101,17 @@ export const MAX_LISTED_FUNCTIONS = 200;
 /** The longest project name a label shows, in characters (longer ones end with `…`). */
 export const MAX_LABEL_NAME_CHARS = 40;
 
-/** The program block's friendly label (`when program starts`), from the catalog. */
-export const PROGRAM_LABEL = catalogBlock(MAIN_TYPE)?.label.friendly ?? 'when program starts';
+/**
+ * The program block's name (`when program starts`): its friendly label up to its first field, from
+ * the catalog (the label goes on with the arguments' tick, w2.md §1.9).
+ */
+export const PROGRAM_LABEL =
+  catalogBlock(MAIN_TYPE)?.label.friendly.split('%')[0]?.trim() ?? 'when program starts';
 
 /** The block that changes a number variable: by, down by, times, divided by or mod an amount. */
 const CHANGE_TYPE = 'var.change';
+/** The block that turns a true/false variable to its other value (w2.md §1.9). */
+const FLIP_TYPE = 'var.flip';
 /** The block that gives a variable a value. */
 const SET_TYPE = 'var.set';
 /** The block that reads a variable. */
@@ -440,15 +447,19 @@ export function moreVariablesNote(count: number): string {
 
 /**
  * Whether block `type`'s variable menu lists `symbol` (03 §3.6) and, for *change*, whether it
- * holds a whole number, a decimal number or a character (decision D3): the variables a generic
- * block of the toolbox may be preset to, and re-targeted to where it is dropped (./landing.ts).
+ * holds a whole number, a decimal number or a character (decision D3), for *flip* whether it holds
+ * true or false: the variables a generic block of the toolbox may be preset to, and re-targeted to
+ * where it is dropped (./landing.ts).
  */
 export function fitsGenericBlock(type: string, symbol: SymbolInfo): boolean {
   const kinds = catalogFieldOptions(type, VAR_FIELD).kinds ?? 'variables';
-  return (
-    symbolMatchesKinds(symbol, kinds) &&
-    (type === SET_TYPE || (typeof symbol.type === 'string' && NUMBER_TYPES.has(symbol.type)))
-  );
+  if (!symbolMatchesKinds(symbol, kinds)) {
+    return false;
+  }
+  if (type === FLIP_TYPE) {
+    return symbol.type === 'bool';
+  }
+  return type === SET_TYPE || (typeof symbol.type === 'string' && NUMBER_TYPES.has(symbol.type));
 }
 
 /** The variable a generic block is preset to: the first of `main` it fits, else of the module. */
@@ -490,6 +501,10 @@ export function variablesContents(
   const changed = presetVariable(CHANGE_TYPE, groups);
   if (changed !== null) {
     items.push(genericItem(CHANGE_TYPE, changed));
+  }
+  const flipped = presetVariable(FLIP_TYPE, groups);
+  if (flipped !== null) {
+    items.push(genericItem(FLIP_TYPE, flipped));
   }
   let listed = 0;
   let total = 0;

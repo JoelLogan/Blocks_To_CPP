@@ -13,6 +13,8 @@
 //! one `const`. A constant needs a value (`B2C-E0430`) and can't be changed
 //! (`B2C-E0308`). The declaration graph (`order.rs`) puts the globals in
 //! order, and reports a circle of them (`B2C-E0421`).
+//!
+//! *flip* turns a `bool` variable that may change to its other value.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -275,11 +277,21 @@ impl<'d> Lowerer<'d> {
         self.global_items.insert(id.clone(), item);
     }
 
-    /// *flip*.
-    #[allow(clippy::unused_self, reason = "a stub until package C2 lowers the blocks")]
+    /// *flip* (`done = !done;`): a `bool` variable that may change.
     pub(super) fn global_statement(&mut self, block: &Block) -> Option<StmtKind> {
-        let _ = block;
-        None
+        let (target, ty) = self.target(block)?;
+        if let Some(ty) = ty.filter(|ty| *ty != Type::Bool && *ty != Type::Error)
+            && self.checking()
+        {
+            let message = format!(
+                "Only a true/false variable can be flipped, but {} holds {}.",
+                self.name_of(&target),
+                crate::messages::a_type(&ty, &self.symbols)
+            );
+            let location = self.loc(&block.id, field("VAR"));
+            self.diags.error(codes::CONVERSION, location, message);
+        }
+        Some(StmtKind::Flip { target })
     }
 }
 

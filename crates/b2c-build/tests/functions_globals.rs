@@ -15,6 +15,8 @@
 //! * globals and constants: `constexpr` or `const`, a constant as a `case`
 //!   label beside a switch on an enum, and a global set from a function
 //!   printed after the global that function reads;
+//! * *change*'s *add to the end* and bitwise forms, *flip*, and `main` with
+//!   its arguments;
 
 // Test code: unwrap/expect/panic and builders that take JSON by value are
 // fine here.
@@ -329,8 +331,22 @@ fn builds_and_runs(
     warnings: &[&str],
     expected: &Ran,
 ) -> String {
+    builds_and_runs_main(name, &json!({}), top, body, files, warnings, expected)
+}
+
+/// [`builds_and_runs`] with these fields on `main` (its arguments).
+fn builds_and_runs_main(
+    name: &str,
+    fields: &Value,
+    top: &[Value],
+    body: Vec<Value>,
+    files: &[(&str, &str)],
+    warnings: &[&str],
+    expected: &Ran,
+) -> String {
     let main = json!({
-        "id": "main", "type": "program.main", "v": 1, "x": 40, "y": 40, "statements": { "BODY": Value::Array(body) },
+        "id": "main", "type": "program.main", "v": 1, "x": 40, "y": 40, "fields": fields,
+        "statements": { "BODY": Value::Array(body) },
     });
     let blocks: Vec<Value> = std::iter::once(main).chain(top.iter().cloned()).collect();
     let compilers = compilers();
@@ -678,4 +694,58 @@ fn globals_and_constants_run_in_the_order_they_need() {
     let at = |text: &str| cpp.find(text).unwrap();
     assert!(at("enum class Mode") < at("int next_id();"), "{cpp}");
     assert!(at("int next_id();") < at("int start = 41;"), "{cpp}");
+}
+
+#[test]
+fn change_flip_and_the_programs_arguments_run() {
+    let b = Blocks::default();
+    let create = |ty: &str, name: &str, value: Value| {
+        b.block(
+            "var.declare",
+            &json!({ "fields": { "TYPE": ty, "NAME": { "sym": format!("s_{name}"), "name": name } },
+                     "inputs": { "VALUE": value } }),
+        )
+    };
+    let change = |name: &str, op: &str, by: Value| {
+        b.block(
+            "var.change",
+            &json!({ "fields": { "VAR": { "ref": format!("s_{name}") }, "OP": op }, "inputs": { "BY": by } }),
+        )
+    };
+    let body = vec![
+        create("std::string", "word", text("ab")),
+        change("word", "append", text("cd")),
+        change("word", "append", letter("e")),
+        create("int", "bits", number("6")),
+        change("bits", "and", number("3")),
+        change("bits", "shl", number("4")),
+        change("bits", "xor", number("1")),
+        create("bool", "done", json!({ "expr": [{ "kw": "false" }] })),
+        b.block("var.flip", &json!({ "fields": { "VAR": { "ref": "s_done" } } })),
+        b.print(vec![tokens(&["word"])]),
+        b.print(vec![tokens(&["bits"])]),
+        b.print(vec![tokens(&["done"])]),
+        // The program's own name is its only argument here.
+        b.print(vec![json!({ "block": b.block(
+            "coll.length",
+            &json!({ "fields": { "LIST": { "ref": "s_args" } } }),
+        ) })]),
+    ];
+    let cpp = builds_and_runs_main(
+        "change_flip_args",
+        &json!({ "ARGS": true, "ARGV": { "sym": "s_args", "name": "args" } }),
+        &[],
+        body,
+        &[],
+        &[],
+        &printed("abcde\n33\ntrue\n1\n"),
+    );
+    for expected in [
+        "int main(int argc, char* argv[]) {\n    const std::vector<std::string> args(argv, argv + argc);\n",
+        "    word += \"cd\";\n    word += 'e';\n",
+        "    bits &= 3;\n    bits <<= 4;\n    bits ^= 1;\n",
+        "    done = !done;\n",
+    ] {
+        assert!(cpp.contains(expected), "{expected}\n{cpp}");
+    }
 }

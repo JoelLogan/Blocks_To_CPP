@@ -76,7 +76,7 @@ pub struct ToolboxCategory {
 #[serde(rename_all = "snake_case")]
 pub enum DynamicCategory {
     /// A getter for each variable, and the blocks that change a variable
-    /// (*set* and *change*) with one already chosen (04 §4.2).
+    /// (*set*, *change* and *flip*) with one already chosen (04 §4.2).
     Variables,
     /// Under *Your functions*: a call block for every function of the module
     /// shown.
@@ -87,7 +87,7 @@ impl DynamicCategory {
     /// The catalog blocks this kind adds (the only way to reach them).
     pub const fn blocks(self) -> &'static [&'static str] {
         match self {
-            Self::Variables => &["var.get", "var.set", "var.change"],
+            Self::Variables => &["var.get", "var.set", "var.change", "var.flip"],
             Self::Functions => &["func.call", "func.call_stmt"],
         }
     }

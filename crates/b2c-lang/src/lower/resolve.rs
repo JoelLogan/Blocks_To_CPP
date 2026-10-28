@@ -126,6 +126,16 @@ impl Lowerer<'_> {
                  for a value that changes."
             ));
         }
+        // `main`'s arguments (w2.md §1.9).
+        if self.decls.get(sym).is_some_and(|decl| {
+            decl.kind == DeclKind::Variable
+                && matches!(&decl.location.part, Part::Field { name } if name == "ARGV")
+        }) {
+            return Some(format!(
+                "{name} holds the program's arguments and is read-only. Create a variable set to it to change \
+                 a copy."
+            ));
+        }
         // The line of *for each line in file* (w2.md §1.8), the loop item
         // that its block's `LINE` field declares.
         if self.decls.get(sym).is_some_and(|decl| {

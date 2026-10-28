@@ -53,11 +53,6 @@ export const REQUIREMENTS: ReadonlyMap<string, Requirement> = new Map(
  * that exists.
  */
 export const AWAITED: ReadonlyMap<string, string> = new Map([
-  ['option:var.change.OP=and', 'W2 (C2): the bitwise forms of change'],
-  ['option:var.change.OP=or', 'W2 (C2): the bitwise forms of change'],
-  ['option:var.change.OP=xor', 'W2 (C2): the bitwise forms of change'],
-  ['option:var.change.OP=shl', 'W2 (C2): the bitwise forms of change'],
-  ['option:var.change.OP=shr', 'W2 (C2): the bitwise forms of change'],
   ['block:text.format', 'W4: format … with'],
   ['category:memory', 'M4: the Memory category'],
   ['category:concurrency', 'M4: the Concurrency category'],

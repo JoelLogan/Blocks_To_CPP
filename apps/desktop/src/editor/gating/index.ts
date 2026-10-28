@@ -25,5 +25,6 @@ export {
   optionLabel,
   partsMissingFromCppLabel,
 } from './labels';
+export { installOptionGate } from './install';
 export { editorMode, modeKey } from './mode';
 export { AWAITED, REQUIREMENTS, requirementKey, type RequirementKind } from './table';

@@ -4,6 +4,7 @@
  */
 import type * as Blockly from 'blockly/core';
 
+import { optionOffered } from './option-filter';
 import { B2cOptionsFieldBase, isOptionList, type OptionPair } from './options-base';
 
 /** Options of a dropdown field. */
@@ -20,6 +21,27 @@ export interface DropdownFieldConfig {
 export class B2cDropdownField extends B2cOptionsFieldBase {
   constructor(options: readonly OptionPair[], value: string | null = null, ariaLabel = 'Choices') {
     super(options, value, ariaLabel);
+  }
+
+  /**
+   * The options the menu lists: those the editor's mode and the block's chosen variable offer
+   * (./option-filter.ts), and always the current value; every option when none would be left.
+   */
+  override getOptions(useCache?: boolean): Blockly.MenuOption[] {
+    const all = super.getOptions(useCache);
+    const block = this.getSourceBlock();
+    const name = this.name;
+    if (block === null || name === undefined) {
+      return all;
+    }
+    const current = this.getValue();
+    const offered = all.filter(
+      (option) =>
+        typeof option[1] !== 'string' ||
+        option[1] === current ||
+        optionOffered(block, name, option[1]),
+    );
+    return offered.length > 0 ? offered : all;
   }
 
   /**

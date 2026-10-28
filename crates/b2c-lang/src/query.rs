@@ -843,7 +843,7 @@ mod tests {
                 id: module.clone(),
                 name: String::from("main"),
                 items: vec![b2c_ir::sast::Item {
-                    kind: ItemKind::Main(b2c_ir::sast::MainDef { body }),
+                    kind: ItemKind::Main(b2c_ir::sast::MainDef { body, args: None }),
                     origin: Origin::whole(module, block("main")),
                     comment: None,
                     headers: b2c_ir::headers::ItemHeaders::default(),

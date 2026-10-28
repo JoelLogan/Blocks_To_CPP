@@ -583,6 +583,20 @@ describe('the Variables category', () => {
   });
 });
 
+describe('flip in the Variables category', () => {
+  it('is offered while a true/false variable that may change exists, preset to it', () => {
+    const flips = (all: readonly SymbolInfo[]) =>
+      blocksOf(variablesContents(context({ declarations: { main: ['d_a', 'd_b'] }, all })))
+        .filter((block) => block.type === 'var.flip')
+        .map((block) => [varOf(block), block.retarget]);
+    expect(flips([variable('s_a', 'a', 'd_a')])).toEqual([]);
+    expect(flips([variable('s_a', 'a', 'd_a', { type: 'bool', isConst: true })])).toEqual([]);
+    expect(
+      flips([variable('s_a', 'a', 'd_a'), variable('s_b', 'b', 'd_b', { type: 'bool' })]),
+    ).toEqual([['s_b', 'VAR']]);
+  });
+});
+
 describe('the globals of the Variables category', () => {
   it('lists them first, under Everywhere, before main’s and each function’s variables', () => {
     const ctx = context({
@@ -1003,7 +1017,8 @@ describe('headings and labels', () => {
 
 describe('coverage of the catalog', () => {
   it('reaches every catalog block through one entry (getters and calls: one per symbol)', () => {
-    const variables = [variable('s_v', 'v', 'd_v'), variable('s_w', 'w', 'd_w')];
+    // A true/false variable brings flip (w2.md §1.9).
+    const variables = [variable('s_v', 'v', 'd_v'), variable('s_w', 'w', 'd_w', { type: 'bool' })];
     const value = symbolFixture('s_f', 'f', { kind: 'function', params: [], returns: 'int' });
     const action = symbolFixture('s_g', 'g', { kind: 'function', params: [], returns: 'void' });
     // Without main, so that Program offers it.

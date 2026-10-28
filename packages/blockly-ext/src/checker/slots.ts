@@ -272,7 +272,7 @@ function ofFieldKinds(field: Blockly.Field, symbol: SymbolInfo): boolean {
       return symbol.kind === 'enum';
     case 'variables':
     case 'assignable':
-    case 'numeric':
+    case 'changeable':
       return (
         symbol.kind === 'variable' ||
         symbol.kind === 'parameter' ||

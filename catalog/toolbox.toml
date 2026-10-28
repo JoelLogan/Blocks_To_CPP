@@ -3,8 +3,8 @@
 # Categories come in the order of §3.7. Each has a name, an icon (so colour is never the only
 # cue) and a colour token, which is the category ID; the colour values live in the editor theme.
 # `dynamic` marks a category whose blocks the editor adds for the open project: `variables`
-# (a getter for each variable, and the blocks that change a variable, *set* and *change*, with
-# one already chosen) and `functions` (under *Your functions*, a call block for every function
+# (a getter for each variable, and the blocks that change a variable, *set*, *change* and *flip*,
+# with one already chosen) and `functions` (under *Your functions*, a call block for every function
 # of the module shown).
 #
 # Entries are shown in order. An entry names a block, with an optional label (shown above it)

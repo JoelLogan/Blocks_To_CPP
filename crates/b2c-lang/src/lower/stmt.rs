@@ -1,6 +1,6 @@
 //! Lowering statement blocks (spec §3.7).
 
-use b2c_ir::diag::Part;
+use b2c_ir::diag::{Location, Part};
 use b2c_ir::ids::SymbolId;
 use b2c_ir::sast::{
     self, AskMode, CompoundOp, Expr, IfBranch, OutputStream, PrintSeparator, RangeDirection, Stmt, StmtKind,
@@ -86,14 +86,21 @@ impl Lowerer<'_> {
             "var.declare" => return self.declare(block),
             "var.set" => return self.set(block),
             "var.change" => {
-                // *by*, *down by*, *times*, *divided by* and *mod*; a block
-                // saved before catalog 1.2.0 has no `OP` and adds.
+                // *by*, *down by*, *times*, *divided by* and *mod*, *add to
+                // the end* and the bitwise forms (w2.md §1.9); a block saved
+                // before catalog 1.2.0 has no `OP` and adds.
                 let options = [
                     ("add", CompoundOp::Add),
                     ("sub", CompoundOp::Sub),
                     ("mul", CompoundOp::Mul),
                     ("div", CompoundOp::Div),
                     ("mod", CompoundOp::Mod),
+                    ("append", CompoundOp::Append),
+                    ("and", CompoundOp::BitAnd),
+                    ("or", CompoundOp::BitOr),
+                    ("xor", CompoundOp::BitXor),
+                    ("shl", CompoundOp::Shl),
+                    ("shr", CompoundOp::Shr),
                 ];
                 let op = self.choice(block, "OP", CompoundOp::Add, &options);
                 return self.compound(block, op, "BY");
@@ -235,7 +242,7 @@ impl Lowerer<'_> {
 
     /// The variable a statement changes (field `VAR`): its symbol and, when
     /// it resolves, its type.
-    fn target(&mut self, block: &Block) -> Option<(SymbolId, Option<Type>)> {
+    pub(super) fn target(&mut self, block: &Block) -> Option<(SymbolId, Option<Type>)> {
         let location = self.loc(&block.id, field("VAR"));
         if let Ok(sym) = access::ref_field(block, "VAR") {
             let ty = self.write_target(sym, &location);
@@ -297,11 +304,22 @@ impl Lowerer<'_> {
         let location = self.loc(&block.id, Part::Whole);
         let value_loc = value.origin.location();
         let name = self.name_of(sym);
+        match op {
+            CompoundOp::Append => return self.check_append(sym, target, value, location),
+            CompoundOp::BitAnd
+            | CompoundOp::BitOr
+            | CompoundOp::BitXor
+            | CompoundOp::Shl
+            | CompoundOp::Shr => {
+                return self.check_bitwise(sym, target, value, location);
+            }
+            _ => {}
+        }
         match target {
             Type::String => {
                 let message = format!(
-                    "{name} holds text, so it can't be changed by a number. To add to text, use a 'set' block \
-                     with a 'join' block."
+                    "{name} holds text, so it can't be changed by a number. To add to the end of the text, \
+                     choose 'add to the end' in this block's menu."
                 );
                 self.diags.error(codes::BAD_OPERANDS, location, message);
                 return;
@@ -362,6 +380,53 @@ impl Lowerer<'_> {
             self.diags.warning(codes::NARROWING, value_loc, message);
         } else if *target == Type::Double {
             self.warn_integer_division(value);
+        }
+    }
+
+    /// *add to the end* (`s += x;`, w2.md §1.9): text or a character added
+    /// to the end of a text variable.
+    fn check_append(&mut self, sym: &SymbolId, target: &Type, value: &Expr, location: Location) {
+        let name = self.name_of(sym);
+        if *target != Type::String {
+            let message = format!(
+                "{name} holds {}, and 'add to the end' only works on text. Choose another operation in this \
+                 block's menu.",
+                a_type(target, &self.symbols)
+            );
+            self.diags.error(codes::BAD_OPERANDS, location, message);
+            return;
+        }
+        if !matches!(value.ty, Type::String | Type::Char) {
+            let message = format!(
+                "Only text or a character can be added to the end of {name}, but this is {}. Use the 'as text' \
+                 block to add it as text.",
+                a_type(&value.ty, &self.symbols)
+            );
+            self.diags
+                .error(codes::CONVERSION, value.origin.location(), message);
+        }
+    }
+
+    /// The bitwise forms (`&=`, `|=`, `^=`, `<<=`, `>>=`; w2.md §1.9): an
+    /// `int` variable changed by a whole number.
+    fn check_bitwise(&mut self, sym: &SymbolId, target: &Type, value: &Expr, location: Location) {
+        let name = self.name_of(sym);
+        if *target != Type::Int {
+            let message = format!(
+                "{name} holds {}, and the bitwise operations only work on whole numbers (int). Choose another \
+                 operation in this block's menu.",
+                a_type(target, &self.symbols)
+            );
+            self.diags.error(codes::BAD_OPERANDS, location, message);
+            return;
+        }
+        if !matches!(value.ty, Type::Int | Type::Char) {
+            let message = format!(
+                "The amount must be a whole number, but this is {}.",
+                a_type(&value.ty, &self.symbols)
+            );
+            self.diags
+                .error(codes::CONVERSION, value.origin.location(), message);
         }
     }
 

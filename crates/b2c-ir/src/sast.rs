@@ -179,6 +179,11 @@ pub struct GlobalDef {
 pub struct MainDef {
     /// Statements of `main`.
     pub body: Block,
+    /// The program's arguments, when *with arguments* is ticked (w2.md
+    /// §1.9): a read-only `std::vector<std::string>` set from `argc` and
+    /// `argv` before the body. Serialised only when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<SymbolId>,
 }
 
 /// A user-defined function.
@@ -1230,6 +1235,7 @@ mod tests {
         let mut item = Item {
             kind: ItemKind::Main(MainDef {
                 body: Block::default(),
+                args: None,
             }),
             origin: Origin::whole(ModuleId::new("m").unwrap(), BlockId::new("b").unwrap()),
             comment: None,

@@ -418,7 +418,10 @@ impl Builder {
     pub(crate) fn main(&self, body: Vec<Stmt>) -> Item {
         let origin = self.origin();
         Item {
-            kind: ItemKind::Main(MainDef { body: block(body) }),
+            kind: ItemKind::Main(MainDef {
+                body: block(body),
+                args: None,
+            }),
             origin,
             comment: None,
             headers: ItemHeaders::default(),

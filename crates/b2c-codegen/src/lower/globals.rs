@@ -3,22 +3,29 @@
 //!
 //! P0 routes the nodes here (the dispatch in `mod.rs`, `stmt.rs` and
 //! `expr.rs`). A global is a `cast::CGlobal`, printed with the module's
-//! declarations in the declaration graph's order; *flip* prints as an error
-//! placeholder (`/* error */`) until its block exists. The forms they share
-//! are in `forms.rs` (P0's), the C++ nodes in `cast.rs`, the helpers in
-//! `helpers.rs`.
+//! declarations in the declaration graph's order; *flip* is `done = !done;`.
+//! The forms they share are in `forms.rs` (P0's), the C++ nodes in
+//! `cast.rs`, the helpers in `helpers.rs`.
 
 use b2c_ir::sast::{GlobalDef, Item, StmtKind, SymbolKind};
 
-use super::Lowerer;
-use crate::cast::{CGlobal, CStmtKind, Init, Qualifier};
+use super::{Lowerer, name_expr};
+use crate::cast::{AssignOp, CExpr, CGlobal, CStmtKind, Init, Qualifier, UnOp};
 
 impl Lowerer<'_> {
-    /// *flip* (`StmtKind::Flip`).
-    #[allow(clippy::unused_self, reason = "a stub until package C2 desugars the nodes")]
+    /// *flip* (`StmtKind::Flip`): `done = !done;`.
     pub(super) fn global_stmt(&mut self, kind: &StmtKind) -> CStmtKind {
-        let _ = kind;
-        CStmtKind::Error
+        let StmtKind::Flip { target } = kind else {
+            return CStmtKind::Error;
+        };
+        let Some(symbol) = self.variable(target) else {
+            return CStmtKind::Error;
+        };
+        CStmtKind::Assign {
+            target: symbol.name.clone(),
+            op: AssignOp::Set,
+            value: CExpr::unary(UnOp::Not, name_expr(symbol.name.clone())),
+        }
     }
 
     /// A global variable or constant (`ItemKind::Global`, w2.md §2.7):

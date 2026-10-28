@@ -230,6 +230,12 @@ fn checked(blocks: Vec<Value>) -> Vec<String> {
 fn a_parked_block_with_nothing_chosen_yet_is_only_a_warning() {
     let mut seen = 0;
     for def in b2c_catalog::core_catalog().blocks.values() {
+        // `when program starts` is never parked, and its name (`ARGV`) is
+        // needed only while *with arguments* is ticked (functions_globals.rs
+        // tests it).
+        if def.id == "program.main" {
+            continue;
+        }
         // One `B2C-E0430` at each name or reference field, in catalog
         // order (*for each key value* has three); a repeated field (w2.md
         // §2.1) is reported at its first part.

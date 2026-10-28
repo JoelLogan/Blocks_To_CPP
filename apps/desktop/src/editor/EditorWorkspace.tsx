@@ -23,6 +23,7 @@ import {
 } from '../app/editor-types';
 import { EDITOR_PLUGINS } from '../app/editorPlugins';
 import { useAppStore } from '../app/store';
+import { editorMode, installOptionGate } from './gating';
 import { BLOCKLY_MEDIA_DIR } from './media';
 import { ModuleSwitcher } from './modules/ModuleSwitcher';
 import { appCoreHost, type CoreHost } from './preview/coreHost';
@@ -125,6 +126,9 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
     types: services.types,
     dialogs: fieldDialogs(deps.dialogs),
   });
+  // Dropdown menus list only the options the editor's mode offers (W4's gating; *change*'s bitwise
+  // forms need *Show advanced blocks*, w2.md §1.9).
+  const uninstallOptionGate = installOptionGate(() => editorMode(deps.store.getState()));
   const session = new EditorSession({
     workspace,
     store: deps.store,
@@ -198,6 +202,7 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
       }
       session.dispose();
       uninstallServices();
+      uninstallOptionGate();
     },
   };
 }

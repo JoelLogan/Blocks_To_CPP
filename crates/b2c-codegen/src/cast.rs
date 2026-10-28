@@ -978,6 +978,8 @@ pub(crate) enum ParamStyle {
     Ref,
     /// `const T& x`
     ConstRef,
+    /// `T* x[]`: `main`'s `char* argv[]` (w2.md §1.9).
+    PointerArray,
 }
 
 /// A function parameter.

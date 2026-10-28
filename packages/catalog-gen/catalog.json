@@ -2834,13 +2834,34 @@
       "shape": "hat",
       "output": null,
       "label": {
-        "friendly": "when program starts",
-        "cpp": "int main()"
+        "friendly": "when program starts %ARGS with arguments %ARGV",
+        "cpp": "int main(%ARGS %ARGV)"
       },
       "lowering": "builtin",
       "headers": [],
-      "help": "The program starts here. A project has exactly one of these blocks.",
-      "field": [],
+      "help": "The program starts here. A project has exactly one of these blocks. Tick with arguments to read what the program was started with, as a read-only list of text whose first item is the program's own name.",
+      "field": [
+        {
+          "name": "ARGS",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": false
+        },
+        {
+          "name": "ARGV",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "type",
+            "type": {
+              "std::vector": "std::string"
+            }
+          }
+        }
+      ],
       "input": [],
       "statement": [
         {
@@ -2849,7 +2870,12 @@
           "when": null
         }
       ],
-      "extra": []
+      "extra": [],
+      "order": [
+        {
+          "field": "ARGV"
+        }
+      ]
     },
     {
       "id": "text.as_text",
@@ -3850,7 +3876,7 @@
       },
       "lowering": "builtin",
       "headers": [],
-      "help": "Adds to a variable (+=); choose down by (-=), times (*=), divided by (/=) or mod (%=) in the menu to subtract, multiply, divide or keep the remainder instead.",
+      "help": "Adds to a variable (+=); choose down by (-=), times (*=), divided by (/=) or mod (%=) in the menu to subtract, multiply, divide or keep the remainder instead, or add to the end (+=) to add text or a character to the end of a text variable. With advanced blocks shown, the menu also has the bitwise forms (&=, |=, ^=, <<=, >>=) for whole numbers.",
       "field": [
         {
           "name": "VAR",
@@ -3882,6 +3908,30 @@
             [
               "mod",
               "mod"
+            ],
+            [
+              "add to the end",
+              "append"
+            ],
+            [
+              "bitwise and",
+              "and"
+            ],
+            [
+              "bitwise or",
+              "or"
+            ],
+            [
+              "bitwise xor",
+              "xor"
+            ],
+            [
+              "shifted left by",
+              "shl"
+            ],
+            [
+              "shifted right by",
+              "shr"
             ]
           ],
           "types": [],
@@ -3891,7 +3941,7 @@
       "input": [
         {
           "name": "BY",
-          "check": "number",
+          "check": "any",
           "optional": false,
           "repeat": null,
           "default": [
@@ -3991,6 +4041,41 @@
         },
         {
           "input": "VALUE"
+        }
+      ]
+    },
+    {
+      "id": "var.flip",
+      "version": 1,
+      "category": "variables",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "flip %VAR",
+        "cpp": "%VAR = !%VAR;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Turns a true/false variable to the other value: true becomes false, and false becomes true.",
+      "field": [
+        {
+          "name": "VAR",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "type",
+            "type": "bool"
+          }
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "VAR"
         }
       ]
     },

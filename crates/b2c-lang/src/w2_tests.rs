@@ -135,7 +135,10 @@ fn item(kind: ItemKind) -> Item {
 }
 
 fn main_item(stmts: Vec<Stmt>) -> Item {
-    item(ItemKind::Main(MainDef { body: body(stmts) }))
+    item(ItemKind::Main(MainDef {
+        body: body(stmts),
+        args: None,
+    }))
 }
 
 /// A function that must give back an `int`.

@@ -40,14 +40,15 @@ use std::collections::BTreeSet;
 use b2c_ir::headers::{Header, ItemHeaders};
 use b2c_ir::ids::SymbolId;
 use b2c_ir::sast::{
-    CppStandard, FunctionDef, Item, ItemKind, MainDef, Module, PassMode, Program, Symbol, SymbolKind,
+    Block, CppStandard, FunctionDef, Item, ItemKind, MainDef, Module, PassMode, Program, Symbol, SymbolKind,
     SymbolTable,
 };
 use b2c_ir::text::{Ident, NumLit};
 use b2c_ir::types::{Type, TypeFacts, UserKind};
 
 use crate::cast::{
-    CBlock, CExpr, CExprKind, CFunction, CGlobal, CParam, CStmt, CStmtKind, CType, CTypeDef, ParamStyle,
+    BinOp, CBlock, CExpr, CExprKind, CFunction, CGlobal, CParam, CStmt, CStmtKind, CType, CTypeDef, Init,
+    ParamStyle,
 };
 use crate::helpers::Helper;
 
@@ -207,6 +208,7 @@ fn signature_key(function: &CFunction) -> Vec<(String, u8)> {
                 ParamStyle::Value => 0,
                 ParamStyle::Ref => 1,
                 ParamStyle::ConstRef => 2,
+                ParamStyle::PointerArray => 3,
             };
             (p.ty.sort_key(), style)
         })
@@ -427,8 +429,16 @@ impl<'a> Lowerer<'a> {
         self.start_body();
         self.in_main = true;
         self.scopes = vec![Vec::new()];
+        let (params, args) = def
+            .args
+            .as_ref()
+            .and_then(|args| self.main_args(args, &def.body, item))
+            .unzip();
         let mut body = self.block(&def.body);
         self.in_main = false;
+        if let Some(args) = args {
+            body.stmts.insert(0, args);
+        }
         if !matches!(body.stmts.last().map(|s| &s.kind), Some(CStmtKind::Return(_))) {
             body.stmts
                 .push(CStmt::new(CStmtKind::Return(Some(int_literal(0)))));
@@ -437,11 +447,47 @@ impl<'a> Lowerer<'a> {
         CFunction {
             ret: CType::Int,
             name: Ident::main(),
-            params: Vec::new(),
+            params: params.unwrap_or_default(),
             body,
             origin: item.origin.clone(),
             comment: item.comment.clone(),
         }
+    }
+
+    /// `main`'s parameters with arguments (w2.md §1.9), `int argc, char*
+    /// argv[]`, and the statement that makes the list of them, `const
+    /// std::vector<std::string> args(argv, argv + argc);`. `argc` and `argv`
+    /// take other names when the body uses those.
+    fn main_args(&mut self, args: &SymbolId, body: &Block, item: &Item) -> Option<(Vec<CParam>, CStmt)> {
+        let symbol = self.variable(args)?;
+        let mut taken = self.visible_names();
+        taken.extend(scan::names_mentioned(self.symbols, body, &[]));
+        taken.insert(symbol.name.as_str().to_owned());
+        let count = scan::fresh_name(&["argc"], "argc", &taken);
+        taken.insert(count.as_str().to_owned());
+        let values = scan::fresh_name(&["argv"], "argv", &taken);
+        let param = |ty: CType, style: ParamStyle, name: Ident| CParam {
+            ty,
+            style,
+            name,
+            origin: item.origin.clone(),
+            default: None,
+        };
+        let params = vec![
+            param(CType::Int, ParamStyle::Value, count.clone()),
+            param(CType::Char, ParamStyle::PointerArray, values.clone()),
+        ];
+        let ty = self.ctype(&symbol.ty);
+        self.note_type(&ty);
+        let end = CExpr::binary(BinOp::Add, name_expr(values.clone()), name_expr(count));
+        self.declare(symbol.name.clone());
+        let statement = CStmt::new(CStmtKind::Decl {
+            is_const: true,
+            ty,
+            name: symbol.name.clone(),
+            init: Init::Args(vec![name_expr(values), end]),
+        });
+        Some((params, statement))
     }
 
     /// Desugars a user function. Returns `None` if its symbol is missing.

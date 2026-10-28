@@ -57,8 +57,15 @@ function describeFlyoutButton(button: Blockly.FlyoutButton): string {
 }
 
 /** The name a block's fields declare (a variable's or a loop counter's), or `null`. */
-function declaredName(fields: Readonly<Record<string, FieldValue>> | undefined): string | null {
-  for (const value of Object.values(fields ?? {})) {
+function declaredName(
+  block: Blockly.Block,
+  fields: Readonly<Record<string, FieldValue>> | undefined,
+): string | null {
+  for (const [field, value] of Object.entries(fields ?? {})) {
+    // A hidden name (`when program starts` without its arguments, w2.md §1.9) is not shown.
+    if (block.getField(field)?.isVisible() === false) {
+      continue;
+    }
     if (
       typeof value === 'object' &&
       !Array.isArray(value) &&
@@ -88,7 +95,7 @@ export function describeBlock(block: Blockly.Block, names: SymbolNames = NO_NAME
         ...(fields === undefined ? {} : { fields }),
       };
       const label = blockLabel(node, names);
-      const declared = declaredName(fields);
+      const declared = declaredName(block, fields);
       if (declared === null) {
         return label;
       }
