@@ -116,7 +116,10 @@ Codes by area:
   reported when a call refers to a function that a variable with the same
   name hides, and when a default value of a function input names a global,
   or calls a function, called like that input or an input before it: from
-  an input on, C++ finds the input by its name.
+  an input on, C++ finds the input by its name. The same goes for a default
+  value of a struct's field that names a global, or calls a function,
+  called like any field of that struct: inside a struct, C++ finds the
+  field.
 * **Example:**
 
   ```text

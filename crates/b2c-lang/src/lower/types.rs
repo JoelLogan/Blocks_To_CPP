@@ -378,6 +378,11 @@ impl Lowerer<'_> {
             self.typed_input(block, &mut typed, &part, false);
         }
         let typing = self.type_parts(block, &mut typed, None);
+        let fields: Vec<(String, SymbolId)> = members
+            .iter()
+            .flatten()
+            .map(|(sym, _)| (self.raw_name(sym), sym.clone()))
+            .collect();
         for (i, member) in members.into_iter().enumerate() {
             let part = format!("DEFAULT{i}");
             let Some(value) = typed.take(&part) else {
@@ -386,11 +391,38 @@ impl Lowerer<'_> {
             let Some((sym, _)) = member else {
                 continue;
             };
+            self.check_field_default_names(&value, owner, &fields);
             let subject = phrase(format!("The default value of {}", self.member_name(&sym)));
             self.report_fit(&typed, &typing, &part, &value, &subject);
             defaults.insert(sym, value);
         }
         defaults
+    }
+
+    /// Reports a global or function that a field's default value names and
+    /// that is called like a field of the struct `owner`: inside a struct
+    /// C++ finds the field by that name, also in default values (a complete-
+    /// class context), so the value would read the field, or fail to call it.
+    fn check_field_default_names(&mut self, value: &Expr, owner: &SymbolId, fields: &[(String, SymbolId)]) {
+        for (sym, called, location) in self.names_looked_up(value) {
+            let name = self.raw_name(&sym);
+            let Some((_, field)) = fields.iter().find(|(field, _)| *field == name) else {
+                continue;
+            };
+            let (uses, other) = if called {
+                ("calls the function", "function")
+            } else {
+                ("uses the global", "global")
+            };
+            let message = format!(
+                "This {uses} {name}, but {} has a field called {name}, and inside a struct C++ finds the field by \
+                 that name, also in default values. Rename the field or the {other}.",
+                quoted(&self.raw_name(owner)),
+                name = quoted(&name)
+            );
+            let field = field.clone();
+            self.error_with_decl(codes::NAME_HIDDEN, location, message, &field, "the field");
+        }
     }
 
     // --- Blocks -----------------------------------------------------------------

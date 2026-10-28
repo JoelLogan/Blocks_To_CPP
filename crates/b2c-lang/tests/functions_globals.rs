@@ -1068,6 +1068,53 @@ fn a_fields_default_sees_the_modules_globals_and_functions() {
 }
 
 #[test]
+fn a_fields_default_cannot_name_a_global_or_function_called_like_a_field() {
+    // `int max = limit;` inside `Config` reads the field `limit`, not the
+    // global: before or after it, and at any depth.
+    let limit = || renamed(global("variable", "int", "glimit", Some(e("100"))), "limit");
+    let expected = "error B2C-E0205 at st_Config DEFAULT1[0..1]: This uses the global `limit`, but `Config` has a \
+                    field called `limit`, and inside a struct C++ finds the field by that name, also in default \
+                    values. Rename the field or the global.";
+    for rows in [
+        [("limit", Some(e("5"))), ("max", Some(e("glimit")))],
+        [("max", None), ("limit", Some(e("glimit * 2")))],
+    ] {
+        let rows: Vec<(&str, &str, Option<Value>)> = rows.into_iter().map(|(n, v)| (n, "int", v)).collect();
+        let config = struct_with_defaults("Config", &rows);
+        let a = analyze(&doc(vec![limit(), config, main(vec![])]));
+        let found = reported(&a);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert!(
+            found[0].starts_with("error B2C-E0205 at st_Config DEFAULT1"),
+            "{found:#?}"
+        );
+        assert!(
+            found[0].ends_with(&expected[expected.find(':').unwrap()..]),
+            "{found:#?}"
+        );
+    }
+    let config = struct_with_defaults(
+        "Config",
+        &[("limit", "int", Some(e("5"))), ("max", "int", Some(e("glimit")))],
+    );
+    let a = analyze(&doc(vec![limit(), config, main(vec![])]));
+    assert_eq!(reported(&a), [expected]);
+    // A function: `int id = next_id();` beside a field `next_id`.
+    let next_id = renamed(func("gnext", "int", &[], vec![ret(Some(e("7")))]), "next_id");
+    let config = struct_with_defaults(
+        "Config",
+        &[("next_id", "int", None), ("id", "int", Some(e("gnext()")))],
+    );
+    let a = analyze(&doc(vec![next_id, config, main(vec![])]));
+    let found = reported(&a);
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(
+        found[0].contains("This calls the function `next_id`, but `Config` has a field called `next_id`"),
+        "{found:#?}"
+    );
+}
+
+#[test]
 fn a_global_built_with_a_structs_defaults_follows_the_globals_they_read() {
     // `Config a{};` runs `int limit = next();`, and `next` reads `z`: `z`
     // is printed before `a`, though `a` comes first by name (modules.md
