@@ -4,8 +4,10 @@
  * - **⊕ adds a catch part.** On a *try* block with two catch parts, a click on its ⊕ adds a third
  *   part, which catches any error (`std::exception`, as the C++ panel shows) and has a variable of
  *   its own, named `e`; one Ctrl+Z takes it away again.
- * - **A catch's variable is offered only in its own part.** The *message of* block in the first
- *   part offers that part's error and not the second part's, and the other way round.
+ * - **A catch's variable is offered only in its own part.** An empty *message of* block in the
+ *   first part offers that part's error and nothing else, and the other way round. (A block whose
+ *   error is chosen always shows its choice first, whatever the scope query says, so the empty ones
+ *   are the ones asked, once the analysis has seen them.)
  *
  * Every click is made with real pointer input, every key pressed as a person presses it; what the
  * canvas holds is read from the test hook's document.
@@ -33,13 +35,13 @@ import { pressCtrl, UI_TIMEOUT_MS } from './lib/ui';
 const FIRST = { sym: 's_errors_first', name: 'first' } as const;
 const SECOND = { sym: 's_errors_second', name: 'second' } as const;
 
-/** *print* of *message of* the caught error `sym`. */
-function printMessage(ids: NodeIds, sym: string): { print: BlockNode; message: BlockNode } {
+/** *print* of *message of* the caught error `sym`, or of no error chosen yet with `null`. */
+function printMessage(ids: NodeIds, sym: string | null): { print: BlockNode; message: BlockNode } {
   const message: BlockNode = {
     id: ids.next(),
     type: 'error.message',
     v: 1,
-    fields: { ERROR: { ref: sym } },
+    ...(sym === null ? {} : { fields: { ERROR: { ref: sym } } }),
   };
   const print: BlockNode = {
     id: ids.next(),
@@ -100,12 +102,21 @@ function findAddButton(app: FlowApp, id: string): Promise<WebElement> {
   );
 }
 
-/** The labels of the menu of field `ERROR` of the *message of* block `id`. */
-async function errorMenu(app: FlowApp, id: string): Promise<string[]> {
-  await clickMiddle(app.driver, await fieldOf(app, id, 'ERROR'));
-  const labels = await menuLabels(app.driver);
-  await closeMenu(app.driver);
-  return labels;
+/**
+ * The labels of the menu of field `ERROR` of the *message of* block `id`, once they hold
+ * `expected`: until the analysis has seen the block, the scope query answers for the place it was
+ * inserted in, `main`'s body, where no caught error is visible.
+ */
+function errorMenu(app: FlowApp, id: string, expected: string): Promise<string[]> {
+  return waitFor(
+    async () => {
+      await clickMiddle(app.driver, await fieldOf(app, id, 'ERROR'));
+      const labels = await menuLabels(app.driver);
+      await closeMenu(app.driver);
+      return labels.includes(expected) ? labels : null;
+    },
+    { timeout: UI_TIMEOUT_MS, message: `the error menu of block ${id} with ${expected}` },
+  );
 }
 
 describe('Errors', () => {
@@ -117,6 +128,8 @@ describe('Errors', () => {
     const ids = new NodeIds('errors');
     const inFirst = printMessage(ids, FIRST.sym);
     const inSecond = printMessage(ids, SECOND.sym);
+    const emptyInFirst = printMessage(ids, null);
+    const emptyInSecond = printMessage(ids, null);
     const tryBlock: BlockNode = {
       id: ids.next(),
       type: 'error.try',
@@ -128,20 +141,19 @@ describe('Errors', () => {
         ERROR1: 'std::out_of_range',
         NAME1: SECOND,
       },
-      statements: { CATCH0: [inFirst.print], CATCH1: [inSecond.print] },
+      statements: {
+        CATCH0: [inFirst.print, emptyInFirst.print],
+        CATCH1: [inSecond.print, emptyInSecond.print],
+      },
     };
     await app.hook.insertBlocks(mainId, 'BODY', [tryBlock]);
     await waitForParts(app, tryBlock.id, 2);
     // Blockly draws the inserted blocks in the next animation frame: measure them after it.
     await waitForDelivery(app.driver);
 
-    // Each part's message block offers its own error, not the other part's.
-    const firstMenu = await errorMenu(app, inFirst.message.id);
-    expect(firstMenu).toContain(FIRST.name);
-    expect(firstMenu).not.toContain(SECOND.name);
-    const secondMenu = await errorMenu(app, inSecond.message.id);
-    expect(secondMenu).toContain(SECOND.name);
-    expect(secondMenu).not.toContain(FIRST.name);
+    // Each part's empty message block offers its own error, and not the other part's.
+    expect(await errorMenu(app, emptyInFirst.message.id, FIRST.name)).toEqual([FIRST.name]);
+    expect(await errorMenu(app, emptyInSecond.message.id, SECOND.name)).toEqual([SECOND.name]);
 
     // ⊕ adds a third part for any error, with a variable of its own. The document leaves out a
     // field the block's file did not hold while it has its default (sync/blockState.ts
