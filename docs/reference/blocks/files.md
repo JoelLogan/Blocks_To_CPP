@@ -9,7 +9,15 @@ Toolbox icon: 🗎. Back to [all categories](README.md).
 | Block | Friendly label | C++ form | Help | Fields | Inputs |
 | --- | --- | --- | --- | --- | --- |
 | `file.for_each_line` (statement) | `for each line %LINE in file %PATH %BODY if it can't be opened %FAILED` | `while (std::getline(file, %LINE)) { … }` | Reads a text file line by line and runs blocks for each line, without its line break. A path that is not a full path is looked for in the folder the program runs in: the project folder, or its sandbox folder when the run settings choose it or the project is not saved yet. Add the part that runs when the file can't be opened with ⊕; without it, nothing runs when the file can't be opened. | `LINE`: the name of the new variable. | `PATH`: text; default `"data.txt"`. `BODY`: blocks. `FAILED`: blocks, while `hasFailed` is on. Setting `hasFailed`: on or off, default off. |
+| `file.open` (statement) | `open file %PATH for %MODE as %FILE if it can't be opened %FAILED` | `std::ifstream %FILE(%PATH);` | Opens a text file to read it line by line, to write it from the start, or to add to its end, and names it for the blocks after this one. A path that is not a full path is looked for in the folder the program runs in. Add the part that runs when the file can't be opened with ⊕. The file closes at the end of the group of blocks this block is in. | `FILE`: the name of the new variable. `MODE`: one of reading (`read`), writing (`write`) or adding to the end (`append`), default `read`. | `PATH`: text; default `"data.txt"`. `FAILED`: blocks, while `hasFailed` is on. Setting `hasFailed`: on or off, default off. |
+| `file.read_line` (predicate, gives `bool`) | `read line from %FILE into %LINE` | `std::getline(%FILE, %LINE)` | Reads the next line of a file opened for reading into a text variable, without its line break. True when there was a line to read, false at the end of the file, so it can be the condition of a loop. | `FILE`: the variable it uses. `LINE`: the variable it uses. | — |
+| `file.write` (statement) | `write %ITEM … to %FILE new line %NEWLINE` | `%FILE << %ITEM << …;` | Writes values to a file opened for writing or for adding to its end, as print shows them in the console. Untick new line to go on writing on the same line. | `FILE`: the variable it uses. `NEWLINE`: on or off, default on. | `ITEM0`, `ITEM1`, …: any value, one for each of `itemCount`; default `"Hello, file!"`. Setting `itemCount`: 1 to 32, default 1. |
+| `file.exists` (predicate, gives `bool`) | `file %PATH exists` | `std::filesystem::exists(%PATH)` | True when there is a file or folder at the path. A path that is not a full path is looked for in the folder the program runs in. | — | `PATH`: text; default `"data.txt"`. |
 
 ## In the toolbox
 
 1. `file.for_each_line`, with `hasFailed` on
+2. `file.open`, with `hasFailed` on
+3. `file.read_line`
+4. `file.write`
+5. `file.exists`

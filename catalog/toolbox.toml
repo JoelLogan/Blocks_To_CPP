@@ -314,6 +314,19 @@ colour = "files"
 block = "file.for_each_line"
 preset = { extra = { hasFailed = true } }
 
+[[category.entry]]
+block = "file.open"
+preset = { extra = { hasFailed = true } }
+
+[[category.entry]]
+block = "file.read_line"
+
+[[category.entry]]
+block = "file.write"
+
+[[category.entry]]
+block = "file.exists"
+
 [[category]]
 id = "errors"
 name = "Errors"

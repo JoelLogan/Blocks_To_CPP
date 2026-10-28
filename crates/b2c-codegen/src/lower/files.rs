@@ -22,22 +22,36 @@
 //! so nested loops never shadow one another (`-Wshadow`); user names cannot
 //! start with `b2c`, so it never clashes with one (w2.md §2.12).
 //!
+//! *open file* declares its stream where the block is, so the blocks after
+//! it can use it, and tests it when the block has its *if it can't be
+//! opened* part:
+//!
+//! ```cpp
+//! std::ofstream log("log.txt", std::ios::app);
+//! if (!log) {
+//!     …
+//! }
+//! ```
+//!
+//! *read line from … into* is `std::getline(file, line)` as a condition of
+//! its own (`if`, `while`, `do … while`), where the stream converts to
+//! `bool`, and `static_cast<bool>(std::getline(file, line))` anywhere else;
+//! *write … to file* is `file << a << b << '\n';`, its values written as
+//! *print* writes them; *file … exists* is `std::filesystem::exists(path)`.
+//!
 //! *check at compile time* is `static_assert(c, "message");`, and *use
 //! header* adds its header to the module's includes.
-//!
-//! The other nodes of this module come with if-time blocks (w2.md §1.8) that
-//! are not in the catalog yet.
 
 use std::collections::BTreeSet;
 
 use b2c_ir::headers::Header;
 use b2c_ir::ids::SymbolId;
-use b2c_ir::sast::{Block, Expr, Item, StmtKind};
+use b2c_ir::sast::{Block, Expr, ExprKind, FileMode, Item, StmtKind};
 use b2c_ir::text::Ident;
 use b2c_ir::types::LibType;
 
 use super::{Lowerer, name_expr};
-use crate::cast::{CBlock, CExpr, CStmt, CStmtKind, CType, Init, UnOp};
+use crate::cast::{BinOp, CBlock, CExpr, CStmt, CStmtKind, CType, Init, UnOp};
 
 /// The stem of the hidden names of the streams *for each line* opens.
 const STREAM_STEM: &str = "b2c_file";
@@ -64,6 +78,13 @@ impl Lowerer<'_> {
                 body,
                 failed,
             } => self.file_lines(line, path, body, failed.as_ref()),
+            StmtKind::OpenFile {
+                file,
+                path,
+                mode,
+                failed,
+            } => self.open_file(file, path, *mode, failed.as_ref()),
+            StmtKind::WriteFile { file, items, newline } => self.write_file(file, items, *newline),
             StmtKind::StaticCheck { cond, message } => CStmtKind::StaticAssert {
                 cond: self.expr(cond),
                 message: message.clone(),
@@ -73,13 +94,106 @@ impl Lowerer<'_> {
     }
 
     /// *read line from … into* and *file … exists*.
-    #[allow(
-        clippy::unused_self,
-        reason = "if-time blocks of package D, not in the catalog yet"
-    )]
     pub(super) fn file_expr(&mut self, expr: &Expr) -> CExpr {
-        let _ = expr;
-        CExpr::error()
+        match &expr.kind {
+            ExprKind::ReadLine { .. } => match self.read_line(expr) {
+                Some(read) => CExpr::call_fixed("static_cast<bool>", vec![read]),
+                None => CExpr::error(),
+            },
+            // `<filesystem>` is the block's catalog header.
+            ExprKind::FileExists(path) => {
+                let path = self.expr(path);
+                CExpr::call_fixed("std::filesystem::exists", vec![path])
+            }
+            _ => CExpr::error(),
+        }
+    }
+
+    /// A condition of its own (`if`, `while`, `do … while`): *read line from
+    /// … into* is the bare `std::getline(file, line)` there, whose stream
+    /// converts to `bool`; any other condition is lowered as usual.
+    pub(super) fn condition(&mut self, cond: &Expr) -> CExpr {
+        if matches!(cond.kind, ExprKind::ReadLine { .. })
+            && let Some(read) = self.read_line(cond)
+        {
+            return read.with_origin(cond.origin.clone());
+        }
+        self.expr(cond)
+    }
+
+    /// `std::getline(file, line)`, or `None` for a stream or line the
+    /// program does not have.
+    fn read_line(&mut self, expr: &Expr) -> Option<CExpr> {
+        let ExprKind::ReadLine { file, line } = &expr.kind else {
+            return None;
+        };
+        let file = self.variable(file)?.name.clone();
+        let line = self.variable(line)?.name.clone();
+        self.include("<string>");
+        Some(CExpr::call_fixed(
+            "std::getline",
+            vec![name_expr(file), name_expr(line)],
+        ))
+    }
+
+    /// *open file*: the stream, declared where the block is, then the part
+    /// for a file that can't be opened.
+    fn open_file(
+        &mut self,
+        file: &SymbolId,
+        path: &Expr,
+        mode: FileMode,
+        failed: Option<&Block>,
+    ) -> CStmtKind {
+        let Some(name) = self.variable(file).map(|symbol| symbol.name.clone()) else {
+            return CStmtKind::Error;
+        };
+        let stream = match mode {
+            FileMode::Read => LibType::IfStream,
+            FileMode::Write | FileMode::Append => LibType::OfStream,
+        };
+        let ty = CType::Lib(stream, Vec::new());
+        self.note_type(&ty);
+        let mut args = vec![self.expr(path)];
+        if mode == FileMode::Append {
+            self.include("<ios>");
+            args.push(CExpr::fixed("std::ios::app"));
+        }
+        // The stream is visible from its declarator on, also in the part
+        // for a file that can't be opened.
+        self.declare(name.clone());
+        let decl = CStmt::new(CStmtKind::Decl {
+            is_const: false,
+            ty,
+            name: name.clone(),
+            init: Init::Args(args),
+        });
+        let Some(failed) = failed else {
+            return decl.kind;
+        };
+        let test = CStmt::new(CStmtKind::If {
+            branches: vec![(CExpr::unary(UnOp::Not, name_expr(name)), self.block(failed))],
+            else_body: None,
+        });
+        CStmtKind::Seq(vec![decl, test])
+    }
+
+    /// *write … to file*: `file << a << b << '\n';`.
+    fn write_file(&mut self, file: &SymbolId, items: &[Expr], newline: bool) -> CStmtKind {
+        let Some(name) = self.variable(file).map(|symbol| symbol.name.clone()) else {
+            return CStmtKind::Error;
+        };
+        // `operator<<` for text and numbers is declared in `<ostream>`.
+        self.include("<ostream>");
+        let mut chain = name_expr(name);
+        for item in items {
+            let operand = self.print_operand(item);
+            chain = CExpr::binary(BinOp::Shl, chain, operand);
+        }
+        if newline {
+            chain = CExpr::binary(BinOp::Shl, chain, CExpr::fixed("'\\n'"));
+        }
+        CStmtKind::Expr(chain)
     }
 
     /// *use header* (`ItemKind::UseHeader`): the header joins the module's

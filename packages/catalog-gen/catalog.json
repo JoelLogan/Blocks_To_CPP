@@ -1507,6 +1507,47 @@
       ]
     },
     {
+      "id": "file.exists",
+      "version": 1,
+      "category": "files",
+      "shape": "predicate",
+      "output": "bool",
+      "label": {
+        "friendly": "file %PATH exists",
+        "cpp": "std::filesystem::exists(%PATH)"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<filesystem>"
+      ],
+      "help": "True when there is a file or folder at the path. A path that is not a full path is looked for in the folder the program runs in.",
+      "field": [],
+      "input": [
+        {
+          "name": "PATH",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "data.txt"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "PATH"
+        }
+      ]
+    },
+    {
       "id": "file.for_each_line",
       "version": 1,
       "category": "files",
@@ -1577,6 +1618,203 @@
         },
         {
           "input": "PATH"
+        }
+      ]
+    },
+    {
+      "id": "file.open",
+      "version": 1,
+      "category": "files",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "open file %PATH for %MODE as %FILE if it can't be opened %FAILED",
+        "cpp": "std::ifstream %FILE(%PATH);"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Opens a text file to read it line by line, to write it from the start, or to add to its end, and names it for the blocks after this one. A path that is not a full path is looked for in the folder the program runs in. Add the part that runs when the file can't be opened with ⊕. The file closes at the end of the group of blocks this block is in.",
+      "field": [
+        {
+          "name": "FILE",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null
+        },
+        {
+          "name": "MODE",
+          "kind": "dropdown",
+          "options": [
+            [
+              "reading",
+              "read"
+            ],
+            [
+              "writing",
+              "write"
+            ],
+            [
+              "adding to the end",
+              "append"
+            ]
+          ],
+          "types": [],
+          "default": "read"
+        }
+      ],
+      "input": [
+        {
+          "name": "PATH",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "data.txt"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [
+        {
+          "name": "FAILED",
+          "repeat": null,
+          "when": "hasFailed"
+        }
+      ],
+      "extra": [
+        {
+          "name": "hasFailed",
+          "kind": "flag",
+          "min": 0,
+          "max": 1,
+          "default": false,
+          "types": []
+        }
+      ],
+      "order": [
+        {
+          "input": "PATH"
+        }
+      ]
+    },
+    {
+      "id": "file.read_line",
+      "version": 1,
+      "category": "files",
+      "shape": "predicate",
+      "output": "bool",
+      "label": {
+        "friendly": "read line from %FILE into %LINE",
+        "cpp": "std::getline(%FILE, %LINE)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Reads the next line of a file opened for reading into a text variable, without its line break. True when there was a line to read, false at the end of the file, so it can be the condition of a loop.",
+      "field": [
+        {
+          "name": "FILE",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "type",
+            "type": "std::ifstream"
+          }
+        },
+        {
+          "name": "LINE",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "FILE"
+        },
+        {
+          "field": "LINE"
+        }
+      ]
+    },
+    {
+      "id": "file.write",
+      "version": 1,
+      "category": "files",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "write %ITEM … to %FILE new line %NEWLINE",
+        "cpp": "%FILE << %ITEM << …;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Writes values to a file opened for writing or for adding to its end, as print shows them in the console. Untick new line to go on writing on the same line.",
+      "field": [
+        {
+          "name": "FILE",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "type",
+            "type": "std::ofstream"
+          }
+        },
+        {
+          "name": "NEWLINE",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": true
+        }
+      ],
+      "input": [
+        {
+          "name": "ITEM",
+          "check": "any",
+          "optional": false,
+          "repeat": {
+            "count": "itemCount",
+            "plus": 0
+          },
+          "default": [
+            {
+              "str": "Hello, file!"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": [
+        {
+          "name": "itemCount",
+          "kind": "count",
+          "min": 1,
+          "max": 32,
+          "default": "1",
+          "types": []
+        }
+      ],
+      "order": [
+        {
+          "field": "FILE"
         }
       ]
     },
@@ -4850,6 +5088,30 @@
                 "hasFailed": true
               }
             }
+          },
+          {
+            "block": "file.open",
+            "label": null,
+            "preset": {
+              "extra": {
+                "hasFailed": true
+              }
+            }
+          },
+          {
+            "block": "file.read_line",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "file.write",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "file.exists",
+            "label": null,
+            "preset": null
           }
         ]
       },

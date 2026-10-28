@@ -51,7 +51,7 @@ impl Lowerer<'_> {
                 let cond = if *until {
                     self.negated_condition(cond)
                 } else {
-                    self.expr(cond)
+                    self.condition(cond)
                 };
                 CStmtKind::DoWhile { body, cond }
             }

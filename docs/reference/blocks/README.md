@@ -21,7 +21,7 @@ Catalog version: 1.3.0.
 | [Functions](functions.md) | ƒ | 4 |
 | [Collections](collections.md) | ☰ | 13 |
 | [Types](types.md) | ◆ | 6 |
-| [Files](files.md) | 🗎 | 1 |
+| [Files](files.md) | 🗎 | 5 |
 | [Errors](errors.md) | ⚠ | 4 |
 
 ## How to read the tables

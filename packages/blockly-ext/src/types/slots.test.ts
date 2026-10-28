@@ -212,8 +212,12 @@ describe('the slot fixture', () => {
       'error.message',
       'error.throw',
       'error.try',
-      // W2's file loop (w2.md §1.8).
+      // W2's file blocks (w2.md §1.8).
+      'file.exists',
       'file.for_each_line',
+      'file.open',
+      'file.read_line',
+      'file.write',
       'func.call',
       'func.call_stmt',
       // What it gives back is typed from W2 (docs/plans/m3-contracts/w2.md §1.9).

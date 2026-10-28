@@ -21,7 +21,12 @@
 //!   folder the program runs in, line by line (an empty line, a last line
 //!   without a line break), also nested in another file loop; and when the
 //!   file is missing, its *if it can't be opened* part runs, or without the
-//!   part the loop runs for no line. No run changes its folder.
+//!   part the loop runs for no line;
+//! * *open file* for writing, for adding to the end and for reading, *write
+//!   … to file* with and without a new line, *read line from … into* as a
+//!   loop's condition and as a value, and *file … exists* (package S).
+//!
+//! No run changes its folder, except for the files a test says it writes.
 
 // Test code: unwrap/expect/panic and builders that take JSON by value are
 // fine here.
@@ -294,18 +299,20 @@ fn listing(dir: &Path) -> BTreeMap<String, Vec<u8>> {
 /// compiler, and runs it in a fresh folder holding `files`; checks that it
 /// gives `expected` and leaves the folder as it was.
 fn runs_and_gives(name: &str, body: Vec<Value>, files: &[(&str, &str)], expected: &Ran) {
-    builds_and_runs(name, &[], body, files, &[], expected);
+    builds_and_runs(name, &[], body, files, &[], &[], expected);
 }
 
-/// [`runs_and_gives`] with these top-level blocks beside `main`, and the
-/// codes of the warnings the front end must report (and nothing else); a
-/// warning changes nothing g++ accepts at the *strict* level with
-/// `-Werror`. Returns the C++ generated under C++20.
+/// [`runs_and_gives`] with these top-level blocks beside `main`, the files
+/// the run leaves in its folder, written or changed (every other file stays
+/// as it was), and the codes of the warnings the front end must report (and
+/// nothing else); a warning changes nothing g++ accepts at the *strict* level
+/// with `-Werror`. Returns the C++ generated under C++20.
 fn builds_and_runs(
     name: &str,
     top: &[Value],
     body: Vec<Value>,
     files: &[(&str, &str)],
+    left: &[(&str, &str)],
     warnings: &[&str],
     expected: &Ran,
 ) -> String {
@@ -361,7 +368,10 @@ fn builds_and_runs(
             for (file_name, contents) in files {
                 std::fs::write(folder.path().join(file_name), contents).unwrap();
             }
-            let before = listing(folder.path());
+            let mut after = listing(folder.path());
+            for (file_name, contents) in left {
+                after.insert((*file_name).to_owned(), contents.as_bytes().to_vec());
+            }
             let run = command(&program, folder.path()).output().unwrap();
             let ran = Ran {
                 stdout: String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n"),
@@ -369,7 +379,7 @@ fn builds_and_runs(
                 code: run.status.code(),
             };
             assert_eq!(&ran, expected, "{name} ({flag}, {gxx})\n{}", file.contents);
-            assert_eq!(listing(folder.path()), before, "{name} changed its folder");
+            assert_eq!(listing(folder.path()), after, "{name} left its folder otherwise");
         }
     }
     cpp20
@@ -494,6 +504,7 @@ fn switch_on_an_enum_runs_the_case_of_its_value() {
         "enum_switch",
         &[action, describe, initial],
         body,
+        &[],
         &[],
         &["B2C-W0508"],
         &printed("deposit\nquit\nwithdraw\nD\n"),
@@ -648,4 +659,82 @@ fn a_case_goes_on_into_the_next_one_and_wait_pauses() {
         ),
     ];
     runs_and_gives("fallthrough", body, &[], &printed("one\ntwo\n"));
+}
+
+#[test]
+fn a_file_is_written_added_to_and_read_back_line_by_line() {
+    let b = Blocks::default();
+    let file = |name: &str| json!({ "ref": format!("s_{name}") });
+    let open = |name: &str, mode: &str, path: &str, failed: Option<Vec<Value>>| {
+        let mut parts = json!({ "extra": { "hasFailed": failed.is_some() },
+                                "fields": { "FILE": { "sym": format!("s_{name}"), "name": name }, "MODE": mode },
+                                "inputs": { "PATH": text(path) } });
+        if let Some(failed) = failed {
+            parts["statements"] = json!({ "FAILED": failed });
+        }
+        b.block("file.open", &parts)
+    };
+    let write = |name: &str, items: Vec<Value>, newline: bool| {
+        let inputs: Map<String, Value> = items
+            .into_iter()
+            .enumerate()
+            .map(|(index, item)| (format!("ITEM{index}"), item))
+            .collect();
+        let count = inputs.len();
+        b.block(
+            "file.write",
+            &json!({ "extra": { "itemCount": count }, "fields": { "FILE": file(name), "NEWLINE": newline },
+                     "inputs": inputs }),
+        )
+    };
+    let read = |name: &str, line: &str| json!({ "block": b.block("file.read_line", &json!({ "fields": { "FILE": file(name), "LINE": file(line) } })) });
+    let exists =
+        |path: &str| json!({ "block": b.block("file.exists", &json!({ "inputs": { "PATH": text(path) } })) });
+    // Each stream closes at the end of the group of blocks it is in: here the
+    // body of an *if* that always runs.
+    let group = |body: Vec<Value>| {
+        b.block(
+            "control.if",
+            &json!({ "extra": { "elseIfCount": 0, "hasElse": false },
+                     "inputs": { "COND0": json!({ "expr": [{ "kw": "true" }] }) },
+                     "statements": { "DO0": body } }),
+        )
+    };
+    let cannot = |path: &str| vec![b.print_to("err", vec![text(&format!("Cannot open {path}"))])];
+    let body = vec![
+        b.create("std::string", "line", text("")),
+        b.print(vec![exists("out.txt")]),
+        group(vec![
+            open("out", "write", "out.txt", Some(cannot("out.txt"))),
+            write("out", vec![text("first "), number("1")], true),
+            write("out", vec![text("sec")], false),
+            write("out", vec![text("ond")], true),
+        ]),
+        group(vec![
+            open("more", "append", "out.txt", None),
+            write("more", vec![text("third")], true),
+        ]),
+        open("data", "read", "out.txt", Some(cannot("out.txt"))),
+        b.block(
+            "control.while",
+            &json!({ "fields": { "MODE": "while" }, "inputs": { "COND": read("data", "line") },
+                     "statements": { "BODY": [b.print(vec![text("> "), tokens(&["line"])])] } }),
+        ),
+        // At the end of the file there is no line left to read.
+        b.print(vec![read("data", "line"), text(" "), exists("out.txt")]),
+        open("missing", "read", "missing.txt", Some(cannot("missing.txt"))),
+    ];
+    builds_and_runs(
+        "write_read",
+        &[],
+        body,
+        &[],
+        &[("out.txt", "first 1\nsecond\nthird\n")],
+        &[],
+        &Ran {
+            stdout: String::from("false\n> first 1\n> second\n> third\nfalse true\n"),
+            stderr: String::from("Cannot open missing.txt\n"),
+            code: Some(0),
+        },
+    );
 }

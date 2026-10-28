@@ -5,7 +5,8 @@
  * and *wait*; *do … then repeat*; and
  * *for each line in file*, a block with a flag and no repeated group, whose *if it can't be
  * opened* part comes and goes with ⊕ and ⊖. Package S's *use header* and *check at compile time*
- * (§1.6).
+ * (§1.6), and its file blocks (§1.8): *open file*, drawn like the file loop, *read line from …
+ * into*, *write … to file* with the *items* mutator, and *file … exists*.
  */
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -199,5 +200,41 @@ describe('for each line in file', () => {
     workspace.undo(false);
     expect(block.b2cGetExtra()).toEqual({ hasFailed: true });
     expect(block.getInput('FAILED')?.connection?.targetBlock()?.id).toBe(inner.id);
+  });
+});
+
+describe('open file', () => {
+  it('names its file, takes a mode, and offers its part for a file that cannot be opened', () => {
+    const block = mutatorBlock('file.open');
+    expect(block.b2cGetExtra()).toEqual({ hasFailed: false });
+    expect(inputNames(block)).toEqual(['PATH', 'b2c_row0', 'B2C_BUTTONS', 'b2c_repeat']);
+    expect(labelTexts(block, 'PATH')).toEqual(['open file']);
+    expect(labelTexts(block, 'b2c_row0')).toEqual(['for', 'as']);
+    expect(labelTexts(block, 'B2C_BUTTONS')).toEqual(["if it can't be opened"]);
+    expect(block.getField('FILE')).not.toBeNull();
+    expect(block.getFieldValue('MODE')).toBe('read');
+    expect(buttons(block)).toEqual(['flag:hasFailed:add']);
+    press(block, 'flag:hasFailed:add');
+    expect(inputNames(block)).toEqual(['PATH', 'b2c_row0', 'FAILED', 'B2C_BUTTONS', 'b2c_repeat']);
+    expect(block.previousConnection).not.toBeNull();
+    expect(block.nextConnection).not.toBeNull();
+  });
+});
+
+describe('read line, write and exists', () => {
+  it('are a predicate with two variables, a statement with items, and a predicate with a path', () => {
+    const read = workspace.newBlock('file.read_line');
+    expect(labelTexts(read)).toEqual(['read line from', 'into']);
+    expect(read.getField('FILE')).not.toBeNull();
+    expect(read.getField('LINE')).not.toBeNull();
+    expect(read.outputConnection).not.toBeNull();
+    expect(read.previousConnection).toBeNull();
+    const write = mutatorBlock('file.write');
+    expect(write.b2cGetExtra()).toEqual({ itemCount: 1 });
+    expect(inputNames(write)).toContain('ITEM0');
+    expect(write.getFieldValue('NEWLINE')).toBe('TRUE');
+    const exists = workspace.newBlock('file.exists');
+    expect(labelTexts(exists)).toEqual(['file', 'exists']);
+    expect(inputNames(exists)).toContain('PATH');
   });
 });

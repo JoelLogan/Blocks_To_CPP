@@ -59,6 +59,8 @@ fn value_blocks_declare_their_output_type() {
         ("coll.list_of", "C"),
         ("coll.next", "elem(C)"),
         ("error.message", "std::string"),
+        ("file.exists", "bool"),
+        ("file.read_line", "bool"),
         ("func.call", "symbol"),
         ("logic.boolean", "bool"),
         ("logic.not", "bool"),

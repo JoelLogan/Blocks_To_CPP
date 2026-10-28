@@ -81,7 +81,7 @@ impl Lowerer<'_> {
                 let cond = if *until {
                     self.negated_condition(cond)
                 } else {
-                    self.expr(cond)
+                    self.condition(cond)
                 };
                 CStmtKind::While {
                     cond,
@@ -194,7 +194,7 @@ impl Lowerer<'_> {
     fn if_stmt(&mut self, branches: &[IfBranch], else_body: Option<&Block>) -> CStmtKind {
         let branches: Vec<_> = branches
             .iter()
-            .map(|b| (self.expr(&b.cond), self.block(&b.body)))
+            .map(|b| (self.condition(&b.cond), self.block(&b.body)))
             .collect();
         let else_body = else_body.map(|body| self.block(body));
         if branches.is_empty() {

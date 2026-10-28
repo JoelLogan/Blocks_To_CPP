@@ -5,7 +5,9 @@
 //! The blocks come as the project file holds them, analysed with the
 //! catalog's signatures. The switch on an enum takes package C1's enum
 //! blocks: its labels are enum values, a repeated one is `B2C-E0425`, and
-//! without a default part a missed value is `B2C-W0508`.
+//! without a default part a missed value is `B2C-W0508`. Package S's
+//! if-time blocks: *use header*, *check at compile time*, *open file*, *read
+//! line from … into*, *write … to file* and *file … exists*.
 
 // Test code: unwrap/expect/panic and builders that take JSON by value are
 // fine here.
@@ -800,4 +802,167 @@ fn check_at_compile_time_needs_a_condition_and_a_message_it_can_print() {
     // A number as the condition is warned about, as in *if*.
     let a = run_main(vec![check(e("1"), "one")]);
     assert_eq!(codes(&a), ["B2C-W0519"], "{}", render_all(&a));
+}
+
+// --- open file, read line, write to file, file exists (package S) --------------------
+
+/// *open file (path) for [mode] as [name]*, with its *if it can't be opened*
+/// part when `failed` is given.
+fn open_file(name: &str, mode: &str, path: Value, failed: Option<Vec<Value>>) -> Value {
+    let mut block = json!({"id": id(), "type": "file.open", "v": 1,
+                           "extra": {"hasFailed": failed.is_some()},
+                           "fields": {"FILE": {"sym": sym(name), "name": name}, "MODE": mode},
+                           "inputs": {"PATH": path}});
+    if let Some(failed) = failed {
+        block["statements"] = json!({"FAILED": failed});
+    }
+    block
+}
+
+/// *read line from [file] into [line]*, a block in an input.
+fn read_line(file: &str, line: &str) -> Value {
+    input(json!({"id": id(), "type": "file.read_line", "v": 1,
+                 "fields": {"FILE": {"ref": sym(file)}, "LINE": {"ref": sym(line)}}}))
+}
+
+/// *write (items) … to [file]*, with a new line.
+fn write_to(file: &str, items: Vec<Value>) -> Value {
+    let inputs: Map<String, Value> = items
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| (format!("ITEM{index}"), item))
+        .collect();
+    json!({"id": id(), "type": "file.write", "v": 1, "extra": {"itemCount": inputs.len()},
+           "fields": {"FILE": {"ref": sym(file)}}, "inputs": inputs})
+}
+
+/// *file (path) exists*, a block in an input.
+fn exists(path: Value) -> Value {
+    input(json!({"id": id(), "type": "file.exists", "v": 1, "inputs": {"PATH": path}}))
+}
+
+/// The type of the program's symbol `name`, as JSON.
+fn symbol_type(a: &b2c_lang::Analysis, name: &str) -> Value {
+    let program = serde_json::to_value(&a.program).expect("serialise");
+    program["symbols"]["symbols"][sym(name)]["ty"].clone()
+}
+
+#[test]
+fn open_file_declares_a_stream_of_its_mode_for_the_blocks_after_it() {
+    let a = run_main(vec![
+        declare("std::string", "line", Some(e("\"\""))),
+        open_file("log", "append", e("\"log.txt\""), None),
+        write_to("log", vec![e("\"started \""), e("1")]),
+        open_file(
+            "data",
+            "read",
+            e("\"data.txt\""),
+            Some(vec![print(vec![exists(e("\"data.txt\""))])]),
+        ),
+        while_loop(
+            "while",
+            read_line("data", "line"),
+            vec![write_to("log", vec![e("line")])],
+        ),
+    ]);
+    assert_clean(&a);
+    assert_eq!(symbol_type(&a, "log"), json!("std::ofstream"));
+    assert_eq!(symbol_type(&a, "data"), json!("std::ifstream"));
+    let stmts = main_json(&a);
+    assert_eq!(stmts[1]["kind"]["open_file"]["mode"], json!("append"), "{stmts}");
+    assert!(stmts[3]["kind"]["open_file"]["failed"].is_object(), "{stmts}");
+    assert!(
+        stmts[4]["kind"]["while"]["cond"]["kind"]["read_line"].is_object(),
+        "{stmts}"
+    );
+}
+
+#[test]
+fn an_opened_file_is_seen_in_its_failed_part_and_after_it_only() {
+    // Its *if it can't be opened* part sees it; a block before it doesn't.
+    let a = run_main(vec![
+        write_to("out", vec![e("1")]),
+        open_file(
+            "out",
+            "write",
+            e("\"out.txt\""),
+            Some(vec![write_to("out", vec![e("2")])]),
+        ),
+    ]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0202 at b0001 field FILE: `out` is used before it is created. Move this block below the block \
+          that creates `out`."
+        ]
+    );
+}
+
+#[test]
+fn open_file_needs_a_name_for_its_file() {
+    let mut block = open_file("f", "read", e("\"a.txt\""), None);
+    block["fields"] = json!({"MODE": "read"});
+    let a = run_main(vec![block]);
+    assert_eq!(
+        reported(&a),
+        ["error B2C-E0430 at b0001 field FILE: This 'open file' block needs a name for its file."]
+    );
+}
+
+#[test]
+fn each_file_block_takes_a_stream_of_its_kind() {
+    let a = run_main(vec![
+        declare("std::string", "line", Some(e("\"\""))),
+        open_file("out", "write", e("\"out.txt\""), None),
+        open_file("data", "read", e("\"data.txt\""), None),
+        print(vec![read_line("out", "line")]),
+        write_to("data", vec![e("line")]),
+    ]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0301 at b0004 field FILE: This is an output file, but this block needs an input file here, \
+             as its other parts say.",
+            "error B2C-E0301 at b0006 field FILE: This is an input file, but this block needs an output file here, \
+             as its other parts say.",
+        ]
+    );
+}
+
+#[test]
+fn read_line_changes_its_line_and_write_takes_printable_values() {
+    let a = run_main(vec![
+        declare_const("std::string", "fixed", e("\"x\"")),
+        open_file("data", "read", e("\"data.txt\""), None),
+        open_file("out", "write", e("\"out.txt\""), None),
+        print(vec![read_line("data", "fixed")]),
+        write_to("out", vec![e("data")]),
+        print(vec![exists(e("3"))]),
+    ]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0308 at b0004 field LINE: `fixed` was created as a constant, so it can't be changed. Untick \
+             'const' in its 'create' block if it needs to change.",
+            "error B2C-E0314 at b0006 ITEM0[0..1]: An input file can't be printed.",
+            "error B2C-E0301 at b0007 PATH[0..1]: This is a whole number, but this block needs text or a character.",
+        ]
+    );
+}
+
+#[test]
+fn file_blocks_need_their_files_chosen() {
+    let mut read = read_line("data", "line");
+    read["block"]["fields"] = json!({});
+    let mut write = write_to("out", vec![e("1")]);
+    write["fields"] = json!({});
+    let a = run_main(vec![print(vec![read]), write]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0430 at b0001 field FILE: Choose a file opened for reading in this block.",
+            "error B2C-E0430 at b0001 field LINE: Choose a text variable for the line in this block.",
+            "error B2C-E0430 at b0002 field FILE: Choose a file opened for writing in this block.",
+        ]
+    );
 }
