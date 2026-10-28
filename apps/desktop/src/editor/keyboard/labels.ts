@@ -10,7 +10,7 @@ import type { BdmBlock, FieldValue } from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
 
 import { visibleInvisibles } from '../../panels/shared/invisibles';
-import { blockLabel, MAX_LABEL_CHARS, shorten } from '../diagnostics/blockPath';
+import { blockLabelOf, MAX_LABEL_CHARS, shorten } from '../diagnostics/blockPath';
 import { readFields } from '../sync/blockState';
 import { blockDefOf } from '../sync/catalog';
 import { flyoutGroupOf, flyoutLabelKind, flyoutNoteText } from './flyoutItems';
@@ -94,13 +94,13 @@ export function describeBlock(block: Blockly.Block, names: SymbolNames = NO_NAME
         v: def.version,
         ...(fields === undefined ? {} : { fields }),
       };
-      const label = blockLabel(node, names);
+      const { text: label, named } = blockLabelOf(node, names);
       const declared = declaredName(block, fields);
-      if (declared === null) {
+      if (declared === null || named) {
         return label;
       }
-      const name = shownText(declared);
-      return label.endsWith(name) ? label : shorten(`${label} ${name}`, MAX_LABEL_CHARS);
+      // Always added, also when the label ends with the same word: `open file` and its `file`.
+      return shorten(`${label} ${shownText(declared)}`, MAX_LABEL_CHARS);
     }
     const text = shownText(block.toString(MAX_LABEL_CHARS * 2));
     return text === '' ? block.type : text;

@@ -62,6 +62,26 @@ describe('block names', () => {
     expect(describeBlock(slot)).toBe('0');
   });
 
+  it('add the declared name also when the label ends with the same word', () => {
+    const { workspace } = open();
+    const named = (type: string, field: string, name: string): string =>
+      describeBlock(
+        Blockly.serialization.blocks.append(
+          { type, fields: { [field]: { sym: `s_${name}`, name } } },
+          workspace,
+        ),
+      );
+    expect(named('file.open', 'FILE', 'file')).toBe('open file file');
+    expect(named('file.open', 'FILE', 'file2')).toBe('open file file2');
+    expect(named('file.for_each_line', 'LINE', 'line')).toBe('for each line line');
+    expect(named('coll.for_each_pair', 'KEY', 'key')).toBe('for each key key');
+    // A name that is only the end of the label's last word.
+    expect(named('var.declare', 'NAME', 'e')).toBe('create int variable e');
+    // A definition's label holds its name once.
+    expect(named('type.struct', 'NAME', 'Student')).toBe('struct Student');
+    expect(named('type.enum', 'NAME', 'Level')).toBe('enum Level');
+  });
+
   it('fall back to the block type when naming fails', () => {
     const { block } = open();
     const decl = block('decl');
