@@ -20,7 +20,8 @@ use b2c_ir::Severity;
 use serde_json::Value;
 
 use crate::document::{
-    GenerateError, HANDLE_BLOCKS, MAX_BLOCKS, Shape, UNIT_BLOCKS, count_blocks, generate, parity_digest,
+    DEFINITION_BLOCKS, GenerateError, HANDLE_BLOCKS, MAX_BLOCKS, Shape, UNIT_BLOCKS, Units, count_blocks,
+    generate, parity_digest,
 };
 
 /// The parity digests the TypeScript generator must also give
@@ -34,7 +35,7 @@ fn shape(blocks: usize, drag_handle: bool) -> Shape {
     Shape {
         blocks,
         drag_handle,
-        collections: false,
+        units: Units::Plain,
     }
 }
 
@@ -43,7 +44,16 @@ fn collections(blocks: usize) -> Shape {
     Shape {
         blocks,
         drag_handle: false,
-        collections: true,
+        units: Units::Collections,
+    }
+}
+
+/// The shape of W2's blocks of every kind.
+fn language(blocks: usize) -> Shape {
+    Shape {
+        blocks,
+        drag_handle: false,
+        units: Units::Language,
     }
 }
 
@@ -235,4 +245,66 @@ fn the_parity_digest_ignores_key_order_but_not_content() {
         parity_digest(&a),
         "704112698874bfb52b267e9cec3b2285641e983134d36cdf5f86e283eb7c737e"
     );
+}
+
+#[test]
+fn the_language_document_has_the_size_every_kind_of_unit_and_no_diagnostics_at_all() {
+    for blocks in [
+        1 + DEFINITION_BLOCKS,
+        2 + DEFINITION_BLOCKS,
+        49 + DEFINITION_BLOCKS,
+        1_000,
+        1_001,
+    ] {
+        let generated = generate(language(blocks)).unwrap();
+        assert_eq!(count_blocks(&generated), blocks, "{blocks} blocks");
+    }
+    assert_eq!(
+        generate(language(DEFINITION_BLOCKS)),
+        Err(GenerateError::TooFew {
+            blocks: DEFINITION_BLOCKS,
+            min: 1 + DEFINITION_BLOCKS
+        })
+    );
+    let generated = generate(language(1_000)).unwrap();
+    assert_eq!(generated["formatVersion"], 2);
+    let top = generated["modules"][0]["workspace"]["blocks"].as_array().unwrap();
+    let definitions: Vec<&str> = top[1..]
+        .iter()
+        .map(|block| block["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        definitions,
+        [
+            "type.enum",
+            "type.struct",
+            "var.global",
+            "var.global",
+            "func.define",
+            "func.define"
+        ]
+    );
+    let loaded = b2c_model::load(generated.to_string().as_bytes()).unwrap();
+    let text = b2c_model::to_canonical_json(&loaded);
+    let preview = preview_document(&text, &PreviewOptions::default());
+    assert!(preview.diagnostics.is_empty(), "{:?}", preview.diagnostics);
+    assert!(preview.buildable);
+    assert_eq!(preview.placeholders, 0);
+    let cpp = &preview.files.first().unwrap().contents;
+    for line in [
+        "std::ranges::sort(scores_0, std::greater{});",
+        "int n_1 = std::stoi(b2c::trim(\" 1 \"));",
+        "} catch (const std::exception& e_1) {",
+        "p_2.x = std::abs(-2);",
+        "++counter;",
+        "switch (counter) {",
+        "[[fallthrough]];",
+        "static_assert(LIMIT > 0, \"the limit is too small\");",
+        "} while (false);",
+        "std::cout << area(4) << '\\n';",
+        "std::filesystem::exists(word_4)",
+        "int area(int width, int height = 2);",
+    ] {
+        assert!(cpp.contains(line), "{line}\n{cpp:.6000}");
+    }
 }

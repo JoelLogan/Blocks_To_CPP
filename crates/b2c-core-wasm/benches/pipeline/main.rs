@@ -15,7 +15,11 @@
 //!   job gates (`tools/bench-compare.py`);
 //! * `preview-collections`: the same on the document of W2's collection
 //!   blocks (`collections`, docs/plans/m3-contracts/w2.md §1.2), reported
-//!   and not gated until it has its baselines.
+//!   and not gated until it has its baselines;
+//! * `preview-language`: the same on the document of W2's blocks of every
+//!   kind (collections, text, math, errors, structs and enums, globals,
+//!   control, functions and files; w2.md §5.3), reported and not gated
+//!   until it has its baselines.
 //!
 //! Run it with `cargo bench -p b2c-core-wasm --bench pipeline` (add
 //! `-- --quick` for a short run). Criterion writes each benchmark's samples
@@ -38,18 +42,24 @@ use b2c_codegen::{CodegenOptions, HelperPlacement};
 use b2c_core_wasm::{APP_VERSION, PreviewOptions, preview_document};
 use criterion::{Criterion, SamplingMode};
 
-use crate::document::{Shape, count_blocks, generate};
+use crate::document::{Shape, Units, count_blocks, generate};
 
 /// The document the editor's preview must handle within N4 (01 §1.4).
 const SHAPE: Shape = Shape {
     blocks: 1_000,
     drag_handle: false,
-    collections: false,
+    units: Units::Plain,
 };
 
 /// The same size made of the collection blocks.
 const COLLECTIONS: Shape = Shape {
-    collections: true,
+    units: Units::Collections,
+    ..SHAPE
+};
+
+/// The same size made of W2's blocks of every kind, with definitions.
+const LANGUAGE: Shape = Shape {
+    units: Units::Language,
     ..SHAPE
 };
 
@@ -94,9 +104,20 @@ fn codegen_options(project_name: &str) -> CodegenOptions {
     }
 }
 
-/// The `pipeline` group on `text`, and the preview of `collections`, which
-/// [`prepared_document`] checked.
-fn bench_pipeline(criterion: &mut Criterion, text: &str, collections: &str) -> Result<(), String> {
+/// The documents [`prepared_document`] checked.
+struct Documents {
+    /// The plain shape.
+    plain: String,
+    /// The collection blocks.
+    collections: String,
+    /// W2's blocks of every kind.
+    language: String,
+}
+
+/// The `pipeline` group on the plain document, and the previews of the
+/// others.
+fn bench_pipeline(criterion: &mut Criterion, documents: &Documents) -> Result<(), String> {
+    let text = documents.plain.as_str();
     let bytes = text.as_bytes();
     let loaded = b2c_model::load(bytes).map_err(|_| "the document no longer loads")?;
     let catalog = b2c_catalog::core_catalog();
@@ -125,17 +146,26 @@ fn bench_pipeline(criterion: &mut Criterion, text: &str, collections: &str) -> R
         b.iter(|| preview_document(black_box(text), &preview_options));
     });
     group.bench_function("preview-collections", |b| {
-        b.iter(|| preview_document(black_box(collections), &preview_options));
+        b.iter(|| preview_document(black_box(&documents.collections), &preview_options));
+    });
+    group.bench_function("preview-language", |b| {
+        b.iter(|| preview_document(black_box(&documents.language), &preview_options));
     });
     group.finish();
     Ok(())
 }
 
 fn main() -> ExitCode {
-    let documents = prepared_document(SHAPE).and_then(|text| Ok((text, prepared_document(COLLECTIONS)?)));
-    let outcome = documents.and_then(|(text, collections)| {
+    let documents = prepared_document(SHAPE).and_then(|plain| {
+        Ok(Documents {
+            plain,
+            collections: prepared_document(COLLECTIONS)?,
+            language: prepared_document(LANGUAGE)?,
+        })
+    });
+    let outcome = documents.and_then(|documents| {
         let mut criterion = Criterion::default().configure_from_args();
-        bench_pipeline(&mut criterion, &text, &collections)?;
+        bench_pipeline(&mut criterion, &documents)?;
         criterion.final_summary();
         Ok(())
     });
