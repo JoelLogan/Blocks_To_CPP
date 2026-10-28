@@ -283,9 +283,13 @@ the getting-started guide describe the polished editor.
   *when program starts* (a checkbox, not a second block), overloads, default
   arguments and the *moved* parameter mode. Type-specific variable
   operations, and with *Show advanced blocks* the bitwise compound
-  assignments. The project name in the project settings dialog. (Done in
-  wave W2, falling through as the block *go on into the next case*; the
-  *moved* parameter mode moved to M4, where `move` arrives.)
+  assignments. (Done in wave W2, falling through as the block *go on into
+  the next case*; the *moved* parameter mode moved to M4, where `move`
+  arrives.)
+* The project name in the project settings dialog (still open: the project
+  settings page merged from wave W3 edits the standard, the configurations,
+  the defines and the run options, and the name is changed from the top
+  bar).
 * The type and slot foundations: an open type representation, typed slots,
   catalog schema extensions (including the catalog's `headers`),
   `text + "x"` where C++ allows it, and constant folding for overflow and

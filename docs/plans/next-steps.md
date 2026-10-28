@@ -449,8 +449,10 @@ helper that injects only some categories would let most of them go back
   IPC contract has 39 commands. **Remaining:** multi-module projects in
   their two parts (functions across modules first, which can start now;
   then structs, enums, globals and constants across modules), _namespace_
-  and _use namespace_, the per-unit object cache if time, and the spec
-  sections of w3-export-run.md §10.
+  and _use namespace_, the per-unit object cache if time, the project name
+  in the project settings page (an M3 item of
+  [10 §10.1](../spec/10-roadmap.md#m3-language-breadth-i); the page does
+  not edit the name yet), and the spec sections of w3-export-run.md §10.
 - **W4**, Appearance and expert mode
   ([w4-appearance-expert.md](m3-contracts/w4-appearance-expert.md)): the
   Appearance setting with the `[data-theme]` refactor and a console that
