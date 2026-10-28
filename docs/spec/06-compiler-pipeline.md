@@ -448,7 +448,7 @@ queries from the analysis cached by its last preview.
   parts goes on (a part ending in *go on into the next case* goes on into
   the next one); a *do … then repeat* body runs at least once; a *try* goes
   on when its try part or one of its catch parts does. A catch part that an
-  earlier part hides (the same error, or *any error* first) warns
+  earlier part hides (the same error, or `std::exception` first) warns
   `W0507`, and a switch on an enum without a default part that misses some
   of its values warns `W0508`, naming them.
 * **Lints:** a parked block (`W0505`, §6.4), integer division into a

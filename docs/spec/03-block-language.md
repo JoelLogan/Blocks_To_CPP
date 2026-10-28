@@ -889,23 +889,23 @@ threat review.
 
 | Block | Generates |
 | ------- | ----------- |
-| `try { } catch [any error ▾] as [e] { } ⊕` | `try { } catch (const std::exception& e) { }`. The dropdown lists the standard errors (*any error*, *invalid argument*, *out of range*, *runtime error*: `std::exception`, `std::invalid_argument`, `std::out_of_range`, `std::runtime_error`), and the user exception classes in M4. |
-| `throw [runtime error ▾] with message ("message")` | `throw std::runtime_error("message");` (also invalid argument and out of range) |
+| `try { } catch [std::exception ▾] as [e] { } ⊕` | `try { } catch (const std::exception& e) { }`. The dropdown lists the standard errors by their C++ names (`std::exception`, which catches every standard error, `std::invalid_argument`, `std::out_of_range` and `std::runtime_error`), and the user exception classes in M4. |
+| `throw [std::runtime_error ▾] with message ("message")` | `throw std::runtime_error("message");` (also `std::invalid_argument` and `std::out_of_range`) |
 | `message of [e ▾]` | `e.what()`, used as text |
 | `throw the error again` | `throw;` (only valid inside a catch part: `B2C-E0402`) |
 
 A *try* has 1 to 8 catch parts, added with ⊕ (each copy joined by the word
 *catch*) and removed with ⊖; a new part's error is named `e` (then `e2`, …).
-The parts are tried in order, and *any error* catches every standard error.
-Each part's error is visible in its own part only, and can't be changed
-(`B2C-E0308`). A part that never runs, because an earlier part catches the
-same error or *any error*, warns `B2C-W0507` (g++'s `-Wexceptions` warns
-too). *throw* and *throw the error again* end their path, as *return* does
-(`B2C-W0502` for the blocks after them, and no `B2C-E0410`). There is no
-*catch anything* (`catch (...)`): *any error* catches every standard error
-and has a message, which `...` has not. **In M3** (wave W2) the four blocks
-are built, in the Errors category; user exception classes come with classes
-in M4.
+The parts are tried in order, and `std::exception` catches every standard
+error. Each part's error is visible in its own part only, and can't be
+changed (`B2C-E0308`). A part that never runs, because an earlier part
+catches the same error or `std::exception`, warns `B2C-W0507` (g++'s
+`-Wexceptions` warns too). *throw* and *throw the error again* end their
+path, as *return* does (`B2C-W0502` for the blocks after them, and no
+`B2C-E0410`). There is no *catch anything* (`catch (...)`): `std::exception`
+catches every standard error and has a message, which `...` has not.
+**In M3** (wave W2) the four blocks are built, in the Errors category;
+user exception classes come with classes in M4.
 
 ### 3.7.12 Memory, Concurrency, Generics *(Advanced)*
 
