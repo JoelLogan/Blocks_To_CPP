@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { createRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { parseColour, parseRules, themeTokens } from '../../app/layout/cssAudit';
 import { expectNoAxeViolations } from '../../test/axe';
 import { REANNOUNCE_MS, TRANSIENT_STATUS_MS } from '../shared/useTransientStatus';
 import type { RunExit } from '../types';
@@ -19,6 +20,19 @@ import {
 import { LinkDialog } from './LinkDialog';
 import { COLUMN_SETTLE_MS } from './refit';
 import { FLOOD_QUIET_MS, FLOOD_WRITE_BYTES } from './screenReader';
+
+/** The console's tokens as panels.css sets them, per theme (as styles.test.ts reads them). */
+const PANEL_TOKENS = themeTokens(
+  parseRules(
+    Object.values(
+      import.meta.glob<string>('/src/panels/panels.css', {
+        query: '?raw',
+        import: 'default',
+        eager: true,
+      }),
+    ).join('\n'),
+  ),
+);
 
 const IDLE: ConsoleHeader = { state: 'idle', exit: null, elapsedMs: 0, notices: [] };
 const RUNNING: ConsoleHeader = {
@@ -233,12 +247,23 @@ describe('ConsolePanel', () => {
           _core: { _themeService: { colors: { selectionBackgroundTransparent: { css: string } } } };
         }
       )._core._themeService.colors.selectionBackgroundTransparent.css;
-    // The tokens of panels.css: xterm.js reads the comma form; with a space-separated rgb() and
-    // an alpha it throws and uses its own white at 30 %.
-    host.style.setProperty('--b2c-console-selection', 'rgba(138, 180, 255, 0.35)');
-    rerender(<ConsolePanel {...props} theme="dark" />);
-    expect(resolved()).not.toBe('rgba(255, 255, 255, 0.3)');
-    expect(resolved()).toMatch(/^(rgba\(138, 180, 255|#8ab4ff)/);
+    // The tokens of panels.css itself: xterm.js reads the comma form; with a space-separated
+    // rgb() and an alpha it throws and uses its own white at 30 %, so a token in that form fails.
+    for (const theme of ['dark', 'light'] as const) {
+      const token = PANEL_TOKENS[theme].get('--b2c-console-selection');
+      const colour = token === undefined ? null : parseColour(token);
+      if (token === undefined || colour === null) {
+        throw new Error(`panels.css has no readable --b2c-console-selection (${theme})`);
+      }
+      host.style.setProperty('--b2c-console-selection', token);
+      rerender(<ConsolePanel {...props} theme={theme} />);
+      expect(resolved(), theme).not.toBe('rgba(255, 255, 255, 0.3)');
+      // xterm.js keeps the colour as #rrggbbaa.
+      const hex = [colour.r, colour.g, colour.b, Math.round(colour.a * 255)]
+        .map((part) => part.toString(16).padStart(2, '0'))
+        .join('');
+      expect(resolved(), theme).toBe(`#${hex}`);
+    }
   });
 
   it('keeps program colours readable on either console background (WCAG 1.4.3)', () => {
