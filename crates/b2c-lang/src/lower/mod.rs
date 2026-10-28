@@ -27,8 +27,8 @@ use b2c_ir::headers::{Header, ItemHeaders};
 use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
 use b2c_ir::layout::Layout;
 use b2c_ir::sast::{
-    Expr, FunctionDef, Item, ItemKind, MainDef, Module, Origin, Param, PassMode, Program, Symbol, SymbolKind,
-    SymbolTable,
+    Expr, ExprKind, FunctionDef, Item, ItemKind, MainDef, Module, Origin, Param, PassMode, Program, Symbol,
+    SymbolKind, SymbolTable,
 };
 use b2c_ir::sig::SigTable;
 use b2c_ir::text::{Comment, Ident, IdentError};
@@ -971,6 +971,7 @@ impl<'d> Lowerer<'d> {
                 text: format!("The default value of {}", quoted(&param.name)),
                 stores: true,
             };
+            self.check_param_default_names(&value, &decl.sym, &sig, param);
             if param.mode == PassMode::Editable {
                 // `int& x = …` binds the parameter to what the default
                 // names, so it must be a changeable variable, as an
@@ -988,6 +989,57 @@ impl<'d> Lowerer<'d> {
                 param.default = defaults.remove(&param.sym);
             }
             sig.default_headers = headers;
+        }
+    }
+
+    /// What C++ looks up by name in a default value, at any depth: each
+    /// global it names and each function it calls (`true`), with where. A
+    /// local or a parameter is reported where it is used.
+    pub(super) fn names_looked_up(&self, value: &Expr) -> Vec<(SymbolId, bool, Location)> {
+        let mut found = Vec::new();
+        let mut stack = vec![value];
+        while let Some(expr) = stack.pop() {
+            match &expr.kind {
+                ExprKind::Call { function, .. } => {
+                    found.push((function.clone(), true, expr.origin.location()));
+                }
+                ExprKind::Var(sym)
+                    if matches!(
+                        self.symbols.get(sym).map(|symbol| &symbol.kind),
+                        Some(SymbolKind::Global { .. })
+                    ) =>
+                {
+                    found.push((sym.clone(), false, expr.origin.location()));
+                }
+                _ => {}
+            }
+            stack.extend(flow::children(expr));
+        }
+        found
+    }
+
+    /// Reports what the default value of `param` names that C++ would not
+    /// find as the blocks mean it (w2.md §2.8): a call to `function`
+    /// itself, which C++ declares only after its whole first line, inputs
+    /// included.
+    fn check_param_default_names(
+        &mut self,
+        value: &Expr,
+        function: &SymbolId,
+        sig: &FuncSig,
+        param: &ParamSig,
+    ) {
+        for (sym, _, location) in self.names_looked_up(value) {
+            if &sym == function {
+                let message = format!(
+                    "The default value of {} calls {} itself, but C++ knows {} only after the whole first line of \
+                     its definition, inputs included. Use a value, a constant or another function instead.",
+                    quoted(&param.name),
+                    quoted(&sig.name),
+                    quoted(&sig.name)
+                );
+                self.diags.error(codes::DECLARATION_CYCLE, location, message);
+            }
         }
     }
 

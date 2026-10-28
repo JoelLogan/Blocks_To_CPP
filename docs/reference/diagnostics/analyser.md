@@ -636,13 +636,17 @@ Codes by area:
   uses.
   A global's starting value also needs every global that the functions it
   calls read (through every call), and a default value of a function input
-  needs the functions it calls declared first.
+  needs the functions it calls declared first. So a default value cannot
+  call its own function, which C++ declares only after its inputs.
 * **Example:** `global [int] [a] = (b + 1)` and `global [int] [b] = (a + 1)`.
 * **Message:** "These definitions each need the next one first, in a circle
   that C++ cannot put in order: `a` needs `b` needs `a`. Change one of them
   so that it no longer needs the next." / for a global set from its own
   value, "`z` needs its own value to be set first, which C++ cannot do.
-  Change it so that it no longer needs itself."
+  Change it so that it no longer needs itself." / for a default value that
+  calls its own function, "The default value of `n` calls `f` itself, but
+  C++ knows `f` only after the whole first line of its definition, inputs
+  included. Use a value, a constant or another function instead."
 * **How to fix:** give one of them a starting value that does not use the
   other, and set it later in `when program starts`.
 

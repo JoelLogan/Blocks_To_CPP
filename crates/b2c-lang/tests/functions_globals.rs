@@ -291,6 +291,42 @@ fn a_function_declaration_follows_what_its_defaults_call() {
     );
 }
 
+#[test]
+fn a_default_cannot_call_its_own_function() {
+    // C++ declares `f` only after `int f(int n = f(1))` ends.
+    let f = func_with_defaults(
+        "f",
+        "int",
+        &[("n", "int", "copy")],
+        vec![Some(e("f(1)"))],
+        vec![ret(Some(e("n")))],
+    );
+    let a = analyze(&doc(vec![f, main(vec![])]));
+    let found = reported(&a);
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(found[0].starts_with("error B2C-E0421 at fn_f"), "{found:#?}");
+    assert!(
+        found[0].ends_with(
+            "The default value of `n` calls `f` itself, but C++ knows `f` only after the whole first line of its \
+             definition, inputs included. Use a value, a constant or another function instead."
+        ),
+        "{found:#?}"
+    );
+    // Another function of that name, declared first, is not the same one.
+    let none = func("f", "int", &[], vec![ret(Some(e("1")))]);
+    let mut one = func_with_defaults(
+        "f",
+        "int",
+        &[("n", "int", "copy"), ("m", "int", "copy")],
+        vec![None, Some(e("f()"))],
+        vec![ret(Some(e("n + m")))],
+    );
+    one["id"] = serde_json::json!("fn_f_one");
+    one["fields"]["NAME"]["sym"] = serde_json::json!("sym_f_one");
+    let a = analyze(&doc(vec![none, one, main(vec![])]));
+    assert_clean(&a);
+}
+
 /// `define <name>` with symbol `sym_<sym>` (overloads share a name, not a
 /// symbol), parameters `(name, type, mode)` with symbols `sym_<sym>_<name>`,
 /// and default values.
