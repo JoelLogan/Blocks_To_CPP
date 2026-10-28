@@ -381,7 +381,16 @@ default size, 1028 × 749, 1024 × 768 and 800 × 560 (63 files, 246 passed,
 `preview-language` shape takes 15.4 ms locally, and a local native A/B of
 `pipeline/preview` against `f508fca` gave +1.4 % (gate 10 %). The
 specification describes what W2 built, and w2.md §7.1 records each place
-where the code differs from the contract, with its reason.
+where the code differs from the contract, with its reason. After the docs
+step the visual baselines were rebaselined from the CI candidates of
+Desktop run 40733070176 on `603ce8a` (`ade20b2`, merged in `32ea263`): 47
+Linux and Windows images, the toolbox scenes with every category icon
+drawn as a glyph on both systems, the Program, Variables and Errors
+flyouts, `canvas-guessing-game`, `chrome-window-smallest` and the menu
+scenes, with Linux `chrome-toolbox-files` and `chrome-toolbox-files-dark`
+new. W3 and W4 were merged by then, and the console scenes did not change;
+locally they still differ, because a machine without cgroup containment
+adds the console's _Process group only_ note.
 
 **Moved, each with its reason in [w2.md §1.10](m3-contracts/w2.md#110-not-in-w2):**
 _namespace_ and _use namespace_ to W3 (§3.4's row); the ⚙ popover, _format
@@ -408,13 +417,6 @@ waited for W2's integration step.
   metrics `preview drag`, both systems), which the coordinator dispatches;
   `webview.drag-typed-1000.frame-p95-all` is still reported (no A/B metric
   group runs it), so W3's integration gates it;
-- the visual baselines rebaselined from one CI run: every
-  `chrome-toolbox-*` scene for the new icons (most stay under the 0.5 %
-  threshold, but the baselines would keep the empty boxes), the Program,
-  Variables and Errors scenes and `canvas-guessing-game` for W2's blocks,
-  `chrome-toolbox-files` (no baseline yet), and on Windows every scene
-  with the category column; W4's light console and W3's menu items change
-  the console and menu scenes;
 - Windows E2E and GCC 15 on the next push, then the review of the wave
   with its lenses and the fixer, as in every M3 wave;
 - the comment of `catalog/toolbox.toml` still says the four categories are
