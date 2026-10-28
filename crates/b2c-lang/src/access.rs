@@ -138,10 +138,6 @@ fn param_row(row: &Value) -> Result<ParamRow, ()> {
 /// One row of a struct's `extra.fields` or an enum's `extra.values` (w2.md
 /// §2.1).
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "read by the lowering of W2's struct and enum blocks")
-)]
 pub(crate) struct Row {
     /// The row's symbol.
     pub(crate) sym: SymbolId,
@@ -155,10 +151,6 @@ pub(crate) struct Row {
 /// The rows of `extra.fields` (with types) or `extra.values` (without). A
 /// row without a usable symbol ID or name is `Err(())`. At most
 /// [`MAX_VARIADIC_PARTS`] rows are read.
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "read by the lowering of W2's struct and enum blocks")
-)]
 pub(crate) fn rows(block: &Block, key: &str) -> Vec<Result<Row, ()>> {
     let Some(Value::Array(rows)) = block.extra.get(key) else {
         return Vec::new();

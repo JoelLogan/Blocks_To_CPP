@@ -1,13 +1,7 @@
 //! The forms of types.md §5.2 that collection blocks lower to: an item by
 //! its position or key, a size, and a range-`for` with or without a
-//! structured binding. Each records the headers it needs.
-//!
-//! The SAST has no node for them before the collection blocks of milestone
-//! M3's second wave, whose lowering calls these.
-#![cfg_attr(
-    not(test),
-    allow(dead_code, reason = "called by the lowering of W2's collection blocks")
-)]
+//! structured binding. Each records the headers it needs. The lowering of
+//! the collection and text blocks calls them.
 
 use b2c_ir::ids::SymbolId;
 use b2c_ir::sast::{Block, Expr, ExprKind};

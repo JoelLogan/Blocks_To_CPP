@@ -324,7 +324,6 @@ pub(crate) enum Callee {
     Fixed(&'static str),
     /// A function template with explicit template arguments, chosen by the
     /// generator: `std::max<double>`, `std::clamp<int>` (w2.md §1.4).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's math blocks"))]
     Template(&'static str, Vec<CType>),
 }
 
@@ -391,7 +390,6 @@ pub(crate) enum CExprKind {
     },
     /// `object.name(args)`: a member function of a library type, chosen by
     /// the generator (`at`, `size`; types.md §5.2).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's collection blocks"))]
     Method {
         /// The object (already parenthesised if needed).
         object: Box<CExpr>,
@@ -401,7 +399,6 @@ pub(crate) enum CExprKind {
         args: Vec<CExpr>,
     },
     /// `object.field`: a field of a user struct.
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's struct blocks"))]
     Field {
         /// The object (already parenthesised if needed).
         object: Box<CExpr>,
@@ -409,7 +406,6 @@ pub(crate) enum CExprKind {
         field: Ident,
     },
     /// `Color::Red`: an enumerator, after its enum's qualified name.
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's enum blocks"))]
     Enumerator {
         /// The enum's qualified name.
         owner: Vec<Ident>,
@@ -418,7 +414,6 @@ pub(crate) enum CExprKind {
     },
     /// `object[index]`: a map's item by key, which *set item* creates when it
     /// is missing (w2.md §1.2).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's collection blocks"))]
     Index {
         /// The object (already parenthesised if needed).
         object: Box<CExpr>,
@@ -427,11 +422,9 @@ pub(crate) enum CExprKind {
     },
     /// `{a, b}`: a brace list (*list of*, an empty part of *new … with* in
     /// C++17).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's list and struct blocks"))]
     Braces(Vec<CExpr>),
     /// `Student{.name = n, .mark = m}` (C++20) or `Student{n, m}`: a struct
     /// value from its fields (*new … with*).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's struct blocks"))]
     Init {
         /// The struct's type.
         ty: CType,
@@ -512,7 +505,6 @@ impl CExpr {
 
     /// `object.name(args)`, parenthesising the object when needed
     /// (`(a + b).size()`).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's collection blocks"))]
     pub(crate) fn method(object: Self, name: &'static str, args: Vec<Self>) -> Self {
         let wrap = object.precedence() < Prec::Primary;
         Self::new(CExprKind::Method {
@@ -523,7 +515,6 @@ impl CExpr {
     }
 
     /// `object.field`, parenthesising the object when needed.
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's struct blocks"))]
     pub(crate) fn field(object: Self, field: Ident) -> Self {
         let wrap = object.precedence() < Prec::Primary;
         Self::new(CExprKind::Field {
@@ -533,7 +524,6 @@ impl CExpr {
     }
 
     /// `object[index]`, parenthesising the object when needed.
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's collection blocks"))]
     pub(crate) fn index(object: Self, index: Self) -> Self {
         let wrap = object.precedence() < Prec::Primary;
         Self::new(CExprKind::Index {
@@ -543,7 +533,6 @@ impl CExpr {
     }
 
     /// A call of a function template with explicit template arguments.
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's math blocks"))]
     pub(crate) fn call_template(name: &'static str, types: Vec<CType>, args: Vec<Self>) -> Self {
         Self::new(CExprKind::Call {
             callee: Callee::Template(name, types),
@@ -731,7 +720,6 @@ pub(crate) enum Init {
     Braces,
     /// `(a, b)`: a constructor's arguments (`std::ifstream file("x");`,
     /// w2.md §2.4).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's file blocks"))]
     Args(Vec<CExpr>),
 }
 
@@ -837,7 +825,6 @@ pub(crate) enum CStmtKind {
     },
     /// `for (const auto& x : range) { … }`, or with a structured binding
     /// `for (const auto& [k, v] : range) { … }` (types.md §1.5, §5.2).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's for-each blocks"))]
     RangeFor {
         /// What each item is bound to.
         binding: RangeBinding,
@@ -853,7 +840,6 @@ pub(crate) enum CStmtKind {
         body: CBlock,
     },
     /// `switch (value) { case label: … default: … }`.
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's enums and switch block"))]
     Switch {
         /// The value switched on.
         value: CExpr,
@@ -863,7 +849,6 @@ pub(crate) enum CStmtKind {
         default: Option<Vec<CStmt>>,
     },
     /// `do { … } while (cond);` (w2.md §1.6).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's do-while block"))]
     DoWhile {
         /// Body.
         body: CBlock,
@@ -871,7 +856,6 @@ pub(crate) enum CStmtKind {
         cond: CExpr,
     },
     /// `try { … } catch (const E& e) { … } …` (w2.md §2.5).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's error blocks"))]
     Try {
         /// The `try` part.
         body: CBlock,
@@ -879,10 +863,8 @@ pub(crate) enum CStmtKind {
         catches: Vec<CCatch>,
     },
     /// `throw value;`, or `throw;` to throw the caught error again.
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's error blocks"))]
     Throw(Option<CExpr>),
     /// `[[fallthrough]];`
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's switch block"))]
     FallThrough,
     /// `static_assert(cond, "message");` (*check at compile time*).
     #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's check block"))]
@@ -894,10 +876,6 @@ pub(crate) enum CStmtKind {
     },
     /// `target op value;` where the target is not a plain name: `c.at(i) =
     /// x;`, `c[k] = x;`, `s.mark = x;` (w2.md §1.2, §1.5).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "made for W2's collection and struct blocks")
-    )]
     AssignTo {
         /// What is assigned to.
         target: CExpr,
@@ -923,7 +901,6 @@ pub(crate) enum CStmtKind {
 /// What a range-`for` binds each item to: `const auto& x`, or the structured
 /// binding `const auto& [k, v]` of a map's key and value.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's for-each blocks"))]
 pub(crate) enum RangeBinding {
     /// One name for the whole item.
     One(Ident),
@@ -933,7 +910,6 @@ pub(crate) enum RangeBinding {
 
 /// How a range-`for` declares its binding (*for each*'s modes, w2.md §1.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's for-each blocks"))]
 pub(crate) enum BindingStyle {
     /// `const auto&`: read-only.
     ConstRef,
@@ -956,7 +932,6 @@ impl BindingStyle {
 
 /// One `catch (const E& name) { … }` of a `try`.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's error blocks"))]
 pub(crate) struct CCatch {
     /// The error type caught (`std::exception`, …).
     pub(crate) ty: CType,
@@ -971,7 +946,6 @@ pub(crate) struct CCatch {
 /// A global variable or constant at namespace scope (`var.global`, w2.md
 /// §2.7): `int count = 0;`, `constexpr double kGravity = 9.81;`.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's globals"))]
 pub(crate) struct CGlobal {
     /// `const`, `constexpr` or nothing.
     pub(crate) qualifier: Qualifier,
@@ -1040,7 +1014,6 @@ pub(crate) struct CFunction {
 /// A user type's definition with the functions its ticks and uses promise
 /// (types.md §1.6, §5.2).
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's struct and enum blocks"))]
 pub(crate) enum CTypeDef {
     /// `struct S;`: a struct named only in the lists of a struct defined
     /// before it (modules.md §3.3).

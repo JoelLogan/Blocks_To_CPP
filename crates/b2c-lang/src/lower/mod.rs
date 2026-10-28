@@ -307,10 +307,6 @@ pub(super) enum Breakable {
     /// A loop: *leave loop* and *skip to next round* work.
     Loop,
     /// A switch: C++'s `break` would leave it, not the loop around it.
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "pushed by W2's switch block (package D)")
-    )]
     Switch,
 }
 
@@ -732,10 +728,6 @@ impl<'d> Lowerer<'d> {
 
     /// Lowers `lower` inside a catch part, where *throw the error again*
     /// may be used, at any depth of other blocks (w2.md §2.5).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's error blocks (package B)")
-    )]
     pub(super) fn in_catch<T>(&mut self, lower: impl FnOnce(&mut Self) -> T) -> T {
         self.catch_depth += 1;
         let lowered = lower(self);
@@ -744,10 +736,6 @@ impl<'d> Lowerer<'d> {
     }
 
     /// Reports *throw the error again* outside a catch part (`B2C-E0402`).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's error blocks (package B)")
-    )]
     pub(super) fn check_rethrow(&mut self, block: &Block) {
         if self.catch_depth == 0 {
             let location = self.loc(&block.id, Part::Whole);

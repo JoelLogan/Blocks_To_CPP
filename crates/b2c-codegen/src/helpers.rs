@@ -20,58 +20,22 @@ pub(crate) enum Helper {
     /// `b2c::to_text(x)`: a decimal number as text, written as `print` writes it.
     ToText,
     /// `b2c::split(text, separator)` (*split … by*; w2.md §2.12).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's text blocks (package B)")
-    )]
     Split,
     /// `b2c::to_lower(text)` (*lowercase*).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's text blocks (package B)")
-    )]
     ToLower,
     /// `b2c::to_upper(text)` (*uppercase*).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's text blocks (package B)")
-    )]
     ToUpper,
     /// `b2c::trim(text)` (*trim*).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's text blocks (package B)")
-    )]
     Trim,
     /// `b2c::replace_all(text, old, new)` (*replace all*).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's text blocks (package B)")
-    )]
     ReplaceAll,
     /// `b2c::starts_with(text, prefix)` (*starts with*, C++17 only).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's text blocks (package B)")
-    )]
     StartsWith,
     /// `b2c::ends_with(text, suffix)` (*ends with*, C++17 only).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's text blocks (package B)")
-    )]
     EndsWith,
     /// `b2c::random_real(low, high)` (*random decimal*).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's math blocks (package B)")
-    )]
     RandomReal,
     /// `b2c::remove_at(items, index)` (*remove item at*).
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "called by W2's collection blocks (package A)")
-    )]
     RemoveAt,
 }
 

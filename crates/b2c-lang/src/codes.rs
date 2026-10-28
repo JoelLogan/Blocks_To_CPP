@@ -71,10 +71,6 @@ pub(crate) const DIVISION_BY_ZERO: &str = "B2C-E0316";
 /// switch is a switch (w2.md §2.9).
 pub(crate) const OUTSIDE_LOOP: &str = "B2C-E0401";
 /// *throw the error again* outside a catch part (w2.md §2.5).
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "emitted by W2's error blocks (package B)")
-)]
 pub(crate) const RETHROW_OUTSIDE_CATCH: &str = "B2C-E0402";
 /// A `return` without the value it needs.
 pub(crate) const RETURN_NEEDS_VALUE: &str = "B2C-E0403";
@@ -87,17 +83,9 @@ pub(crate) const MANY_MAINS: &str = "B2C-E0406";
 /// A function that can reach its end without returning a value.
 pub(crate) const MISSING_RETURN: &str = "B2C-E0410";
 /// Structs that hold each other by value (w2.md §2.2).
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "emitted by W2's struct blocks (package C1)")
-)]
 pub(crate) const STRUCT_CYCLE: &str = "B2C-E0420";
 /// Any other cycle of the declaration graph, such as two globals set from
 /// each other (modules.md §4.3).
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "emitted by W2's declaration graph (packages C1, C2)")
-)]
 pub(crate) const DECLARATION_CYCLE: &str = "B2C-E0421";
 /// A value that must be fixed when the program is built is not: a `case`
 /// label, or the condition of *check at compile time* (w2.md §2.9).
@@ -145,17 +133,9 @@ pub(crate) const PARKED: &str = "B2C-W0505";
 pub(crate) const NOT_FINITE: &str = "B2C-W0506";
 /// A catch part that never runs: an earlier part catches the same error or
 /// a base of it (w2.md §2.5).
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "emitted by W2's error blocks (package B)")
-)]
 pub(crate) const UNREACHABLE_CATCH: &str = "B2C-W0507";
 /// A switch on an enum, without a default part, that has no case for some
 /// of its values (w2.md §2.9).
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "emitted by W2's switch block (package D)")
-)]
 pub(crate) const MISSING_CASES: &str = "B2C-W0508";
 /// Integer division where a decimal result is expected.
 pub(crate) const INTEGER_DIVISION: &str = "B2C-W0510";
