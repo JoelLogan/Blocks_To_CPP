@@ -813,8 +813,11 @@ with a default value, `= (…)`, typed by its own field; a default sees the
 module's globals and functions, not the other fields, and can't name a
 global or call a function called like a field of the same struct
 (`B2C-E0205`: inside a struct, C++ finds the field). A field or value named
-twice, a field named like its struct, and a struct or enum named like
-another definition or a function are `B2C-E0210`; structs that hold each
+twice, a field named like its struct or any other struct or enum, a struct
+or enum named like another definition or a function, and a variable,
+function input, loop item, caught error or program's arguments named like a
+struct or enum (C++ would find that name instead of the type) are
+`B2C-E0210`; structs that hold each
 other by value are `B2C-E0420`, and any other cycle between definitions
 `B2C-E0421`. *comparable* and *printable* need fields that are themselves
 comparable or printable (`B2C-E0313`, `B2C-E0314` at the tick, naming the

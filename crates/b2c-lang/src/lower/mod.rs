@@ -219,6 +219,9 @@ struct Lowerer<'d> {
     /// The globals of each module that were declared, by name (w2.md §2.7):
     /// visible in every item of their module.
     module_globals: Vec<BTreeMap<String, SymbolId>>,
+    /// The structs and enums of the program, by name (the first one for
+    /// duplicates), known before any field, parameter or body is lowered.
+    user_types: BTreeMap<String, SymbolId>,
     /// The globals' items, lowered before any body so that a constant's
     /// value is known wherever it is used, by defining block.
     global_items: BTreeMap<BlockId, Item>,
@@ -384,6 +387,7 @@ impl<'d> Lowerer<'d> {
             decls,
             module_functions,
             module_globals: vec![BTreeMap::new(); document.modules.len()],
+            user_types: BTreeMap::new(),
             global_items: BTreeMap::new(),
             functions: BTreeMap::new(),
             symbols: SymbolTable::default(),
@@ -662,6 +666,7 @@ impl<'d> Lowerer<'d> {
             return None;
         };
         let ident = self.ident(&decl.name, &location, false);
+        self.error_if_names_type(&decl.name, &location);
         self.warn_if_hides_definition(&decl.name, &location);
         let text = Type::String;
         let ty = Type::lib(b2c_ir::types::LibType::Vector, vec![text]).unwrap_or(Type::Error);
@@ -868,6 +873,7 @@ impl<'d> Lowerer<'d> {
                     "the other input",
                 );
             }
+            self.error_if_names_type(&row.name, &loc);
             self.warn_if_hides_definition(&row.name, &loc);
             let origin = self.origin(&block.id, part);
             let symbol = Symbol {
@@ -1257,6 +1263,42 @@ impl<'d> Lowerer<'d> {
         if let Some(pending) = self.pending.pop() {
             self.scopes.unhide(pending.mark);
         }
+    }
+
+    /// The struct or enum of the program called `name`, with what it is for
+    /// messages ("struct" or "enum").
+    fn user_type_named(&self, name: &str) -> Option<(SymbolId, &'static str)> {
+        let sym = self.user_types.get(name)?;
+        let what = match self.symbols.get(sym).map(|symbol| &symbol.kind)? {
+            SymbolKind::Struct { .. } => "struct",
+            SymbolKind::Enum { .. } => "enum",
+            _ => return None,
+        };
+        Some((sym.clone(), what))
+    }
+
+    /// Reports a local, a parameter or `main`'s arguments named like a
+    /// struct or an enum of the program (`B2C-E0210`): the generated C++
+    /// names user types without qualification, so where the new name
+    /// exists, C++ would find it instead of the type, and every use of the
+    /// type there would fail to compile.
+    fn error_if_names_type(&mut self, name: &str, location: &Location) {
+        let Some((other, what)) = self.user_type_named(name) else {
+            return;
+        };
+        let message = format!(
+            "{name} is the name of {article} {what}, so C++ would not find the {what} by that name where {name} \
+             exists. Choose another name.",
+            name = quoted(name),
+            article = if what == "enum" { "an" } else { "a" },
+        );
+        self.error_with_decl(
+            codes::DUPLICATE_NAME,
+            location.clone(),
+            message,
+            &other,
+            &format!("the {what}"),
+        );
     }
 
     /// Warns when a local name hides a function or a global of the module

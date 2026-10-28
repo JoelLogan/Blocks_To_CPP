@@ -169,8 +169,11 @@ Codes by area:
   same scope as its inputs, and a `for` loop's body as the same scope as its
   counter. Also two fields of a struct, or two values of an enum, with the
   same name; a field named like its struct; a struct or enum named like
-  another struct, enum or function; and a global named like another global,
-  a struct, an enum or a function of the program.
+  another struct, enum or function; a global named like another global,
+  a struct, an enum or a function of the program; and a variable, function
+  input, loop item, caught error, the program's arguments or a field named
+  like a struct or enum (the generated C++ names the type as it is, so C++
+  would find the other name instead).
 * **Example:**
 
   ```text
@@ -185,6 +188,10 @@ Codes by area:
   one of them." / "There is already a global called `total`. Rename one of
   them." / "There is already a function called `area`, and C++ would not
   know which of the two the name means. Rename the global or the other one."
+  / "`Student` is the name of a struct, so C++ would not find the struct by
+  that name where `Student` exists. Choose another name." / "A field can't
+  have the name of a struct or an enum: inside `Car`, C++ would find the
+  field `Color` instead of the enum. Rename the field."
 * **How to fix:** rename one of them.
 
 ## B2C-E0211 Duplicate function

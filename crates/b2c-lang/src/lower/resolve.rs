@@ -358,9 +358,11 @@ impl Lowerer<'_> {
     }
 
     /// Checks a new local name (variable or counter) against the names
-    /// visible here: a redeclaration in the same scope is an error, hiding an
-    /// outer variable, a function or a global is a warning.
+    /// visible here: a redeclaration in the same scope or the name of a
+    /// struct or an enum is an error, hiding an outer variable, a function
+    /// or a global is a warning.
     pub(super) fn check_new_name(&mut self, name: &str, location: &Location) {
+        self.error_if_names_type(name, location);
         if let Some(other) = self.scopes.in_same_scope(name).cloned() {
             let message = format!(
                 "There is already a variable called {} here. Choose another name.",

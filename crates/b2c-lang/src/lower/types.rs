@@ -77,6 +77,7 @@ impl Lowerer<'_> {
                 }
             }
         }
+        self.user_types = names;
         let mut pending = Vec::new();
         for (index, block, sym) in declared {
             self.enter_module(index, &document.modules[index].id);
@@ -251,7 +252,9 @@ impl Lowerer<'_> {
     }
 
     /// Reports a row named like an earlier row of the same definition, or
-    /// (a struct's field) like the struct itself (`B2C-E0210`).
+    /// (a struct's field) like the struct itself or any other struct or enum
+    /// of the program (`B2C-E0210`): inside the struct, C++ would find the
+    /// field by that name instead of the type.
     fn check_row_name(
         &mut self,
         name: &str,
@@ -287,6 +290,22 @@ impl Lowerer<'_> {
                     quoted(owner)
                 );
                 self.diags.error(codes::DUPLICATE_NAME, location.clone(), message);
+            } else if row == "field"
+                && let Some((other, what)) = self.user_type_named(name)
+            {
+                let message = format!(
+                    "A field can't have the name of a struct or an enum: inside {}, C++ would find the field \
+                     {} instead of the {what}. Rename the field.",
+                    quoted(owner),
+                    quoted(name)
+                );
+                self.error_with_decl(
+                    codes::DUPLICATE_NAME,
+                    location.clone(),
+                    message,
+                    &other,
+                    &format!("the {what}"),
+                );
             }
         }
     }

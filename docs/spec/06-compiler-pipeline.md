@@ -240,7 +240,10 @@ function is declared, before any body, with no parameter in scope.
   the statement lists: every function, default value and body sees them,
   and a local, parameter or caught error of their name hides them (`W0501`,
   with its own message). A struct's fields and an enum's values are
-  declared in their definition, and two of one name are `E0210`.
+  declared in their definition, and two of one name are `E0210`. The
+  generated C++ names a struct or an enum unqualified, so a local, a
+  parameter, `main`'s arguments or a field with the name of a struct or enum
+  of the program is `E0210` too: C++ would find it instead of the type.
 * Exposes a **scope query API** to the editor:
   `symbols_in_scope(block_id, input) -> Vec<SymbolInfo>`. It feeds variable
   dropdowns, Quick Insert and the member block.

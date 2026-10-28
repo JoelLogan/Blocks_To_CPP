@@ -495,6 +495,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   and has no default part); `B2C-E0402`, `B2C-E0420` and `B2C-E0421` are
   reported for the first time, and `B2C-E0430` names each empty menu of the
   new blocks.
+- The analyser refuses programs that g++ would reject or run wrongly: a
+  variable, function input, loop item, caught error, the program's arguments
+  or a field named like a struct or enum is `B2C-E0210`.
 - C++ support helpers for text, random decimals and removing items
   (`split`, `to_lower`, `to_upper`, `trim`, `replace_all`, `starts_with`,
   `ends_with`, `random_real`, `remove_at`), each compiled and run under

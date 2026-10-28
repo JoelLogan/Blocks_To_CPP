@@ -260,6 +260,69 @@ fn names_of_structs_enums_and_rows_are_checked() {
 }
 
 #[test]
+fn locals_inputs_and_fields_named_like_a_type_are_refused() {
+    // The generated C++ names a user type as it is (`Student s{};`), so
+    // where a variable, an input or a field has its name, C++ finds that
+    // instead of the type: `int Student = 1; Student s{};` does not
+    // compile, nor does `void show(int Student, Student s)` or
+    // `struct Car { Color Color; };`.
+    let local = create(json!("int"), "Student", Some(num("1")));
+    let local_id = local["id"].as_str().unwrap().to_owned();
+    let mut show = func("show", "void", &[], Vec::new());
+    show["extra"]["params"] = json!([
+        {"sym": sym("Student_input"), "name": "Student", "type": "int", "mode": "copy"},
+        {"sym": sym("s"), "name": "s", "type": user("Student"), "mode": "copy"},
+    ]);
+    let mut program = main(vec![local, create(user("Student"), "s2", None)]);
+    program["fields"] = json!({"ARGS": true, "ARGV": {"sym": sym("Color_args"), "name": "Color"}});
+    let a = run(vec![
+        student(),
+        enumeration("Color", &["Red", "Green"]),
+        structure("Car", &[("Color", user("Color"))], false, false),
+        show,
+        program,
+    ]);
+    let refused: Vec<String> = reported(&a)
+        .into_iter()
+        .filter(|line| line.contains("B2C-E0210"))
+        .collect();
+    assert_eq!(
+        refused,
+        [
+            "error B2C-E0210 at st_Car field fields[0]: A field can't have the name of a struct or an enum: inside \
+             `Car`, C++ would find the field `Color` instead of the enum. Rename the field."
+                .to_owned(),
+            "error B2C-E0210 at fn_show field params[0]: `Student` is the name of a struct, so C++ would not find \
+             the struct by that name where `Student` exists. Choose another name."
+                .to_owned(),
+            "error B2C-E0210 at main field ARGV: `Color` is the name of an enum, so C++ would not find the enum by \
+             that name where `Color` exists. Choose another name."
+                .to_owned(),
+            format!(
+                "error B2C-E0210 at {local_id} field NAME: `Student` is the name of a struct, so C++ would not \
+                 find the struct by that name where `Student` exists. Choose another name."
+            ),
+        ]
+    );
+    // Each points at the type it would hide.
+    let notes: Vec<_> = a
+        .diagnostics
+        .iter()
+        .filter(|d| d.code.0 == "B2C-E0210")
+        .map(|d| d.related.first().map(|r| r.message.clone()))
+        .collect();
+    assert_eq!(
+        notes,
+        [
+            Some(String::from("the enum")),
+            Some(String::from("the struct")),
+            Some(String::from("the enum")),
+            Some(String::from("the struct")),
+        ]
+    );
+}
+
+#[test]
 fn field_types_may_name_user_types_and_lists_of_them() {
     let school = structure(
         "School",
