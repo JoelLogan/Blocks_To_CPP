@@ -207,6 +207,9 @@ enum PendingKind {
     Initialiser(Option<Type>),
     /// A `for` loop header.
     Counter,
+    /// The path of *open file*, which C++ reads with the new stream's name
+    /// already declared.
+    OpenedFile,
 }
 
 /// The state of the lowering pass.

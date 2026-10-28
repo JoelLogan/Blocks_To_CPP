@@ -67,6 +67,15 @@ impl Lowerer<'_> {
                     self.diags.error(codes::OUT_OF_SCOPE, location.clone(), message);
                     None
                 }
+                PendingKind::OpenedFile => {
+                    let message = format!(
+                        "{name} is the file this block opens, so its path can't use it: C++ would read the new \
+                         file there. Rename the file or the variable."
+                    );
+                    self.diags
+                        .error(codes::USED_BEFORE_DECLARATION, location.clone(), message);
+                    None
+                }
             };
         }
         if self.scopes.contains(sym) {

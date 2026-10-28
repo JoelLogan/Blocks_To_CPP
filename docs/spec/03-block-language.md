@@ -878,6 +878,9 @@ threat review.
 * **open file** declares a stream: `std::ifstream` for *reading*,
   `std::ofstream` otherwise. It is visible in its *if it can't be opened*
   part and after the block in its list, and closes at the end of that list.
+  C++ declares it from its name on, also in its own path, so a path that
+  reads a variable or global of the stream's name is `B2C-E0205` (it would
+  read the new stream), as *create*'s starting value is.
 * **read line** is the bare `std::getline(file, line)` where it is a
   condition of its own (*if*, *else if*, *repeat while*, *do … then
   repeat while*), and `static_cast<bool>(std::getline(file, line))`

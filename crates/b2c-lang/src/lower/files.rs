@@ -36,7 +36,7 @@ use super::convert::Subject;
 use super::expr::error_expr;
 use super::typed::Typed;
 use super::user_types::Output;
-use super::{Lowerer, field};
+use super::{Lowerer, PendingKind, field};
 use crate::scope::{ITEM_LIST, ListKey};
 use crate::{access, codes};
 
@@ -131,6 +131,13 @@ impl Lowerer<'_> {
     /// *open file (path) for [mode] as [file] … if it can't be opened …*
     /// (w2.md §2.4).
     fn open_file(&mut self, block: &Block) -> Option<StmtKind> {
+        // C++ declares the stream from its name on, also in its own
+        // initialiser (`std::ifstream data(data);` reads the new stream), so
+        // the path is lowered with the name taken, as *create*'s value is.
+        let decl = access::decl_field(block, "FILE").ok().cloned();
+        if let Some(decl) = &decl {
+            self.push_pending(&decl.name, &decl.sym, PendingKind::OpenedFile);
+        }
         let [path] = self.typed_values(
             block,
             [(
@@ -141,6 +148,9 @@ impl Lowerer<'_> {
                 },
             )],
         );
+        if decl.is_some() {
+            self.pop_pending();
+        }
         let modes = [
             ("read", FileMode::Read),
             ("write", FileMode::Write),
@@ -148,11 +158,10 @@ impl Lowerer<'_> {
         ];
         let mode = self.choice(block, "MODE", FileMode::Read, &modes);
         let name_loc = self.loc(&block.id, field("FILE"));
-        let Ok(decl) = access::decl_field(block, "FILE") else {
+        let Some(decl) = decl else {
             self.incomplete(name_loc, "This 'open file' block needs a name for its file.");
             return None;
         };
-        let decl = decl.clone();
         let stream = if mode == FileMode::Read {
             LibType::IfStream
         } else {

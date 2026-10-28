@@ -56,7 +56,8 @@ Codes by area:
 * **Meaning:** a variable is used above the block that creates it, in the same
   group of blocks (or a group nested inside it). A variable exists only from
   its `create` block onwards. Also reported when an `auto` variable is used in
-  its own starting value, because its type is not known yet.
+  its own starting value, because its type is not known yet, and when the
+  path of *open file* uses the file it opens.
 * **Example:**
 
   ```text
@@ -65,7 +66,9 @@ Codes by area:
   ```
 
 * **Message:** "`total` is used before it is created. Move this block below
-  the block that creates `total`."
+  the block that creates `total`." / "`data` is the file this block opens,
+  so its path can't use it: C++ would read the new file there. Rename the
+  file or the variable."
 * **How to fix:** move the `create` block above the first block that uses the
   variable.
 
@@ -119,7 +122,9 @@ Codes by area:
   an input on, C++ finds the input by its name. The same goes for a default
   value of a struct's field that names a global, or calls a function,
   called like any field of that struct: inside a struct, C++ finds the
-  field.
+  field. And when the path of *open file* reads a variable or global called
+  like the file it opens: C++ declares the stream from its name on, so
+  `std::ifstream data(data);` would read the new stream.
 * **Example:**
 
   ```text

@@ -899,6 +899,65 @@ fn an_opened_file_is_seen_in_its_failed_part_and_after_it_only() {
 }
 
 #[test]
+fn the_path_of_open_file_cannot_read_the_name_it_opens() {
+    // C++ declares the stream from its name on, also in its own
+    // initialiser: `std::ifstream data(data);` reads the new stream, not
+    // the input or the global called `data`, and does not compile.
+    let opens_data = |path: Value| {
+        let mut block = open_file("data", "read", path, None);
+        block["fields"]["FILE"] = json!({"sym": sym("stream"), "name": "data"});
+        block
+    };
+    let nested = opens_data(get("data"));
+    let path_id = nested["inputs"]["PATH"]["block"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let open_id = nested["id"].as_str().unwrap().to_owned();
+    let show = func(
+        "show",
+        "void",
+        &[("data", "std::string", "copy")],
+        vec![if_then(e("true"), vec![nested])],
+    );
+    let a = run(vec![show, main(Vec::new())]);
+    assert_eq!(
+        reported(&a),
+        [
+            format!(
+                "error B2C-E0205 at {path_id} field VAR: This refers to an outer `data`, but a newer variable also \
+                 called `data` hides it here, so C++ would use the newer one. Rename one of them."
+            ),
+            format!(
+                "warning B2C-W0501 at {open_id} field FILE: `data` hides another variable called `data` from an \
+                 enclosing block. This works, but it is easy to mix them up, so consider another name."
+            ),
+        ]
+    );
+    // A global, which no warning about hiding a variable names.
+    let global = json!({"id": "gl_data", "type": "var.global", "v": 1,
+                        "fields": {"KIND": "variable", "TYPE": "std::string",
+                                   "NAME": {"sym": sym("data"), "name": "data"}}});
+    let opened = opens_data(e("data"));
+    let a = run(vec![global, main(vec![opened])]);
+    assert_eq!(codes(&a), ["B2C-E0205", "B2C-W0501"], "{}", render_all(&a));
+    // The path naming the new stream itself.
+    let itself = opens_data(get("stream"));
+    let path_id = itself["inputs"]["PATH"]["block"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let a = run_main(vec![itself]);
+    assert_eq!(
+        reported(&a),
+        [format!(
+            "error B2C-E0202 at {path_id} field VAR: `data` is the file this block opens, so its path can't use \
+             it: C++ would read the new file there. Rename the file or the variable."
+        )]
+    );
+}
+
+#[test]
 fn open_file_needs_a_name_for_its_file() {
     let mut block = open_file("f", "read", e("\"a.txt\""), None);
     block["fields"] = json!({"MODE": "read"});
