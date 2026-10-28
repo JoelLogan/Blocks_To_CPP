@@ -623,7 +623,7 @@ and *text as number* are in the Text category
 | `repeat [while ▾] <c> { }` (choose *until* in the menu) | `while (c) { }` / `while (!(c)) { }` (simplified to the inverse operator where that is exact, e.g. `!(a == b)` → `a != b`; ordering comparisons on decimal numbers are not inverted, because `!(x < y)` and `x >= y` differ when a value is NaN) |
 | `do { } then repeat [while ▾] <c>` | `do { } while (c);`; *until* inverts the condition as *repeat until* does. The condition sees only what is visible before the block, not the variables its blocks create. |
 | `for [i] from (1) [to ▾] (10) [step (1)]` | `to` → `i < 10`, `through` → `i <= 10`, `down to` → `i >= 10` with `i -= step`. The direction is explicit, so a runtime step sign is never needed. `step` is hidden until expanded. |
-| `for each [item] in (list) [read-only ▾]` | `for (const auto& item : list)`; *copy* → `auto item`, *editable* → `auto& item`. Over a list, deque, set or text, in order |
+| `for each [item] in (list) [read-only ▾]` | `for (const auto& item : list)`; *copy* → `auto item` (`bool item` over a list of true/false values, whose items `auto` would take as references into the list), *editable* → `auto& item`. Over a list, deque, set or text, in order |
 | `for each key [key] value [value] in [map ▾]` | `for (const auto& [key, value] : map)`, smallest key first; neither can be changed |
 | `forever { }` | `while (true) { }` (info lint if no `break`, `return` or exit inside) |
 | `break` / `continue` / `return (x)` | *leave loop*, *skip to next round*, *return*. Validated by the analyser: only inside loops, and the `return` type is checked |

@@ -23,6 +23,12 @@ fn lib_type(ty: &Type) -> Option<LibType> {
     }
 }
 
+/// Whether a type is a list of true/false values (`std::vector<bool>`),
+/// whose items are proxy objects, not `bool`s.
+fn is_bool_list(ty: &Type) -> bool {
+    matches!(ty, Type::Lib(app) if app.ty() == LibType::Vector && app.args() == [Type::Bool])
+}
+
 /// The value of an integer literal, possibly negated (`-5`), as the
 /// analyser types it.
 fn int_literal_value(expr: &Expr) -> Option<i64> {
@@ -113,7 +119,10 @@ impl Lowerer<'_> {
 
     /// `for (const auto& x : c) { … }`, `for (auto x : c)` (*copy*) or `for
     /// (auto& x : c)` (*editable*), with `[[maybe_unused]]` when the body
-    /// never uses the loop's names (w2.md §2.12).
+    /// never uses the loop's names (w2.md §2.12). A copy of an item of a
+    /// list of true/false values is `bool x`: `auto` would be the list's
+    /// proxy reference, which writes through to the list and binds to no
+    /// `bool&`.
     fn for_each(&mut self, vars: &[SymbolId], range: &Expr, mode: RangeMode, body: &Block) -> CStmtKind {
         let unused = !scan::mentions_any(body, vars);
         let mut lowered = self.range_for(vars, range, body);
@@ -123,6 +132,7 @@ impl Lowerer<'_> {
         {
             *style = match mode {
                 RangeMode::ReadOnly => BindingStyle::ConstRef,
+                RangeMode::Copy if is_bool_list(&range.ty) => BindingStyle::BoolCopy,
                 RangeMode::Copy => BindingStyle::Copy,
                 RangeMode::Editable => BindingStyle::Ref,
             };

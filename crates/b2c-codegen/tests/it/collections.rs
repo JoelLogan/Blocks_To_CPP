@@ -302,6 +302,64 @@ fn collection_forms_print_and_run_under_both_standards() {
     }
 }
 
+/// Builds and runs `program` under C++17 and C++20 at the strict level,
+/// checking that every source holds `form` and that it prints `expected`.
+fn builds_and_prints(program: &Program, form: &str, expected: &str) {
+    for (standard, flag) in [
+        (CppStandard::Cpp17, "-std=c++17"),
+        (CppStandard::Cpp20, "-std=c++20"),
+    ] {
+        let mut program = program.clone();
+        program.standard = standard;
+        let project = generate_checked(&program, &options("Collections"));
+        let source = render(&project);
+        assert!(source.contains(form), "{flag}: no `{form}` in\n{source}");
+        let mut extra = vec![flag];
+        extra.extend(STRICT);
+        if let Some(built) = gxx::build(&project, &extra) {
+            let run = gxx::run(&built, b"");
+            assert!(run.status.success(), "{flag}: {}", run.stderr());
+            assert_eq!(run.stdout(), expected, "{flag}\n{source}");
+        }
+    }
+}
+
+#[test]
+fn a_copy_of_a_true_false_item_is_a_bool_of_its_own() {
+    // `auto` over a `std::vector<bool>` is the list's proxy reference: a
+    // change to the "copy" changes the list, and the copy can't be passed
+    // to a `bool&` input.
+    let b = Builder::new();
+    let flags = b.var("flags", list(Type::Bool));
+    let flag = b.var("flag", Type::Bool);
+    let reset = b.function(
+        "reset",
+        Type::Void,
+        &[("value", Type::Bool, b2c_ir::sast::PassMode::Editable)],
+    );
+    let value = reset.params[0].clone();
+    let body = vec![
+        b.declare(
+            &flags,
+            Some(b.list_of(&list(Type::Bool), vec![b.boolean(true), b.boolean(true)])),
+        ),
+        b.each(
+            vec![flag.clone()],
+            b.get(&flags),
+            RangeMode::Copy,
+            vec![
+                b.stmt(StmtKind::Flip { target: flag.clone() }),
+                b.eval(b.call(&reset, vec![b.get(&flag)])),
+            ],
+        ),
+        b.line(vec![b.item(&flags, b.int("0")), b.item(&flags, b.int("1"))]),
+    ];
+    let define = b.define(&reset, vec![b.set(&value, b.boolean(false))]);
+    let main = b.main(body);
+    let program = b.program(vec![define, main]);
+    builds_and_prints(&program, "for (bool flag : flags)", "true true\n");
+}
+
 /// Every case of slots.md §3.1: each element type (`int`, `double`,
 /// `char`, `bool`) from literals that fit as written, literals that do not,
 /// and variables of each type, in a list, a deque and a set.

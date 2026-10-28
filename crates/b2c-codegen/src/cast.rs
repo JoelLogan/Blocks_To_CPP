@@ -913,6 +913,9 @@ pub(crate) enum BindingStyle {
     ConstRef,
     /// `auto`: a copy.
     Copy,
+    /// `bool`: a copy of an item of a `std::vector<bool>`, whose items
+    /// `auto` would take as the list's proxy references.
+    BoolCopy,
     /// `auto&`: editable.
     Ref,
 }
@@ -923,6 +926,7 @@ impl BindingStyle {
         match self {
             Self::ConstRef => "const auto& ",
             Self::Copy => "auto ",
+            Self::BoolCopy => "bool ",
             Self::Ref => "auto& ",
         }
     }
