@@ -14,6 +14,7 @@ import type { BdmBlock, BdmDocument } from '@blocks2cpp/b2c-core-wasm';
 import type { BuildConfig, BuildOutcome, BuildStage, Diagnostic } from '@blocks2cpp/ipc-types';
 
 import type { BuildOutputLine } from '../../app/store';
+import { friendlyCompilerMessage, withFriendlyMessage } from './friendly';
 
 /** The label of a diagnostic that points at a bug in the generator (07 §7.5.3). */
 export const GENERATOR_BUG_LABEL = 'This looks like a bug in Blocks2Cpp';
@@ -202,28 +203,41 @@ export interface LabelledDiagnostics {
 }
 
 /**
- * Labels generator bugs: every `C:` error that does not point at a Raw C++ block gets
- * {@link GENERATOR_BUG_LABEL} in front of its message, unless the backend's message says so
- * already. Other diagnostics are returned unchanged.
+ * Labels generator bugs and puts in the friendly g++ messages (./friendly.ts, w4-editor-tools.md
+ * §2.6). Every `C:` error that does not point at a Raw C++ block and that a friendly rule does not
+ * explain as the project's or the machine's (a header that is not installed, a program still
+ * running) gets {@link GENERATOR_BUG_LABEL} in front of its message, unless the backend's message
+ * says so already, and the friendly text after it. Such an error that a rule explains reads the
+ * friendly text alone, and a warning a rule matches reads `g++ warns: ` and the friendly text.
+ * Other diagnostics are returned unchanged.
  */
 export function labelGeneratorBugs(
   items: readonly Diagnostic[],
   document: BdmDocument | null,
 ): LabelledDiagnostics {
-  if (!items.some(isCompilerError)) {
-    return { items, generatorBug: false };
-  }
-  const raw = document === null ? new Set<string>() : rawBlockIds(document);
+  const raw =
+    document === null || !items.some(isCompilerError) ? new Set<string>() : rawBlockIds(document);
   let generatorBug = false;
   const labelled = items.map((diagnostic) => {
+    const friendly = friendlyCompilerMessage(diagnostic);
     const block = diagnostic.primary.block;
     if (!isCompilerError(diagnostic) || (block !== undefined && raw.has(block))) {
-      return diagnostic;
+      return friendly === null ? diagnostic : withFriendlyMessage(diagnostic).diagnostic;
+    }
+    if (friendly?.notGeneratorBug === true) {
+      return { ...diagnostic, message: friendly.text };
     }
     generatorBug = true;
-    return diagnostic.message.includes(GENERATOR_BUG_LABEL)
-      ? diagnostic
-      : { ...diagnostic, message: `${GENERATOR_BUG_LABEL}. ${diagnostic.message}` };
+    if (friendly === null && diagnostic.message.includes(GENERATOR_BUG_LABEL)) {
+      return diagnostic;
+    }
+    const message = diagnostic.message.includes(GENERATOR_BUG_LABEL)
+      ? diagnostic.message
+      : `${GENERATOR_BUG_LABEL}. ${diagnostic.message}`;
+    return {
+      ...diagnostic,
+      message: friendly === null ? message : `${message} In plain words: ${friendly.text}`,
+    };
   });
   return { items: labelled, generatorBug };
 }

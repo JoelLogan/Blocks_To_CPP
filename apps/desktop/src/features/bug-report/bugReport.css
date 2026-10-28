@@ -1,0 +1,35 @@
+/* The Copy bug report dialog (src/features/bug-report/BugReportDialog.tsx). */
+.bug-report-dialog {
+  width: min(40rem, calc(100vw - 32px));
+}
+
+.bug-report-tick {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin: 0.5rem 0;
+}
+
+.bug-report-text {
+  max-height: min(18rem, 40vh);
+  margin: 0;
+  padding: 0.5rem;
+  overflow: auto;
+  border: 1px solid var(--b2c-border);
+  border-radius: 4px;
+  background: var(--b2c-surface);
+  font-family: var(--b2c-mono-font);
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.bug-report-text:focus-visible {
+  outline: 2px solid var(--b2c-focus);
+  outline-offset: 1px;
+}
+
+.bug-report-status {
+  min-height: 1.25em;
+  margin: 0.25rem 0 0;
+}
