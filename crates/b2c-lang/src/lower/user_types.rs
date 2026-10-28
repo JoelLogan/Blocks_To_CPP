@@ -3,7 +3,7 @@
 //! sets, priority queues and maps (`B2C-E0313`), printable values
 //! (`B2C-E0314`), and the *comparable* and *printable* ticks of structs.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use b2c_ir::diag::{Location, Part};
 use b2c_ir::ids::SymbolId;
@@ -55,6 +55,20 @@ impl TypeFacts for Settling<'_> {
 /// The type a struct's field holds, or `Error`.
 fn field_type(symbols: &SymbolTable, field: &SymbolId) -> Type {
     symbols.get(field).map_or(Type::Error, |symbol| symbol.ty.clone())
+}
+
+/// The user types a type names, also inside library types' arguments.
+fn named_structs(ty: &Type) -> Vec<SymbolId> {
+    let mut found = Vec::new();
+    let mut stack = vec![ty];
+    while let Some(ty) = stack.pop() {
+        match ty {
+            Type::Named(id) => found.push(id.clone()),
+            Type::Lib(app) => stack.extend(app.args()),
+            _ => {}
+        }
+    }
+    found
 }
 
 impl Lowerer<'_> {
@@ -220,9 +234,12 @@ impl Lowerer<'_> {
     /// do not support it is `B2C-E0313` or `B2C-E0314` at the tick, naming
     /// the first such field.
     ///
-    /// The flags are the least fixed point of that rule, found by rounds
-    /// that only ever turn a flag on: at most twice as many rounds as there
-    /// are structs.
+    /// The flags are the least fixed point of that rule, found by a work
+    /// list that only ever turns a flag on: each ticked struct is checked
+    /// once, and again only when a struct its fields name turns a flag on,
+    /// so a chain of structs that hold each other settles in about two
+    /// checks per struct, not a round over every struct per link (an
+    /// untrusted project may hold thousands of them).
     pub(super) fn settle_ticks(&mut self) {
         let structs: Vec<(SymbolId, Vec<SymbolId>, bool, bool)> = self
             .symbols
@@ -245,27 +262,53 @@ impl Lowerer<'_> {
                 .iter()
                 .all(|field| field_type(&self.symbols, field).is_in(class, facts) != Some(false))
         };
+        // For each struct, the structs whose fields name it anywhere in
+        // their types: those to check again when its flags turn on.
+        let position: BTreeMap<&SymbolId, usize> = structs
+            .iter()
+            .enumerate()
+            .map(|(index, (id, ..))| (id, index))
+            .collect();
+        let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); structs.len()];
+        for (index, (_, fields, ..)) in structs.iter().enumerate() {
+            for field in fields {
+                for named in named_structs(&field_type(&self.symbols, field)) {
+                    if let Some(&held) = position.get(&named) {
+                        dependents[held].push(index);
+                    }
+                }
+            }
+        }
+        let ticked = |index: usize| structs[index].2 || structs[index].3;
         let mut flags: BTreeMap<SymbolId, (bool, bool)> = structs
             .iter()
             .map(|(id, ..)| (id.clone(), (false, false)))
             .collect();
-        loop {
-            let facts = Settling {
-                symbols: &self.symbols,
-                flags: &flags,
+        let mut queued: Vec<bool> = (0..structs.len()).map(ticked).collect();
+        let mut work: VecDeque<usize> = (0..structs.len()).filter(|&index| queued[index]).collect();
+        while let Some(index) = work.pop_front() {
+            queued[index] = false;
+            let (id, fields, comparable, printable) = &structs[index];
+            let settled = {
+                let facts = Settling {
+                    symbols: &self.symbols,
+                    flags: &flags,
+                };
+                (
+                    *comparable && holds(&facts, fields, TypeClass::Comparable),
+                    *printable && holds(&facts, fields, TypeClass::Printable),
+                )
             };
-            let next: BTreeMap<SymbolId, (bool, bool)> = structs
-                .iter()
-                .map(|(id, fields, comparable, printable)| {
-                    let comparable = *comparable && holds(&facts, fields, TypeClass::Comparable);
-                    let printable = *printable && holds(&facts, fields, TypeClass::Printable);
-                    (id.clone(), (comparable, printable))
-                })
-                .collect();
-            if next == flags {
-                break;
+            if flags.get(id) == Some(&settled) {
+                continue;
             }
-            flags = next;
+            flags.insert(id.clone(), settled);
+            for &dependent in &dependents[index] {
+                if !queued[dependent] && ticked(dependent) {
+                    queued[dependent] = true;
+                    work.push_back(dependent);
+                }
+            }
         }
         for (id, fields, comparable, printable) in &structs {
             let (effective_comparable, effective_printable) =
@@ -509,6 +552,37 @@ pub(super) mod tests {
                 name: String::from(COMPARABLE_TICK)
             }
         );
+    }
+
+    #[test]
+    fn a_long_chain_of_ticked_structs_settles_in_linear_time() {
+        // Each struct holds the one before it; rounds over every struct
+        // would need one round per link (quadratic: minutes in a debug
+        // build), the work list checks each struct about twice.
+        const CHAIN: usize = 20_000;
+        let document = document();
+        let sigs = SigTable::empty();
+        let unchecked = BTreeSet::new();
+        let mut lowerer = Lowerer::new(&document, module(), &sigs, &unchecked);
+        let name = |index: usize| format!("S{index}");
+        for index in 0..CHAIN {
+            let held = if index == 0 {
+                Type::Int
+            } else {
+                named(&name(index - 1))
+            };
+            let field = format!("f{index}");
+            add_struct(&mut lowerer.symbols, &name(index), &[(&field, held)], true, true);
+        }
+        let started = std::time::Instant::now();
+        lowerer.settle_ticks();
+        let took = started.elapsed();
+        for index in [0, CHAIN / 2, CHAIN - 1] {
+            let user = lowerer.symbols.user_type(&id(&name(index))).expect("struct");
+            assert_eq!((user.comparable, user.printable), (true, true), "{index}");
+        }
+        assert!(lowerer.diags.list.is_empty());
+        assert!(took.as_secs() < 10, "{took:?}");
     }
 
     #[test]
