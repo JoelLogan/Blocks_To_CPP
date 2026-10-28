@@ -259,7 +259,7 @@ impl Lowerer<'_> {
             }
             Some(LibType::Vector | LibType::Deque) => {
                 self.include("<algorithm>");
-                let value = self.sought(value);
+                let value = self.typed_list(value);
                 let end = CExpr::method(object.clone(), "end", Vec::new());
                 let found = if cpp20 {
                     CExpr::call_fixed("std::ranges::find", vec![object, value])
@@ -273,10 +273,14 @@ impl Lowerer<'_> {
         }
     }
 
-    /// The value `std::find` looks for. A function template cannot deduce
-    /// its type from a brace list, so a *list of* names its type
-    /// (`std::vector<int>{1, 2}`).
-    fn sought(&mut self, value: &Expr) -> CExpr {
+    /// A value that must name its type when it is a *list of*
+    /// (`std::vector<int>{1, 2}`), since a brace list has none of its own:
+    /// the value `std::find` looks for (a function template cannot deduce
+    /// its type from a brace list), and an argument of a call to an
+    /// overloaded function (`f({1})` would call `f(int)` beside
+    /// `f(std::vector<int>)`, w2.md §2.8). Any other value is lowered as it
+    /// is.
+    pub(super) fn typed_list(&mut self, value: &Expr) -> CExpr {
         match &value.kind {
             ExprKind::ListOf(items) if value.ty != Type::Error => {
                 let ty = self.ctype(&value.ty);

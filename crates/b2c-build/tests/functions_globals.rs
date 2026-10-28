@@ -11,7 +11,8 @@
 //!   and the declaration alone shows the defaults;
 //! * overloads: three functions called `area` run and print each, the calls
 //!   cast their arguments to their own function's inputs, and quoted text
-//!   for an overload set with a `bool` one becomes a `std::string`;
+//!   for an overload set with a `bool` one becomes a `std::string`, and a
+//!   *list of* names its type;
 //! * globals and constants: `constexpr` or `const`, a constant as a `case`
 //!   label beside a switch on an enum, and a global set from a function
 //!   printed after the global that function reads;
@@ -596,6 +597,79 @@ fn quoted_text_calls_the_text_overload_beside_a_bool_one() {
     );
     assert!(
         cpp.contains("    show(std::string(\"hello\"));\n    show(true);\n"),
+        "{cpp}"
+    );
+}
+
+/// `show(int)` beside `show(std::vector<int>)`, and `sum(std::vector<int>)`
+/// beside `sum(std::vector<double>)`: a *list of* passed to one of them
+/// names its type, since `show({1})` would call `show(int)` and `sum({1,
+/// 2})` would be ambiguous (w2.md §2.8).
+#[test]
+fn a_list_of_calls_the_overload_its_block_names() {
+    let b = Blocks::default();
+    // An `int` input prints itself; a list input (`std::vector<elem>`)
+    // prints its size.
+    let define = |name: &str, sym: &str, param: &str, elem: Option<&str>, label: &str| {
+        let value = match elem {
+            None => tokens(&[param]),
+            Some(_) => json!({ "block": b.block(
+                "coll.length",
+                &json!({ "fields": { "LIST": { "ref": format!("s_{param}") } } }),
+            ) }),
+        };
+        let mode = if elem.is_some() { "read_only" } else { "copy" };
+        let mut block = b.define(
+            name,
+            "void",
+            &[(param, "int", mode)],
+            vec![],
+            vec![b.print(vec![text(label), value])],
+        );
+        block["fields"]["NAME"]["sym"] = json!(format!("s_{sym}"));
+        if let Some(elem) = elem {
+            block["extra"]["params"][0]["type"] = json!({ "std::vector": elem });
+        }
+        block
+    };
+    let top = vec![
+        define("show", "show_int", "number", None, "int "),
+        define("show", "show_list", "numbers", Some("int"), "list "),
+        define("sum", "sum_int", "whole", Some("int"), "whole "),
+        define("sum", "sum_real", "real", Some("double"), "real "),
+    ];
+    let list_of = |items: Vec<Value>| {
+        let count = items.len();
+        let inputs: Map<String, Value> = items
+            .into_iter()
+            .enumerate()
+            .map(|(index, item)| (format!("ITEM{index}"), item))
+            .collect();
+        json!({ "block": b.block("coll.list_of", &json!({ "extra": { "itemCount": count }, "inputs": inputs })) })
+    };
+    let body = vec![
+        b.call_stmt("show_list", vec![list_of(vec![number("1")])]),
+        b.call_stmt("show_list", vec![list_of(vec![])]),
+        b.call_stmt("show_int", vec![number("7")]),
+        b.call_stmt("sum_int", vec![list_of(vec![number("1"), number("2")])]),
+        b.call_stmt(
+            "sum_real",
+            vec![list_of(vec![number("1"), number("2"), number("3")])],
+        ),
+    ];
+    let cpp = builds_and_runs(
+        "list_overloads",
+        &top,
+        body,
+        &[],
+        &[],
+        &printed("list 1\nlist 0\nint 7\nwhole 2\nreal 3\n"),
+    );
+    assert!(
+        cpp.contains(concat!(
+            "    show(std::vector<int>{1});\n    show(std::vector<int>{});\n    show(7);\n",
+            "    sum(std::vector<int>{1, 2});\n    sum(std::vector<double>{1, 2, 3});\n",
+        )),
         "{cpp}"
     );
 }

@@ -182,13 +182,15 @@ impl Lowerer<'_> {
                     let args = args
                         .iter()
                         .enumerate()
-                        .map(|(index, arg)| {
-                            let lowered = self.expr(arg);
-                            match params.get(index).and_then(|param| self.symbol(param)) {
-                                Some(param) => self.exact_argument(arg, lowered, &param.ty),
-                                None => lowered,
-                            }
-                        })
+                        .map(
+                            |(index, arg)| match params.get(index).and_then(|param| self.symbol(param)) {
+                                Some(param) => {
+                                    let lowered = self.typed_list(arg);
+                                    self.exact_argument(arg, lowered, &param.ty)
+                                }
+                                None => self.expr(arg),
+                            },
+                        )
                         .collect();
                     CExpr::new(CExprKind::Call {
                         callee: Callee::User(symbol.name.clone()),
@@ -286,7 +288,8 @@ impl Lowerer<'_> {
     /// another type is cast (`area(static_cast<double>(w), h)`), and text
     /// that is not a `std::string` object becomes one (`show(std::string(
     /// "hello"))`), since quoted text converts to `bool` before it converts
-    /// to `std::string`. Any other argument already has its parameter's type.
+    /// to `std::string`. Any other argument already has its parameter's type
+    /// (a *list of* names it, [`Lowerer::typed_list`]).
     fn exact_argument(&mut self, arg: &Expr, lowered: CExpr, param: &Type) -> CExpr {
         let scalar = |ty: &Type| matches!(ty, Type::Int | Type::Double | Type::Char | Type::Bool);
         if *param == Type::String && arg.ty == Type::String {
