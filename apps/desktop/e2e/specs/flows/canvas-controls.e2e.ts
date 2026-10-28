@@ -4,9 +4,11 @@
  *
  * - the controls *Zoom out*, *Zoom in*, *Reset zoom* and *Show all blocks* sit over the canvas,
  *   right of the toolbox's flyout, and each is what the pointer hits at its middle;
- * - *Zoom in* twice zooms by two steps; with the canvas scrolled so the program is off the middle
- *   of the view, *Show all blocks* brings `main` back into the middle and leaves the zoom exactly
- *   as it was;
+ * - *Zoom in* twice zooms by two steps; with the canvas scrolled so the program is away from where
+ *   it was, *Show all blocks* brings `main` back and leaves the zoom exactly as it was: on each
+ *   axis `main` is in the middle of the view where it fits, and otherwise its edge is
+ *   {@link SHOW_ALL_MARGIN} units in from the view's (at 130 % in an 800 × 560 window the program
+ *   block, with its *with arguments* box, is wider than the canvas right of the flyout);
  *   *Reset zoom* goes to 100 % (not the 90 % a new canvas starts at);
  * - with a block of the canvas focused, `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom, and the editor's
  *   live region says the new zoom; Tab from the canvas reaches *Zoom out* next, where the keys
@@ -30,6 +32,18 @@ import { pressCtrl, UI_TIMEOUT_MS, waitForTestId } from './lib/ui';
 /** The zoom a new canvas starts at, and one zoom step (Blockly's `scaleSpeed`). */
 const START_SCALE = 0.9;
 const STEP = 1.2;
+
+/**
+ * The room *Show all blocks* leaves before the blocks' top-left corner on an axis where they do
+ * not fit, in workspace units (`SHOW_ALL_MARGIN` in src/editor/view/zoom.ts).
+ */
+const SHOW_ALL_MARGIN = 24;
+
+/** How far off *Show all blocks* may leave the program block's middle where it fits, in pixels. */
+const CENTRE_TOLERANCE = 24;
+
+/** How far off it may leave the program block's edge where the block does not fit, in pixels. */
+const EDGE_TOLERANCE = 3;
 
 /** Runs in the webview: the canvas's zoom, from its block layer's `transform`, or `null`. */
 const CANVAS_SCALE_SCRIPT = `
@@ -81,21 +95,45 @@ const BOX_SCRIPT = `
   return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
 `;
 
+/** Where block `blockId` is on one axis of the view, and how far from where Show all puts it. */
+interface AxisPlace {
+  /** The block fits in the view on this axis. */
+  readonly fits: boolean;
+  /**
+   * How far, in CSS pixels, the block's middle is from the view's middle (where it fits), or its
+   * start from {@link SHOW_ALL_MARGIN} units in from the view's start (where it does not).
+   */
+  readonly off: number;
+}
+
 /**
- * How far the middle of block `blockId` is from the middle of the visible canvas (right of the
- * flyout), in CSS pixels on each axis.
+ * Where block `blockId` is on each axis of the visible canvas (right of the flyout), measured
+ * against where *Show all blocks* puts it at zoom `scale` (src/editor/view/zoom.ts `viewStart`).
  */
-async function offCentre(app: FlowApp, blockId: string): Promise<{ x: number; y: number }> {
+async function showAllPlace(
+  app: FlowApp,
+  blockId: string,
+  scale: number,
+): Promise<{ x: AxisPlace; y: AxisPlace }> {
   const block = await app.hook.blockElement(blockId);
   if (block === null) {
     throw new Error(`Block ${blockId} has no element`);
   }
   const box = await app.driver.executeScript<ControlsLayout['view']>(BOX_SCRIPT, block);
   const { view } = await app.driver.executeScript<ControlsLayout>(LAYOUT_SCRIPT);
+  const axis = (start: number, end: number, viewStart: number, viewEnd: number): AxisPlace =>
+    end - start <= viewEnd - viewStart
+      ? { fits: true, off: Math.abs((start + end) / 2 - (viewStart + viewEnd) / 2) }
+      : { fits: false, off: Math.abs(start - (viewStart + SHOW_ALL_MARGIN * scale)) };
   return {
-    x: Math.abs((box.left + box.right) / 2 - (view.left + view.right) / 2),
-    y: Math.abs((box.top + box.bottom) / 2 - (view.top + view.bottom) / 2),
+    x: axis(box.left, box.right, view.left, view.right),
+    y: axis(box.top, box.bottom, view.top, view.bottom),
   };
+}
+
+/** Whether `place` is where *Show all blocks* puts a block, within the tolerances. */
+function shownAll(place: AxisPlace): boolean {
+  return place.off < (place.fits ? CENTRE_TOLERANCE : EDGE_TOLERANCE);
 }
 
 /** The canvas's zoom now. */
@@ -174,30 +212,37 @@ describe('Canvas controls', () => {
     const zoomed = await waitForScale(driver, START_SCALE * STEP * STEP);
     expect(await testIdText(driver, 'canvas-zoom-reset')).toBe('130%');
 
-    // Scroll the program away from the middle of the view, then Show all blocks: it is back in
-    // the middle, and the zoom has not changed at all.
-    const before = await offCentre(app, mainId);
+    // Scroll the program away, then Show all blocks: it is back in the middle of the view, or
+    // with its edge in from the view's where it does not fit, and the zoom has not changed at all.
+    const furthest = async () => {
+      const place = await showAllPlace(app, mainId, zoomed);
+      return Math.max(place.x.off, place.y.off);
+    };
+    const before = await showAllPlace(app, mainId, zoomed);
     await app.hook.scrollCanvasBy(-400, -300);
-    if (Math.max(...Object.values(await offCentre(app, mainId))) < 100) {
+    if ((await furthest()) < 100) {
       // Blockly keeps the view near the blocks: the other way, then.
       await app.hook.scrollCanvasBy(800, 600);
     }
-    const away = await offCentre(app, mainId);
-    expect(Math.max(away.x, away.y), JSON.stringify({ before, away })).toBeGreaterThanOrEqual(100);
+    const away = await showAllPlace(app, mainId, zoomed);
+    expect(
+      Math.max(away.x.off, away.y.off),
+      JSON.stringify({ before, away }),
+    ).toBeGreaterThanOrEqual(100);
     await clickTestId(driver, 'canvas-show-all');
     const shown = await waitFor(
       async () => {
-        const off = await offCentre(app, mainId);
-        // Centred on the view (Blockly's view includes the scroll bars' strips).
-        return off.x < 24 && off.y < 24 ? off : null;
+        const place = await showAllPlace(app, mainId, zoomed);
+        // Measured on the view, which in Blockly includes the scroll bars' strips.
+        return shownAll(place.x) && shownAll(place.y) ? place : null;
       },
       {
         timeout: UI_TIMEOUT_MS,
         message: async () =>
-          `the program block in the middle of the view (it is off by ${JSON.stringify(await offCentre(app, mainId))})`,
+          `the program block where Show all blocks puts it (it is at ${JSON.stringify(await showAllPlace(app, mainId, zoomed))})`,
       },
     );
-    expect(shown.x).toBeLessThan(24);
+    expect(shownAll(shown.x), JSON.stringify(shown)).toBe(true);
     expect(await canvasScale(driver)).toBe(zoomed);
 
     // Reset zoom: 100 %, not the start zoom.
