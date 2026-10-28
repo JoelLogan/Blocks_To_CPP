@@ -452,6 +452,98 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   1,000 blocks, in a module that also sets and prints its variables) and
   `webview.keyboard-list-1000.ms` (the keyboard mover's listing), and the
   User Timing span `b2c:keyboard-targets`.
+- The language blocks of M3 (wave W2): block catalog 1.3.0 has 86 blocks in
+  13 categories, and all ten M3 acceptance assignments are green, each an
+  example with golden C++ and run data (24 examples in all).
+- W2's Collections category: _add_, _item … of_, _set item_, _length
+  of_, _is empty_, _list of_, _contains_, _remove item at_, _remove_,
+  _clear_, _sort_, _next item of_ and _remove next from_, and in Loops _for
+  each … in_ (read-only, a copy or editable) and _for each key … value …
+  in_ a map. The type menus of _create_, _global_ and function inputs
+  offer lists and the project's own types until the type picker arrives.
+- W2's text, input and output, math and error blocks: _length_,
+  _letter … of_, lower and upper case, _split_, _text as number_, _as text_,
+  _contains_, _starts with_ and _ends with_, _part of_, _trim_,
+  _replace all_; _show numbers with … decimal places_; math functions of one
+  and two numbers, absolute value, larger and smaller, _kept between_ and
+  _random decimal_; and the Errors category: _try … catch_,
+  _throw … with message_, _message of_ and _throw the error again_.
+- W2's Types category: _struct_ with field rows (each with an optional
+  default value) and the _comparable_ and _printable_ ticks, _new … with_,
+  _… of_ and _set … of_ a field, _enum_ with value rows, and _enum value_.
+  An enum turns into text as its value's name (`b2c::to_text`), and the
+  C++ declares the types in the order they need, so a struct follows the
+  types it holds.
+- W2's control and file blocks: _switch on_ a whole number, a character or
+  an enum, with _go on into the next case_; _wait … seconds_;
+  _do … then repeat while/until_; and the Files category:
+  _for each line in file_, _open file_ (for reading, writing or adding to
+  the end), _read line from … into_, _write … to file_ and
+  _file … exists_. A path that is not a full path is in the folder the
+  program runs in.
+- W2's functions and globals: default values of parameters, functions that
+  share a name when their argument types tell them apart (_Your functions_
+  labels them by their parameter types), _global_ variables and constants
+  (`constexpr` for a number, character or true/false constant with a
+  constant value), _when program starts with arguments_ (a read-only list of
+  text), _flip_ for a true/false variable, and _change_'s _add to the end_
+  for text and, with _Show advanced blocks_, its bitwise forms.
+- W2's Program blocks: _use header_ and _check at compile time_
+  (`static_assert`).
+- New diagnostics `B2C-E0424` to `B2C-E0428`, `B2C-W0507` (a catch part
+  that never runs) and `B2C-W0508` (a switch on an enum that misses values
+  and has no default part); `B2C-E0402`, `B2C-E0420` and `B2C-E0421` are
+  reported for the first time, and `B2C-E0430` names each empty menu of the
+  new blocks.
+- C++ support helpers for text, random decimals and removing items
+  (`split`, `to_lower`, `to_upper`, `trim`, `replace_all`, `starts_with`,
+  `ends_with`, `random_real`, `remove_at`), each compiled and run under
+  C++17 and C++20 at the strict level.
+- The catalog schema: row extras (`fields`, `values`), repeated fields,
+  repeats counted by rows, type fields with no listed types, joining
+  words, and the hidden `SHARED` field; project files and the clipboard
+  read, rename and remap struct field and enum value rows as they do
+  parameter rows, and the clipboard records W2's declarations.
+- Tests: catalog cases for each new block; a project that uses every block
+  of the catalog (`every_block.b2c`), built with no diagnostic under
+  C++17 and C++20 with every g++ from 11 and run; g++ tests for the text,
+  error, file and control forms (the text and error ones also on Windows);
+  the E2E flows `collections`, `errors`, `structs-enums`, `control`,
+  `files-run` and `functions-globals`; `deep-struct-nesting.b2c` in the
+  malicious-project suite; and W2's block types and names in the fuzz
+  dictionary.
+- Reported benchmarks `native.pipeline.preview-collections` and
+  `native.pipeline.preview-language` (1,000 blocks of W2's blocks of every
+  kind, with definitions).
+- The toolbox keeps its blocks and labels when it shows its flyout again,
+  and builds and draws only what changed: after a new variable its refresh
+  takes about 45 ms instead of 225 ms on the guessing game and 52 ms instead
+  of 300 ms at 1,000 blocks (Linux, local A/B), and no longer grows with the
+  number of catalog blocks. A block taken from it gets IDs of its own.
+  Reported benchmarks `webview.declare-variable.toolbox-refresh`,
+  `webview.declare-variable-1000.toolbox-refresh` and
+  `webview.declare-variable.max-task`.
+- Run options and export (wave W3): the console's _End input_ (and `Ctrl+D`
+  when the program reads from pipes) ends a program's input (new command
+  `run_close_input`, error `inputClosed`); a program's arguments and working
+  folder are kept in the project; an input file chosen for the app session
+  (`run_input_file`, error `inputFileUnreadable`); a run in an external
+  terminal (a console window on Windows, a terminal from a fixed list on
+  Linux; error `noExternalTerminal`); export to CMake and Make, with the
+  same flags as the app's builds (`b2c generate --export`, _Export as C++
+  project…_, `project_export_dialog`, error `defineNotExportable`); and a
+  project settings page (≡ → _Project settings…_). The IPC contract has 39
+  commands.
+- Appearance and expert mode (wave W4): light, dark or the system's theme
+  for the whole window (`data-theme`), with a light console; the _Block
+  labels_ and _Show advanced blocks_ settings with one _Expert mode_ switch
+  (`appearance.theme`, `editor.blockLabels`, `editor.showAdvanced` in
+  `settings.json`); and the gating service that says what a mode, the
+  project's C++ standard and the toolchain allow. The E2E flow `appearance`.
+- The preview worker's spike (wave W5, ADR-0016): the live C++ preview can
+  run in a dedicated worker under its own policy (`WORKER_CSP`: WebAssembly
+  and nothing more), in builds made with `B2C_PREVIEW_WORKER=1` only; the
+  E2E flow `preview-worker`. It was clean on WebKitGTK and WebView2.
 
 ### Changed
 
@@ -522,9 +614,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   Scorecard and zizmor actions (zizmor 1.31.1). Vitest 4.1.12 and `tokio`
   1.53.3 fix advisories, an override moves `markdown-it` (through
   markdownlint-cli2) to 15.0.3, and the `braces` exception is gone.
-  `happy-dom`'s advisory is a tracked exception until its fix, 21.0.4, is 7
-  days old on 2026-10-27; Tauri 2.12.5, `wry` 0.57.1 and typescript-eslint
-  8.72 were too new.
+  Tauri 2.12.5 and `wry` 0.57.1 were too new.
+- Dependencies updated on 2026-10-27: `happy-dom` 21.0.4 (the test DOM only,
+  never shipped) fixes GHSA-834v-8h66-3h79, a high-severity advisory (host
+  code execution through an unsanitised import alias); its tracked
+  exceptions in `pnpm-workspace.yaml` and `osv-scanner.toml` are gone, and
+  `pnpm audit` reports nothing. typescript-eslint 8.72.0 (lint only) finds
+  nothing new.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
@@ -772,6 +868,19 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `CURRENT_FORMAT_VERSION`, and `version()` reports catalog 1.3.0 and format
   version 2; `@blocks2cpp/ipc-types` declares `TypeJson` instead of
   `StaticType`.
+- The toolbox's categories Control, Files and Variables have the icons ⋔,
+  ▤ and x, which the default fonts of Linux and Windows draw; an icon is a
+  character that DejaVu Sans, Segoe UI and Segoe UI Symbol all have. A
+  category without entries is not shown in the toolbox and gets no page in
+  the block reference.
+- _change_'s variable menu lists variables of a number, character or text
+  type, and its operator menu lists only what the chosen variable takes;
+  true/false variables are left to _flip_. _define_'s _returns_ takes any
+  type a variable can hold.
+- A run reuses the build's analysis unless the generator's options changed
+  (S7-5); sandbox folders unused for 30 days are removed at startup (S7-7);
+  and on Linux discovery finds every `g++-N` from 11 on, newest first
+  (S7-8).
 
 ### Removed
 
@@ -1001,3 +1110,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   wrapping drop, where only a 300 ms pause stood in for it: a frame or a
   long task later than that undid the new _if_ with the statements it had
   wrapped.
+- Problems' block paths and the screen reader named only the block of a
+  _create_ or _global_ block whose type is a list, a struct or an enum
+  (`create`); they now name the type as its menu shows it (`create list of
+  Student variable`), and a type the project does not declare as `unknown
+  type`.
