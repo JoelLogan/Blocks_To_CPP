@@ -131,8 +131,8 @@ export function partsMissingFromCppLabel(
 
 /**
  * The C++ text of dropdown options, by block, field and option value: the operator menus (03 §3.7,
- * "in C++ label mode every option shows its operator") and the math functions. An option not
- * listed keeps its Friendly text.
+ * "in C++ label mode every option shows its operator") and the math functions' menus (every `FN`
+ * menu of the catalog; w4-appearance-expert.md §6.1). An option not listed keeps its Friendly text.
  */
 export const CPP_OPTION_LABELS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   'math.arithmetic.OP': { add: '+', sub: '-', mul: '*', div: '/', mod: '%' },
@@ -150,6 +150,22 @@ export const CPP_OPTION_LABELS: Readonly<Record<string, Readonly<Record<string, 
     xor: '^=',
     shl: '<<=',
     shr: '>>=',
+  },
+  'math.fn.FN': {
+    floor: 'std::floor',
+    ceil: 'std::ceil',
+    round: 'std::round',
+    sqrt: 'std::sqrt',
+    cbrt: 'std::cbrt',
+    exp: 'std::exp',
+    log: 'std::log',
+    log10: 'std::log10',
+    sin: 'std::sin',
+    cos: 'std::cos',
+    tan: 'std::tan',
+    asin: 'std::asin',
+    acos: 'std::acos',
+    atan: 'std::atan',
   },
   'math.minmax.FN': { max: 'std::max', min: 'std::min' },
   'math.fn_two.FN': { pow: 'std::pow', atan2: 'std::atan2', hypot: 'std::hypot' },

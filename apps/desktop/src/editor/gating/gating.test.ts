@@ -300,6 +300,28 @@ describe('labels', () => {
     expect(optionLabel('math.compare', 'OP', 'toString', 'x', 'cpp')).toBe('x');
   });
 
+  it('covers every operator menu and every math function menu (w4-appearance-expert.md §6.1)', () => {
+    const operators = [
+      'math.arithmetic.OP',
+      'math.compare.OP',
+      'logic.operation.OP',
+      'var.change.OP',
+    ];
+    const functions = BLOCK_DEFS.flatMap((def) =>
+      def.fields
+        .filter((field) => field.kind === 'dropdown' && field.name === 'FN')
+        .map((field) => `${def.id}.${field.name}`),
+    );
+    expect(functions).toEqual(
+      expect.arrayContaining(['math.fn.FN', 'math.fn_two.FN', 'math.minmax.FN']),
+    );
+    for (const key of [...operators, ...functions]) {
+      expect(Object.hasOwn(CPP_OPTION_LABELS, key), key).toBe(true);
+    }
+    expect(optionLabel('math.fn', 'FN', 'sqrt', 'square root', 'cpp')).toBe('std::sqrt');
+    expect(optionLabel('math.fn', 'FN', 'floor', 'round down', 'friendly')).toBe('round down');
+  });
+
   it('has a C++ text for every option of the menus it covers', () => {
     for (const [key, table] of Object.entries(CPP_OPTION_LABELS)) {
       const dot = key.lastIndexOf('.');
