@@ -380,7 +380,15 @@ default size, 1024 × 768 and 800 × 560 after the small-window fixes (63
 files, 246 passed, 1 skipped each), and at 1028 × 749 before them (243
 passed, 1 skipped); the native benchmark's new
 `preview-language` shape takes 15.4 ms locally, and a local native A/B of
-`pipeline/preview` against `f508fca` gave +1.4 % (gate 10 %). The
+`pipeline/preview` against `f508fca` gave +1.4 % (gate 10 %). The A/B job
+on `f508fca..603ce8a` (bench-ab run 40733079892, all metric groups, both
+systems) found no gated regression: on Linux `webview.edit-1000.p95-all`
+−29.7 %, `preview-1000.p95` −4.8 %, `select-1000.max-task` −1.8 % and
+`drag-5000.frame-p95-all` −4.3 %; on Windows +5.7 %, −0.3 %, +6.8 % and
++7.9 %, and `console-200000.run` −1.4 %. The only metric more than 10 %
+worse is Windows' ungated `guessing-game.edit.max-task`, 8.15 → 9.15 ms.
+`webview.drag-typed-1000.frame-p95-all` is still reported only (no A/B
+metric group runs it), so W3's integration gates it. The
 specification describes what W2 built, and w2.md §7.1 records each place
 where the code differs from the contract, with its reason. After the docs
 step the visual baselines were rebaselined from the CI candidates of
@@ -414,10 +422,6 @@ waited for W2's integration step.
 
 **Still to do for W2:**
 
-- the A/B job on `f508fca..HEAD` (`bench-ab.yml`, base `f508fca`,
-  metrics `preview drag`, both systems), which the coordinator dispatches;
-  `webview.drag-typed-1000.frame-p95-all` is still reported (no A/B metric
-  group runs it), so W3's integration gates it;
 - Windows E2E and GCC 15 on the next push, then the review of the wave
   with its lenses and the fixer, as in every M3 wave;
 - the comment of `catalog/toolbox.toml` still says the four categories are
