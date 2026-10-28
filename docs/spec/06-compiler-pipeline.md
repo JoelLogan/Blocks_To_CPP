@@ -164,6 +164,21 @@ enum Expr {
 }
 ```
 
+**In M3** (wave W2) the SAST of `crates/b2c-ir` has the items `Main`,
+`Function`, `Struct`, `Enum`, `Global` and `UseHeader`. Besides M2's
+statements it has `Switch`, `DoWhile`, `RangeFor`, `Try`, `Throw`,
+`Rethrow`, `FallThrough`, `FileLines`, `OpenFile`, `WriteFile`,
+`CollectionOp` (add, set item, clear, remove at, remove a value, remove
+next, sort), `SetField`, `Decimals`, `Wait`, `Flip` and `StaticCheck`; the
+expressions `Item`, `Size`, `IsEmpty`, `Contains`, `Next`, `ListOf`,
+`Field`, `New`, `Enumerator`, `Letter`, `TextLength`, `TextCall`,
+`ToNumber`, `AsText`, `ErrorMessage`, `MathCall`, `RandomReal`, `ReadLine`
+and `FileExists`; and *change*'s `CompoundOp` gains `Append`, `BitAnd`,
+`BitOr`, `BitXor`, `Shl` and `Shr`. A parameter keeps its default value
+(`Param::default`), and `main` its *with arguments* list (`MainDef::args`).
+Default values and the globals' starting values are lowered once every
+function is declared, before any body, with no parameter in scope.
+
 * **Expression slots** are parsed here. The token list
   ([03 §3.4](03-block-language.md#34-expression-slots)) is parsed by a
   hand-written recursive-descent / precedence-climbing parser with an explicit
@@ -214,6 +229,18 @@ enum Expr {
   scope).
 * Checks for duplicate declarations (`E0210`), shadowing (`W0501`), and
   identifier rules ([08 §8.4.1](08-security.md#841-identifiers)).
+* **W2's declarations** (M3). A *for each* item, key or value and a file
+  loop's line are declared in a pseudo-list joined to the loop's body, so
+  they are visible in the body only; a caught error only in its own catch
+  part (`CATCH0`, `CATCH1`, …); an opened file after its block in its list
+  and in its *if it can't be opened* part, until the end of that list.
+  *with arguments*' list encloses `main`'s body as a function's parameters
+  enclose its body, so a local of its name at the body's top level is
+  `E0210`. A module's globals lie beneath every scope of the module, off
+  the statement lists: every function, default value and body sees them,
+  and a local, parameter or caught error of their name hides them (`W0501`,
+  with its own message). A struct's fields and an enum's values are
+  declared in their definition, and two of one name are `E0210`.
 * Exposes a **scope query API** to the editor:
   `symbols_in_scope(block_id, input) -> Vec<SymbolInfo>`. It feeds variable
   dropdowns, Quick Insert and the member block.
@@ -250,7 +277,10 @@ left to the analyser
   editor's own fallback picks the same one. A `when program
   starts` or function definition that the analyser skips (a disabled one),
   and every block in it, answers with the module's functions.
-* An answer that lists a struct or enum also lists its fields or its
+* Every answer lists the module's globals, functions, structs and enums
+  (a local name hides a global), and a struct or enum definition, like a
+  function, is an item of its own: it sees the module, not the parked
+  scope. An answer that lists a struct or enum also lists its fields or its
   enumerators, each with its `owner`. No local name hides a member and a
   member hides nothing, so a field may share a name with a variable. Paste
   binds a copied member through its owner
@@ -268,7 +298,8 @@ left to the analyser
   parked scope ([03 §3.6](03-block-language.md#36-symbols-and-scoping)).
   `scope_after(block)` is what a block inserted directly after `block` sees
   (the variable `block` creates, if the analyser accepted it, is added and
-  hides any other symbol with its name), and `parked_scope(module)` is what
+  hides any other symbol with its name; a *try*'s caught errors, like a
+  `for` loop's counter, are not), and `parked_scope(module)` is what
   a block placed on the module's canvas sees. Paste re-binding uses them
   ([05 §5.12](05-project-format.md#512-clipboard-format)).
 * `symbol_infos()` lists every symbol, `block_types()` gives the static
@@ -296,8 +327,10 @@ and tests):
 ```
 
 `kind` is `variable` (with `isConst`), `parameter` (with `mode`: `copy`,
-`editable` or `read_only`), `loopVariable`, `function` (with `params`, the
-parameter symbol IDs, and `returns`, a type), `struct` (with `fields`, the
+`editable` or `read_only`), `loopVariable`, `global` (with `isConst`),
+`function` (with `params`, the parameter symbol IDs, `returns`, a type, and
+`optional`, how many of its last parameters have a default value, left out
+when 0), `struct` (with `fields`, the
 field symbol IDs, and `comparable` and `printable`: ticked, and every
 field's type is comparable or printable), `enum` (with `values`, the
 enumerator symbol IDs), `field` or `enumerator` (each with `owner`, its
@@ -355,8 +388,11 @@ queries from the analysis cached by its last preview.
   text with anything else is `E0303`. `and`, `or` and `not` take `bool`s or
   numbers. Any other operand, such as a list or a struct, is `E0302`.
 * **Requirements.** The items of a set or priority queue and the keys of a
-  map must be comparable: `B2C-E0313` where the type is written. *print* and
-  *join* need printable values (`B2C-E0314`). A struct ticked *comparable*
+  map must be comparable: `B2C-E0313` where the type is written, and so
+  must the items of a list *contains* searches. *print*, *join*, *as text*
+  and *write … to file* need printable values (`B2C-E0314`), and *join* and
+  *as text* refuse a struct even when it is printable (join its fields
+  instead). A struct ticked *comparable*
   or *printable* with a field that is not is `E0313` or `E0314` at the tick,
   naming the field, and counts as neither.
 * **Constant folding** runs on each item after the flow checks: the
@@ -376,13 +412,45 @@ queries from the analysis cached by its last preview.
   not checked, and a part that was reported is no constant further up.
   `Analysis::constants()` gives the value of each `const` variable that
   folds, with whether C++ counts its starting value as a constant
-  expression, and `constant_value()` evaluates any expression.
+  expression, and `constant_value()` evaluates any expression. The same
+  walk checks what must be fixed when the program is built: a `case` label
+  must be an enum value or a constant expression of whole numbers and
+  characters (a literal, a `const` with a constant value, a global constant,
+  or a calculation of them), and so must the condition of *check at compile
+  time* (`B2C-E0424` otherwise); two labels of one switch with the same
+  value are `B2C-E0425` (`'A'` and `65` too, enum labels compared by
+  symbol); and a *check at compile time* whose condition folds to `false`
+  is `B2C-E0428`. A label that is no number at all (text, a list) is
+  refused once, as `B2C-E0301`.
 * **Overloads:** simplified resolution (exact → promotion → conversion). When
-  the result is ambiguous, we emit nothing and let g++ decide.
+  the result is ambiguous, we emit nothing and let g++ decide. **In M3**
+  (wave W2) a call names its function by symbol ID, so the analyser never
+  resolves an overload by name: two functions of one module share a name
+  only when no list of argument types, of a length from the larger number
+  of required parameters to the smaller full count, fits both (ignoring
+  pass modes), otherwise `B2C-E0211`; functions of different modules with
+  one name stay `B2C-E0211`, with their own message, until wave W3. Code
+  generation then makes g++ pick the same function: on a call to a function
+  whose name another function of the module shares, each argument is cast
+  to its parameter's type, quoted text becomes `std::string("…")` and a
+  *list of* is printed with its type.
 * **Flow checks:** missing `return` on some path (`E0410`), `break`/`continue`
   outside a loop (`E0401`), unreachable statements after
   `return`/`break`/`throw` (`W0502`), use before initialisation for scalars
   (`W0503`), use after `move` (`W0504`), `rethrow` outside a catch (`E0402`).
+  **In M3** (wave W2): *leave loop* whose nearest enclosing loop or switch
+  is a switch is `E0401` (in C++ it would leave only the switch); *throw the
+  error again* outside a catch part is `E0402`; *go on into the next case*
+  that is not the last block of its case, or is in the switch's last part,
+  is `E0427`; *throw* and *throw the error again* end their path, as
+  *return* does. A switch goes on past itself when it has no default part
+  (on an enum too: the value may be none of its values) or when one of its
+  parts goes on (a part ending in *go on into the next case* goes on into
+  the next one); a *do … then repeat* body runs at least once; a *try* goes
+  on when its try part or one of its catch parts does. A catch part that an
+  earlier part hides (the same error, or *any error* first) warns
+  `W0507`, and a switch on an enum without a default part that misses some
+  of its values warns `W0508`, naming them.
 * **Lints:** a parked block (`W0505`, §6.4), integer division into a
   floating-point context (`W0510`), `==` on floating-point values (`W0511`),
   signed/unsigned comparison (`W0512`), `forever` without an exit (`I0513`),
@@ -450,9 +518,9 @@ Users never have to think about declaration order. Per translation unit:
      token. A user declaration that uses an external function or type
      (*Declare external …*) depends on the raw blocks that declare that name
      ([§6.14.9](#6149-raw-c)).
-   * A by-value cycle produces error `E0420` (*"Player contains a Team which
-     contains a Player; make one of them a pointer or reference"*); any other
-     cycle produces `E0421`.
+   * A by-value cycle produces error `E0420` (*"`Player` holds a `Team` in
+     its field `team`, which holds a `Player` in its field `captain`, …"*);
+     any other cycle produces `E0421`.
    * When several declarations are ready, raw blocks come first (by block
      `id`), so a specialisation such as `std::hash<Point>` directly follows
      `Point`. Then come class forward declarations, constants, types,
@@ -494,6 +562,24 @@ without an anonymous namespace, to keep student code simple.
 across modules (`E0206`), their names are unique in the program (`E0211`),
 and helpers are inline in each file.
 
+**In M3** (wave W2) step 3 is built for structs, enums, globals and function
+declarations, through the declaration graph of
+[modules.md §4](../plans/m3-contracts/modules.md#4-the-declaration-graph):
+types, globals and function declarations are printed interleaved in its
+order (`ModuleFiles::source_order`), enums and structs before the functions
+that use them, a struct after the types it holds by value, and `struct B;`
+before a struct that holds a later struct inside a list. A global follows
+every global its starting value reads, through the functions it calls (their
+bodies and their parameters' default values) and the structs it builds
+(their fields' default values); a function's declaration follows every
+function its default values call and every user type their values have, and
+a forward declaration of a struct comes before a function whose parameters
+or result name a struct printed after it. Default values are printed in the
+declaration only. Structs that hold each other by value are `E0420`, and any
+other cycle, such as two globals set from each other or a global that needs
+its own value, `E0421`. A program with only functions keeps M2's order, so
+every earlier golden file is unchanged.
+
 ## 6.8 Stage ⑥–⑦ Desugaring and emission
 
 ### 6.8.1 Desugaring SAST → CAST
@@ -507,22 +593,58 @@ construct concrete. For example:
   visible, nothing in the count and nothing in the body uses.
 * `Print` → a chain of `<<` with per-type adjustments (bool, 8-bit integers,
   enums with auto-generated `operator<<`).
-* `ForEachLine` → `std::ifstream` declaration + `if (!stream)` branch + `while
-  (std::getline(...))`.
+* `ForEachLine` → a block of its own: `std::ifstream` declaration + `if
+  (!stream)` branch + `std::string line{};` + `while (std::getline(stream,
+  line))`. The stream's hidden name (`b2c_file`, `b2c_file2`, …) is made
+  with `Ident::generated` and chosen against the names visible where it is
+  declared; user names cannot start with `b2c`, so only an enclosing file
+  loop's stream can take a candidate.
+* A count, end or step that could change while the loop runs is evaluated
+  once (03 §3.7.5). Calls count as changing, and so do a random decimal, a
+  line read from a file and text read as a number; a collection change
+  (*add*, *set item*, *sort*, *remove*, an *editable* *for each*) counts as
+  a write to the collection.
 * Sizes and indexes are `int` in blocks, so the generated code casts them
   and compiles clean at every warning level: a size is
   `static_cast<int>(c.size())`, and an `int` index into a vector, deque or
   text is `c.at(static_cast<std::size_t>(i))` (a non-negative literal index
   stays as written; a map's key is never cast). *for each* is a range-`for`
-  over `const auto&`, and `const auto& [key, value]` over a map.
+  over `const auto&` (*copy*: `auto`, *editable*: `auto&`), and
+  `const auto& [key, value]` over a map, with `[[maybe_unused]]` before the
+  declaration when the body mentions none of the loop's names.
 * A struct definition gets the operators its ticks promise: a comparable
   struct the defaulted `auto operator<=>(const S&) const = default;` in
   C++20 and six hidden-friend comparisons built on `std::tie` in C++17; a
   printable struct a hidden-friend `operator<<` that prints
   `Point{x: 1, y: 2}` (a `bool` field as `true` or `false`). An enum that is
-  printed or written gets an `operator<<` (a `switch` over its values), and
-  one that is joined a `to_string`. The struct and enum blocks that reach
-  these come later in M3.
+  printed, written to a file or a field of a printable struct gets an
+  `operator<<` (a `switch` over its values), and one that is joined or
+  turned into text `b2c::to_text(E)`, an inline function in `namespace b2c`
+  right after the enum, so a user function `to_string(Color)` compiles
+  beside it. *new … with* is `Student{.name = n, .mark = m}` in C++20
+  (an empty part left out) and `Student{n, m}` in C++17 (`{}` for an empty
+  part before a filled one), each part cast as a value converted to its
+  field's type is.
+* **W2's other forms** (M3): `switch (v) { case 1: { … break; } default:
+  { … } }`, the `break;` left out after a statement that leaves the case,
+  case labels of an enum in full (`case Action::Deposit:`) and
+  `default: { break; }` for a switch on an enum that misses values without
+  a default part; `[[fallthrough]];`; `do { … } while (c);`;
+  `try { … } catch (const std::invalid_argument& e) { … }`, `throw
+  std::runtime_error(m);` and `throw;`; `static_assert(c, "message");`; a
+  stream as `std::ifstream file("x");` (`std::ofstream file("x",
+  std::ios::app);` for adding), *read line* as the bare `std::getline(f,
+  l)` where it is a condition of its own and `static_cast<bool>(…)`
+  elsewhere; *list of* as `{a, b}`, with its type where C++ cannot tell it
+  (`std::vector<int>{1, 2}`); `std::max<T>(a, b)`, `std::min<T>` and
+  `std::clamp<T>` with `T` the result's type; a map's *set item* as
+  `object[key] = x;`; *clear* of an adaptor as `c = {};`; `main(int argc,
+  char* argv[])` with `const std::vector<std::string> args(argv, argv +
+  argc);`; globals with `const` or `constexpr`; and on a call to an
+  overloaded function, each argument cast to its parameter's type and
+  quoted text as `std::string("…")`. A text operation's result
+  (`b2c::to_lower(s)`, `s.substr(…)`) is a `std::string` object and is used
+  as it is.
 * A read-only parameter of any type that is not a scalar (text, a library
   type, a struct) is `const T&`; numbers, characters, `bool`s and enums are
   passed by value.
@@ -571,7 +693,10 @@ printer module itself.
 * A Wadler-style document algebra (groups, nesting, soft line breaks) with a
   configurable line width (default 100). In M2 only stream statements are
   broken (each continuation starts with `<<`); the document algebra comes
-  with the code style options (M5).
+  with the code style options (M5). Since M3's wave W2 a `case` or
+  `default` whose body is one `{ … }` block keeps the brace on the label's
+  line (`case 1: {`), `do { … } while (c);` closes on the brace's line, and
+  a range-`for` and `try … catch (const E& e)` are laid out as `if` is.
 * Style options: indent width (2/4/tab, default 4), brace style (attached
   default, or Allman), pointer alignment (`int* p` default), spaces in
   template brackets (never).
@@ -648,8 +773,16 @@ statement (with its comment lines and nested bodies) and expression has one.
     `<cstdlib>` for `std::exit` outside `main`, `<limits>` for the simple
     *ask* of a number and `<string>` for one of text, `<compare>` (C++20)
     or `<tuple>` (C++17) for a comparable struct, `<ostream>` for a
-    generated `operator<<`, `<string>` for an enum's `to_string` and for
-    `+` joining text, and the helpers' own headers.
+    generated `operator<<`, `<string>` for an enum's `b2c::to_text` and for
+    `+` joining text, and the helpers' own headers. Since M3's wave W2 also
+    `<cstdlib>` for `std::abs` of a whole number and `<cmath>` of a decimal
+    one, `<algorithm>` for `std::max`, `std::min`, `std::clamp`, the sorts
+    and C++17's `std::find`, `<functional>` for `std::greater`, `<ostream>`
+    for *write … to file* and `<ios>` for a file opened for adding to its
+    end.
+
+  A *use header* block adds its header to its module's include list once,
+  merged with the headers the blocks bring.
 
   The emitter collects the headers of all **used** constructs, then
   deduplicates and sorts them. An item's `decl` headers go into the file
@@ -665,7 +798,14 @@ statement (with its comment lines and nested bodies) and expression has one.
   **and** the selected toolchain's probed capabilities
   ([07 §7.3](07-toolchain-build-run.md#73-capability-probing)), and fall back
   to an equivalent older form when one exists. Otherwise they report
-  `E0703`, which names the needed standard or GCC version. (`E0701` and
+  `E0703`, which names the needed standard or GCC version. **In M3** (wave
+  W2) the generator chooses its C++17 or C++20 form by the project's
+  standard alone: *contains*, *starts with* and *ends with*, *sort*
+  (`std::ranges::sort` or `std::sort`), *new … with* (designated
+  initialisers or positional ones) and a comparable struct's operators.
+  Every block W2 added has a form for both standards, so none reports
+  `E0703`; the editor's gating service hides what the standard or the
+  toolchain cannot compile from wave W4 on. (`E0701` and
   `E0702` are the generator's own errors: a placeholder in generated code,
   and libraries not yet supported; see the
   [diagnostics reference](../reference/diagnostics/generator.md).)

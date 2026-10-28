@@ -16,7 +16,8 @@
 > problems on blocks and in a list, the setup page, a console with Stop and
 > exit decoding, projects with autosave and crash recovery, workspace trust
 > and Restricted Mode, the validated clipboard and the reload of files
-> changed outside the app, behind the hardened IPC contract of 36 commands.
+> changed outside the app, behind the hardened IPC contract of 36 commands
+> (39 since M3's wave W3).
 > The guessing-game exit test, assembled from the *Empty* template, and the
 > breadth E2E flows pass in CI on both systems (commit `8c531d3`); the visual
 > diff of the canvas, and since 2026-10-15 of the window's chrome, runs there
@@ -232,14 +233,37 @@ the getting-started guide describe the polished editor.
 
 ### M3: Language breadth I
 
+> **Status (2026-10-28).** Waves W1 (types and typed slots) and W2 (the
+> language blocks) are done. Three slices of the later waves were merged
+> into the M3 branch on 2026-10-28: W3's export, run and settings slice
+> (close-input, run options, export to CMake and Make, the project settings
+> page; multi-module projects remain), W4's first slice (Appearance, expert
+> mode and the gating service) and W5's first item (the preview worker's
+> spike, behind a flag).
+> The ten assignments of the exit are green (`M3 assignments: 10 of 10
+> green`): every block project builds and runs on its golden data. W2's
+> integration step ([W2 contract §5.3](../plans/m3-contracts/w2.md#53-the-integration-step))
+> ran the full checks, the every-g++ forms test on a project with every
+> catalog block, the Linux E2E suite at four window sizes and the native
+> benchmark of W2's blocks; `webview.drag-typed-1000.frame-p95-all` is
+> still reported, so W3's integration gates it. What remains is listed in
+> [next steps §3.4](../plans/next-steps.md#34-waves).
+
 * Expression slots and Quick Insert. Type picker. Collections, strings,
-  structs, enums, files, errors, random and time.
+  structs, enums, files, errors, random and time (the collection, text,
+  struct, enum, file and error blocks, *wait* and *random decimal* done
+  2026-10-28 in wave W2, [03 §3.7](03-block-language.md#37-block-catalog-by-category);
+  the file blocks that do not open a file, a random seed, the clock and the
+  stopwatch moved to M4).
 * Multi-module projects with headers. Export to CMake/Make. Friendly
   message catalog for g++ errors. Support helpers.
 * Global variables and constants (with a const/constexpr suggestion), math
   functions and text/number conversions. Organisation blocks (namespace, use
   header, use namespace, static_assert) and the textbook-style
-  `using namespace std` project setting (Q4).
+  `using namespace std` project setting (Q4). (Globals and constants, with
+  `constexpr` chosen by the analyser, the math functions, the conversions,
+  *use header* and *check at compile time* done in wave W2; *namespace* and
+  *use namespace* go to wave W3, with modules.)
 * The expert-mode switch (Q8): Friendly/C++ block labels and *Show advanced
   blocks*. Toolbox search. A project settings dialog (standard, options,
   build configurations, defines) and run options (arguments, working
@@ -259,7 +283,9 @@ the getting-started guide describe the polished editor.
   *when program starts* (a checkbox, not a second block), overloads, default
   arguments and the *moved* parameter mode. Type-specific variable
   operations, and with *Show advanced blocks* the bitwise compound
-  assignments. The project name in the project settings dialog.
+  assignments. The project name in the project settings dialog. (Done in
+  wave W2, falling through as the block *go on into the next case*; the
+  *moved* parameter mode moved to M4, where `move` arrives.)
 * The type and slot foundations: an open type representation, typed slots,
   catalog schema extensions (including the catalog's `headers`),
   `text + "x"` where C++ allows it, and constant folding for overflow and
@@ -271,7 +297,9 @@ the getting-started guide describe the polished editor.
     export), with a compact source map and a C++ panel that pauses while
     hidden;
   * the small-program benchmarks gated, once the toolbox refreshes per
-    section and a baseline has been measured;
+    section and a baseline has been measured (the refresh's precondition met
+    in wave W2: the flyout keeps its unchanged blocks between showings, and
+    the `declare-variable` benchmarks report its refresh);
   * Blockly 13, continuous-toolbox 13 and xterm.js 6.1 with its add-ons,
     after a spike that also checks which workarounds the
     [upstream reports](../plans/upstream/README.md) let go; the
@@ -292,12 +320,20 @@ the getting-started guide describe the polished editor.
   vectors, structs, files) can be completed. Each has a golden test. The
   assignments are the ten of decision M3-D1, kept as acceptance tests in
   [`tests/assignments/`](../../tests/assignments/README.md) until each one's
-  block project passes and joins the golden tests.
+  block project passes and joins the golden tests (met for the ten on
+  2026-10-28: each is an example with its golden test).
 
 ### M4: Language breadth II
 
 * Classes (inheritance, virtual, operators, special members), lambdas,
   memory and smart pointers, templates and constraints, concurrency.
+* From M3's wave W2: *moved* parameters (with `move`), the generic member
+  block (with the `std` pack's metadata), the file blocks that act on files
+  no block opened (*delete file*, *create folder*, *for each file in
+  folder*, with the filesystem pack and its threat review), a random seed,
+  the clock and the stopwatch, and *read word* with the other console
+  stream blocks ([W2 contract §1.10](../plans/m3-contracts/w2.md#110-not-in-w2)).
+  The structured binding waits until pairs exist, after M3.
 * Library-pack system (the `std` pack complete), library profiles, generic
   member block, Raw C++ blocks. First decided: whether building a project
   created in the app asks for trust once it holds Raw C++ or libraries

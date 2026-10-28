@@ -161,9 +161,12 @@ Blocks_To_CPP/
 
 Test-only exceptions: `b2c-lang` may use `b2c-codegen` (its end-to-end tests
 compile what the analyser accepts) and `b2c-catalog` (its scope and robustness
-tests analyse documents as the resolve stage completes or rejects them), and
-`b2c-app` may use `b2c-core-wasm`
-(the test that the live preview and the build generate identical files).
+tests analyse documents as the resolve stage completes or rejects them),
+`b2c-codegen` may use `b2c-model`, `b2c-catalog` and `b2c-lang` (its
+every-g++ test loads, resolves and analyses a project that uses every
+catalog block before it generates, compiles and runs it), and `b2c-app` may
+use `b2c-core-wasm` (the test that the live preview and the build generate
+identical files).
 
 * `b2c-ir` holds the types that cross a stage boundary: validated IDs,
   diagnostics, the typed text leaves of [§6.8.2](06-compiler-pipeline.md#682-typed-text-parse-dont-validate),
@@ -290,7 +293,10 @@ commands.
   `update()`'s `blockTypes` and `slotTypes` and the conversion table use it;
   text is `"std::string"` everywhere. `SymbolInfoKind` also has the kinds
   `struct` (its `fields`, `comparable` and `printable`), `enum` (its
-  `values`), `field` and `enumerator` (each with its `owner`).
+  `values`), `field` and `enumerator` (each with its `owner`), and `global`
+  (its `isConst`), a module's global variable or constant; a `function`
+  has `optional`, how many of its last parameters have a default value,
+  left out when 0.
   `GeneratedFile` and `FileMap` have an optional `module` key and
   `SymbolInfo` an optional `shared` key
   ([ADR-0019](../adr/0019-multi-module-header-split.md)), each left out while
@@ -311,8 +317,10 @@ commands.
 
 ### 2.5.2 Commands
 
-M2 registers these 36 commands. The *Request* column shows the `request`
-object, or `{}` for a command without arguments; channel arguments are named
+M2 registers 36 commands, and M3's wave W3 adds three
+(`project_export_dialog`, `run_close_input` and `run_input_file`), so the
+contract has these 39. The *Request* column shows the `request` object, or
+`{}` for a command without arguments; channel arguments are named
 separately.
 
 | Command | Request | Response | Notes |
@@ -327,6 +335,7 @@ separately.
 | `project_save` | `{ handle, document }` | `{ savedAt, hash }` | Atomic write, only to the path bound to `handle` ([05 §5.10](05-project-format.md#510-saving-and-recovery)). |
 | `project_save_as_dialog` | `{ handle, document }` | cancelled, or `{ handle, savedAt, hash, fileName }` | Rebinds the handle to the path chosen in a native dialog. |
 | `project_close` | `{ handle }` | `{}` | Cancels the project's build, stops its program and forgets the handle. A `build_start` or `run_start` still preparing when the close comes stops what it started ([07 §7.6.1](07-toolchain-build-run.md#761-preconditions)). |
+| `project_export_dialog` | `{ handle, document }` | `{ cancelled, folderName, files }` | Exports the document as a C++ project (generated sources, `CMakeLists.txt`, `Makefile`, `README.md`) into a folder named after the project, inside a folder chosen in a native dialog **in the backend** ([06 §6.11](06-compiler-pipeline.md#611-export)). `folderName` is a name, never a path, and `null` when cancelled; `files` counts the files written. A text define that the build files cannot pass gives `defineNotExportable`. Allowed in Restricted Mode (it runs nothing). |
 | `project_set_dirty` | `{ handle, dirty }` | `{}` | Lets the backend ask before the window closes (§2.6). The backend's flag is only what this command last reported: a save never clears it, since the editor may have changed while the save was on its way. Open, new and reload start clean unless `blocksUpgraded` is true; a restore starts dirty. |
 | `recent_list` | `{}` | `{ entries: [{ recentId, projectName, displayPath, lastOpenedAt }] }` | Newest first, at most 10. |
 | `recent_remove` | `{ recentId }` | `{}` | |
@@ -346,7 +355,9 @@ separately.
 | `build_cancel` | `{ buildId }` | `{}` | Kills the compiler process tree. A no-op for a finished build. |
 | `build_cache_clear` | `{}` | `{ freedBytes, skippedInUse }` | Deletes the build cache except entries in use ([07 §7.5.1](07-toolchain-build-run.md#751-build-directory)). |
 | `run_start` | `{ buildId, runOptions: { cols, rows } }` + channels `onOutput`, `onEvent` | `{ runId }` | Requires a successful build of the current content ([07 §7.6.1](07-toolchain-build-run.md#761-preconditions)). Arguments and the working directory come from the built document. |
-| `run_input` | `{ runId, data }` | `{}` | `data` is base64 of at most 65,536 bytes. |
+| `run_input` | `{ runId, data }` | `{}` | `data` is base64 of at most 65,536 bytes. After `run_close_input` it gives `inputClosed`. |
+| `run_close_input` | `{ runId }` | `{}` | Ends the program's input, so its next read gives end-of-file (pipes: the pipe is closed; a terminal: its end-of-file character is sent). |
+| `run_input_file` | `{ handle, action }` | `{ fileName, cancelled }` | `action` is `get`, `choose` (a native dialog **in the backend**) or `clear`. The project's programs then read that file as their input; the backend keeps it for the project until the app ends, and only its name crosses (`null` while programs read the console). A file that is gone when a run starts gives `inputFileUnreadable`. |
 | `run_resize` | `{ runId, cols, rows }` | `{}` | Bounds-checked (§2.5.6). |
 | `run_stop` | `{ runId }` | `{}` | Kills the whole process tree. |
 | `run_ack` | `{ runId, seq }` | `{}` | Flow control for the output channel (§2.5.3). |
@@ -354,12 +365,9 @@ separately.
 | `settings_update` | `{ codeStyle?, run?, console?, ui? }`; `ui` takes a partial `layout` ([05 §5.9](05-project-format.md#59-machine-local-data)) | `{ settings }` | A strict partial update. Any other key, including `toolchain`, `newProject` and `buildCache`, is rejected. |
 | `open_help_link` | `{ linkId }` | `{}` | `msys2Install`, `winlibs` or `diagnosticsReference`, each mapped to a fixed `https` URL. No arbitrary URLs ([08 §8.8](08-security.md#88-webview-and-ipc-hardening)). |
 
-**Not in M2:** `project_export_dialog { handle, document, options }` (export
-plain C++ with CMake and Make files to a folder chosen in a native dialog,
-with a progress channel) arrives with export in M3. There are deliberately no
-commands to set the window title, write to the log, inspect the cache, use
-the clipboard or watch a file: the dirty marker is shown inside the app, the
-clipboard uses DOM events in the webview
+There are deliberately no commands to set the window title, write to the
+log, inspect the cache, use the clipboard or watch a file: the dirty marker
+is shown inside the app, the clipboard uses DOM events in the webview
 ([05 §5.12](05-project-format.md#512-clipboard-format)), and opening a
 project starts watching it.
 
@@ -387,9 +395,12 @@ permission, so the webview cannot call `listen()`.
 * **Run output** (`run_start`, `onOutput`): raw bytes, batched at most every
   16 ms, and numbered from 1 in send order.
 * **Run events** (`run_start`, `onEvent`), JSON tagged by `kind`:
-  * `started { containment, mode, ideHelpers }` first, with `containment` one
-    of `jobObject`, `cgroup`, `processGroupOnly` and `mode` one of `pty`,
-    `pipes`;
+  * `started { containment, mode, ideHelpers, inputFile, externalTerminal }`
+    first, with `containment` one of `jobObject`, `cgroup`,
+    `processGroupOnly` and `mode` one of `pty`, `pipes`; `inputFile` when
+    the program reads the project's input file (its input is then closed for
+    the console), `externalTerminal` when it runs in a terminal window of its
+    own (the console then shows only how it ended);
   * `skipped { lines, afterSeq }` when output was dropped
     ([07 §7.6.5](07-toolchain-build-run.md#765-run-limits));
   * `exit { afterSeq, elapsedMs, status, crash, sanitizer, message }` exactly
@@ -449,6 +460,10 @@ Every command returns either its response or an `IpcError`, tagged by
 | `buildNotSuccessful` | | `run_start` for a build that produced no program |
 | `projectErrors` | `count` | The analyser reports errors |
 | `notRunning` | | Input for a program that has ended |
+| `inputClosed` | | Input for a program whose input was ended (`run_close_input`) |
+| `noExternalTerminal` | | No terminal program was found to run the program in a window of its own |
+| `inputFileUnreadable` | | The project's input file was moved, deleted or replaced when the run started |
+| `defineNotExportable` | | A text define holds `#`, `;` or `$`, which the exported build files cannot pass (`B2C-T1019`); nothing was exported |
 | `rateLimited` | | Too many calls (program input, trust dialog) |
 | `busy` | | Another native dialog is open |
 | `tooManyHandles`, `tooManySessions` | | A resource bound was reached (§2.6) |

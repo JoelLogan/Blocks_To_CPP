@@ -163,10 +163,31 @@ escaped by the emitter), which become `-D` arguments built by the backend.
 | `fields` | Field values: strings, numbers, booleans, symbol declarations (`{"sym": "sym_x", "name": "score"}`), symbol references (`{"ref": "sym_x"}`) or type terms (below). Each value is validated against the catalog field kind. |
 | `inputs` | Value inputs: either `{"block": …}` (a nested reporter) or `{"expr": [tokens]}` (an expression slot, [03 §3.4](03-block-language.md#34-expression-slots)). An absent input means the catalog default (shadow). |
 | `statements` | Statement inputs as **arrays** of blocks. |
-| `extra` | Mutator state (variadic counts, ⊕ parts), validated against the catalog's schema for that block. |
+| `extra` | Mutator state (variadic counts, ⊕ parts and rows), validated against the catalog's schema for that block (below). |
+
+**Rows and repeated parts.** `extra` holds a count as a number and a flag
+as a boolean (`"caseCount": 2`, `"hasDefault": true`), and the rows of a
+definition as an array: a function's `params` rows are `{sym, name, type,
+mode}`, a struct's `fields` rows `{sym, name, type}` and an enum's
+`values` rows `{sym, name}`. Each row declares its symbol, which renaming,
+references and paste remapping treat as any declaration's; a parameter row
+or field row may be followed by a repeated input `DEFAULT0`, `DEFAULT1`, …,
+one per row, for its default value. The parts of a repeated field or input
+are ordinary fields and inputs of the block, numbered from 0 (`ERROR0`,
+`NAME0`, `CATCH0` of a *try*; `CASE0`, `DO0` of a *switch*), and a
+repeated field's parts each take the field's default when they are absent.
+A type field whose catalog list is empty (*new … with*'s struct) has no
+default and may be absent.
+
+```json
+"extra": { "fields": [
+  { "sym": "sym_Nm01", "name": "name", "type": "std::string" },
+  { "sym": "sym_Mk02", "name": "mark", "type": "int" } ] }
+"extra": { "values": [ { "sym": "sym_Dp01", "name": "Deposit" }, { "sym": "sym_Qt02", "name": "Quit" } ] }
+```
 
 **Type terms.** A type field, and the `type` of each row of a function's
-`params` in `extra`, hold a type as a *term*
+`params` or a struct's `fields` in `extra`, hold a type as a *term*
 ([ADR-0017](../adr/0017-open-type-representation.md)):
 
 ```json
@@ -192,8 +213,9 @@ escaped by the emitter), which become `-D` arguments built by the backend.
   app).
 * A wrong shape (an argument array of one or none, a number, `null`, a bad
   name) is `B2C-E0112`, an invalid ID `B2C-E0113` and a reserved key
-  `B2C-E0127`. In a `params` row, a value that is neither text, a reference
-  nor a template is left to the catalog (`B2C-E0614`). Which types a field
+  `B2C-E0127`. In a `params` or `fields` row, a value that is neither text,
+  a reference nor a template is left to the catalog (`B2C-E0614`, which
+  also covers a malformed `fields` or `values` row). Which types a field
   or row takes is the catalog's check
   ([06 §6.3](06-compiler-pipeline.md#63-stage--resolve-catalog)), and the
   struct or enum a reference names is the analyser's (`B2C-E0201`,
@@ -645,7 +667,10 @@ and a custom `application/x-blocks2cpp+json` payload:
 `refs` records the qualified name and kind of each symbol that the copied
 blocks refer to but do not declare. `kind` is `variable`, `parameter`,
 `loopVariable`, `function`, `struct`, `enum`, `field` or `enumerator`. A
-copied stack of statements is one block with `stack` (§5.4).
+global, an opened file, a copied or editable *for each* item, a caught error
+and *with arguments*' list are recorded as variables; a read-only *for
+each* item, a map's key and value and a file loop's line as loop variables.
+A copied stack of statements is one block with `stack` (§5.4).
 
 `formatVersion` follows the rule of §5.7: a payload is written as version 2
 when it holds a template type term (§5.4) or a `refs` entry of the kinds

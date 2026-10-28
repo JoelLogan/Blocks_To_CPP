@@ -536,6 +536,14 @@ The backend checks these itself and never relies on the UI:
   that was built (`run.args`, `run.workingDirectory`); `run_start` takes only
   the terminal size. A project that has never been saved has no folder, so it
   always runs in its sandbox folder, `<cache>/sandbox/<projectFolder>/`.
+* **Files the program touches** (decision M3-D3). A program reads and
+  writes only the files its blocks name, as the user who runs it: a path
+  that is not a full path is relative to the working directory. *for each
+  line in file*, *open file* for reading and *file exists* read; *open file*
+  for writing or adding to the end writes the path its block holds (since
+  M3's wave W2). No block deletes, lists or creates folders: those blocks
+  wait for M4's filesystem pack and its threat review
+  ([03 §3.7.10](03-block-language.md#3710-files)).
 * **Environment:** the user's own environment (programs legitimately need it)
   minus IDE-internal variables, plus:
   * `TERM=xterm-256color` (Linux)

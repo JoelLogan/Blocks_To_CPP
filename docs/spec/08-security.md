@@ -168,7 +168,12 @@ decision the user makes explicitly, once, per project.**
   requirements and the file-system blocks (`b2c_model::security_summary`) of
   the latest document the backend received for the project (when it was
   opened, saved, built or snapshotted), and granting trust records that
-  document's security hash.
+  document's security hash. The file-system blocks are every block whose
+  type starts with `file.`; they are listed for the user to see, but they do
+  not enter the security hash, which holds the Raw C++ text, the libraries,
+  the packs and the defines. Since M3's wave W2 an example has one:
+  `word_count`'s *for each line in file* is listed in its summary, and its
+  security hash is still that of a document with nothing to trust.
 * **The dialog itself** is raised from Rust with `tauri-plugin-dialog`'s Rust
   API; the webview has no dialog permission. It is one native message dialog
   with the three choices as its buttons: the pinned plugin (2.8.3) supports
@@ -660,7 +665,10 @@ injection strings, comment splices, bidi text, deep nesting, duplicate keys,
 oversized numbers, Windows device names, prototype-pollution keys, type
 terms that are too deep or too wide or carry injected or bidi text,
 prototype keys or a list where one argument belongs, a damaged declaration
-that must not read as a type, and template abuse in packs. Each has an
+that must not read as a type, and template abuse in packs. Since M3's wave
+W2 it also holds `deep-struct-nesting.b2c`: 64 structs, each holding the one
+before it by value, the innermost with 64 field rows (the most a row extra
+takes), which loads, resolves and analyses clean and builds. Each has an
 asserted outcome (rejected, or emitted safely), and the suite runs on every
 PR. `tests/security/clipboard/` does the same for clipboard payloads.
 

@@ -126,7 +126,27 @@ Details of each level as M2 sets them up:
   catalog block without a
   case fails the test. It is skipped without g++ unless `B2C_REQUIRE_GXX` is
   set, and runs in the Linux (GCC 13), GCC 11, GCC 15 and Windows (MSYS2)
-  test jobs.
+  test jobs. Each catalog file's cases live in
+  `crates/b2c-build/tests/catalog_syntax_cases/<file>.rs`, a module of the
+  test, and a missing case's message names that folder; the catalog tests
+  count the blocks of `catalog/core/*.toml` rather than a fixed number.
+* **Tests that run g++ themselves** go through the probed toolchain,
+  `b2c-process` and `compiler_env`, as a build does (`catalog_syntax.rs`,
+  `run_data.rs` and W2's run tests), and canonicalise paths with
+  `b2c_toolchain::paths::canonical`: `std::fs::canonicalize` gives a
+  verbatim `\\?\` path on Windows, from which g++ cannot find `cc1plus`. A
+  test that also tries every `/usr/bin/g++-N` starts at the oldest
+  supported GCC (`MIN_GCC_MAJOR`, 11). M3's wave W2 adds such tests for its
+  blocks: `crates/b2c-build/tests/text_errors.rs`, `structs.rs`,
+  `control_files.rs` and `functions_globals.rs` build and run their
+  programs with every g++ found, under C++17 and C++20 at the *strict*
+  level with `-Werror`; `control_files.rs` runs each program in a fresh
+  folder holding its input files, checks that the folder is unchanged
+  after a program that only reads, and runs one that writes, adds to and
+  reads back a file in its run folder. The analyser's rules for W2's blocks
+  are in `crates/b2c-lang/tests/` (`text_errors.rs`, `control_files.rs` and
+  others), and the editor's typing and mutators in `blockly-ext`'s tests
+  (`text-errors.test.ts`, `checker/structs.test.ts`, …).
 * **Types and typed slots.** The editor's TypeScript copies of the type rules
   and of typed slots are held to the analyser by two committed fixtures,
   `packages/blockly-ext/src/types/fixture.json` (the sample types, their
@@ -146,7 +166,15 @@ Details of each level as M2 sets them up:
   `crates/b2c-lang/tests/props.rs`) holds the catalog's table to what M2's
   own rules gave on 400 generated programs, every example and every
   malicious project that loads, apart from rules changed on purpose since
-  (`+` on text). The no-false-refusal test
+  (`+` on text); a document that uses a block or block family added after
+  M2 (`common::AFTER_M2` in `crates/b2c-lang/tests/common/mod.rs`) is left
+  out of it, and the comparison takes the catalog headers off both
+  programs. The slot fixture samples the parts of repeated fields too (one
+  count for all of a block's repeated fields, a part per index), so the
+  analyser and the editor are compared on each caught error's type. The
+  property test that well-typed programs have no errors divides by `b + i`,
+  never by a constant, since a constant zero divisor is a real
+  `B2C-E0316`. The no-false-refusal test
   (`apps/desktop/src/editor/sync/noFalseRefusal.test.ts`, with the real
   core) samples value blocks and inputs in every example, and each drop the
   editor refuses must give an analyser error at the moved block or its
@@ -155,7 +183,14 @@ Details of each level as M2 sets them up:
   sample value type, a comparable struct in a set and a map, a printable
   struct, an enum printed and joined, an index and a size compared with an
   `int`, with the *strict* warnings under C++17 and C++20, with the `g++` on
-  `PATH` and every `/usr/bin/g++-N`, then runs it. Constant folding is
+  `PATH` and every `/usr/bin/g++-N` from `MIN_GCC_MAJOR` (11) on, then runs
+  it. Since M3's wave W2 it also builds
+  `crates/b2c-codegen/tests/fixtures/every_block.b2c`, a project that uses
+  every block of the catalog (a second test fails when a catalog block is
+  missing from it): through load, resolve, analysis and generation with no
+  diagnostic at all, under C++17 and C++20 at the *strict* level with
+  `-Werror`, run in a folder of its own with an argument and two lines of
+  input, and its whole output checked. Constant folding is
   compared with a reference evaluator on random expressions, and for 400
   random constant expressions the analyser's value must equal the
   reference's, and g++ compiles each as a `constexpr` value with a
@@ -184,6 +219,17 @@ Details of each level as M2 sets them up:
   AddressSanitizer programs cannot start under it. A mutant's tests time out
   after 1.5 times the unmutated tests' time, which bounds what a loop that
   does not allocate costs.
+* **Desktop unit tests that show the toolbox.** Showing the continuous
+  toolbox's flyout draws every catalog block, which M3's wave W2 nearly tripled
+  (86 blocks), and happy-dom draws them slowly. A desktop test file that
+  mounts the toolbox therefore sets its own test limit,
+  `FLYOUT_TEST_TIMEOUT_MS` (20 s, `apps/desktop/src/editor/toolbox/testing.ts`),
+  with the measurement that justifies it in the file, instead of a
+  suite-wide limit; a file whose slowest test is under 2.5 s leaves it
+  unset. A few slower tests (the flyout's own showing times, the keyboard
+  navigation file) set a measured limit of their own. Every category that
+  gains blocks is measured again. The flyout keeps its blocks between
+  showings since W2, so what the limit bounds is the first showing.
 * **Desktop E2E** ([ADR-0009](../adr/0009-e2e-tooling-and-test-seams.md)):
   selenium-webdriver drives `tauri-driver` (installed with `cargo install
   --locked` at a pinned version), with Vitest as the runner; WebdriverIO
@@ -203,24 +249,38 @@ Details of each level as M2 sets them up:
   header. **The breadth flows** (`specs/flows/`) cover Restricted Mode and
   trust, save and reload, crash recovery, Stop (the button and `Shift+F5`),
   exit decoding, closing the app while a program runs (no process outlives
-  it), a flood of 10,000,000 output lines, the setup page, an external change
-  (also to a deleted file), the clipboard, settings after a restart, the
-  variable menus, the connection checker, selecting a block from its code, a
-  drag from every toolbox category, placing blocks with real pointer drags
-  (into a C-block off its connection at two zoom levels, a drop on the
+  it), a flood of 10,000,000 output lines, the setup page, an external
+  change (also to a deleted file), the clipboard, settings after a restart,
+  the variable menus, the connection checker, selecting a block from its
+  code, a drag from every toolbox category, placing blocks with real pointer
+  drags (into a C-block off its connection at two zoom levels, a drop on the
   toolbox while a place is previewed, also without a last move, a drop on
   the trash can undone with `Ctrl+Z`, *Show all blocks* keeping the zoom,
   and an empty *if* wrapping statements of `main`, undone and redone, at
   three zoom levels), typed slots (a text value refused by `create [int]`
   and accepted by `create [string]`, a start value swapped by a type change
   and restored in one undo step, a wrong argument refused by a drag and not
-  offered by the keyboard mover), and a build and a run with input. Both
-  run in the pull request E2E job on both systems; the security tests of
+  offered by the keyboard mover), and a build and a run with input. Both run
+  in the pull request E2E job on both systems; the security tests of
   [08 §8.13](08-security.md#813-continuous-security-process) run nightly.
   Typing in expression slots and Quick Insert are M3 features and are not
-  tested in M2. *Without reading docs* is checked by a manual usability
-  session with first-time users on both systems before M2 is declared done
-  ([the protocol](../manual-tests/m2-usability.md)).
+  tested in M2. M3's wave W2 adds the flows `collections`, `errors`,
+  `structs-enums`, `control` (a switch on a whole number and one on an enum,
+  with `B2C-W0508`), `files-run` (a project reading the fixture `lines.txt`
+  from its folder, and its *if it can't be opened* part), and
+  `functions-globals` (a global listed under *Everywhere*, a default value
+  typed into a parameter row), each green at the default size, 1024 × 768
+  and 800 × 560. A flow brings a canvas element into the visible canvas
+  before it clicks it (`fieldOf`, or `centerOn` and `bringIntoView`): the
+  toolbox's flyout stays open over the canvas's left part, which WebDriver's
+  `isDisplayed` does not see. It waits for Blockly's delivery
+  (`waitForDelivery`) after inserting blocks before it measures them, waits
+  for a condition and never for a fixed time, and matches console text
+  without relying on its spaces. The selection flow tells one showing of the
+  flyout from the next by the ID of its *create* block, since the flyout
+  keeps its other blocks. *Without reading docs* is checked by a manual
+  usability session with first-time users on both systems before M2 is
+  declared done ([the protocol](../manual-tests/m2-usability.md)).
 * **The M3 assignments.** The intro-CS assignments that make up M3's exit
   (decision M3-D1 of the
   [next steps](../plans/next-steps.md#33-decisions-before-m3-starts)) are
@@ -256,6 +316,9 @@ Details of each level as M2 sets them up:
   `visual-baselines` input only writes candidates); a person reviews them
   and commits the baselines. Until a screenshot's baseline is committed, it
   passes with a warning. It runs in the pull request E2E job and nightly.
+  The toolbox's category column always keeps the room of its scroll bar
+  (`scrollbar-gutter: stable`), so the canvas sits at the same place
+  whether or not the categories fit.
 * **Benchmarks.** `criterion` measures the native pipeline (load, resolve,
   analyse, generate, and the whole preview) on a generated 1,000-block
   module. Through the E2E harness, the webview benchmarks measure cold start
@@ -356,6 +419,17 @@ Details of each level as M2 sets them up:
     number block (`webview.keyboard-list-1000.ms`, reported, against N12's
     100 ms). A base build without the `b2c:keyboard-targets` span skips the
     listing in an A/B run, with a note.
+  * M3's wave W2 adds three reported benchmarks: the native pipeline on a
+    1,000-block module of the collection blocks
+    (`native.pipeline.preview-collections`) and of W2's blocks of every kind
+    with definitions (`native.pipeline.preview-language`), each a shape of
+    its own so that `native.pipeline.preview` keeps its history (the A/B
+    job reads the webview workspaces with the base build's catalog, which
+    refuses W2's blocks, so those stay as they were); and the toolbox's
+    refresh after a new variable
+    (`webview.declare-variable.toolbox-refresh`, on the guessing game and at
+    1,000 blocks, with `webview.declare-variable.max-task`), to be gated
+    once each has 5 baselines.
   * M2 gates regressions. Absolute interaction budgets on small programs are
     reported in M2 and gated from M3 once the toolbox refreshes per section.
     Meeting N2–N4 and N12 ([01 §1.4](01-overview.md#14-goals)) at

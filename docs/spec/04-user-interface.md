@@ -138,31 +138,49 @@
 * **Dynamic categories.** *Program* offers *when program starts* only while
   the project has none; otherwise it says where the program starts.
   *Variables* offers *Make a variable* (name and type), the `create` block,
-  one `set`, and, when a number or character variable exists, one `change`,
-  then a getter for each variable of the module, grouped by the function
-  that declares it (at most 50, then a note of how many more there are).
-  It does not depend on the selection. A *set* or *change* block dragged
-  from the toolbox comes with a variable already chosen; if that variable is
-  not visible where the block is dropped, the block takes the first fitting
-  variable visible there, as part of the same drop (one Undo removes it). A getter keeps its variable: if the variable is
-  not visible where it is dropped, the block shows `B2C-E0203` and its menu
-  offers the variables that are. A block still in the toolbox lists every
-  variable of the module in its menu, grouped like the category.
-  *Functions* lists *define* and *return*, then, under *Your functions*, a
-  call block for each function of the module shown, or a short hint when
-  there is none; module headings appear only when the project has more than
-  one module. A call block of a known function has as many arguments as the
-  function has parameters: it shows no ⊖/⊕ while they match, and only the
-  one that brings it back in line when the definition changes. *Libraries*
-  lists installed packs.
+  the *global* block, one `set`, one `change` when a variable of a number,
+  character or text type exists, and one *flip* when a true/false variable
+  that may change exists, then a getter for each variable of the module, the
+  globals first under *Everywhere*, then grouped by the function that
+  declares it (at most 50, then a note of how many more there are). It does
+  not depend on the selection. A *set* or *change* block dragged from the
+  toolbox comes with a variable already chosen; if that variable is not
+  visible where the block is dropped, the block takes the first fitting
+  variable visible there, as part of the same drop (one Undo removes it). A
+  getter keeps its variable: if the variable is not visible where it is
+  dropped, the block shows `B2C-E0203` and its menu offers the variables
+  that are. A block still in the toolbox lists every variable of the module
+  in its menu, grouped like the category. *Functions* lists *define* and
+  *return*, then, under *Your functions*, a call block for each function of
+  the module shown, or a short hint when there is none; module headings
+  appear only when the project has more than one module. Functions that
+  share a name (overloads, [03 §3.7.7](03-block-language.md#377-functions))
+  are each labelled with their parameter types (*area (int, int)*). A call
+  block of a known function has as many arguments as the function has
+  parameters: it shows no ⊖/⊕ while they match, and only the one that brings
+  it back in line when the definition changes. *Libraries* lists installed
+  packs.
 * **Rebuilds.** The flyout is rebuilt only when what the dynamic categories
-  show changes (the module's variables and functions, whether the project
-  has *when program starts*, the modules), never while a block is dragged, a
-  field is edited, a menu is open or a category scroll runs; the selected
-  category stays selected.
+  show changes (the module's variables and functions, its structs and
+  enums with their names, whether the project has *when program starts*,
+  the modules), never while a block is dragged, a field is edited, a menu
+  is open or a category scroll runs; the selected category stays selected.
+  Showing the flyout again keeps every block and label whose item is
+  unchanged and moves it where the new contents put it; it builds only the
+  blocks whose items changed, every block that declares something (an
+  item's declaration, or one the block makes itself, such as *try*'s catch
+  variable: each showing gives them new symbol IDs), every block the user
+  changed in the flyout (told by its serialised state) and a block the
+  canvas's block limits disabled. A flyout shown again while it is
+  displayed is not hidden around the showing, and its showing runs with
+  Blockly's events off. A block taken out of the flyout gets IDs of its
+  own, for itself and every block and shadow in it.
 * **Beginner / Advanced.** Advanced categories and rarely used blocks are
   hidden until *Show advanced blocks* is enabled (per project, defaulting to
-  the user preference).
+  the user preference). The gating service that decides this also filters
+  dropdown options: its first gated options are *change*'s bitwise forms,
+  which its menu lists only with *Show advanced blocks* (and always the
+  option a block already has).
 * Toolbox search filters the flyout live (the same fuzzy index as Quick
   Insert).
 * The categories, their order, icons, colours and entries come from
@@ -205,6 +223,33 @@ in the same scrolling flyout, so M2 needs no fallback to Blockly's category
 toolbox. *Libraries* comes with library packs (M4), *Show advanced blocks* and
 toolbox search in M3.
 
+**In M3** (wave W2) the toolbox also shows Collections, Types, Files and
+Errors after Functions; a category without entries is not shown. Program
+lists *use header* and *check at compile time* after *stop program*;
+Variables gains *global* after `create`, and *flip* with *set* and *change*;
+Math gains the function block (*round of*, *square root of*, and the other
+rounding, root, power-of-e, logarithm and angle functions), *absolute
+value*, *larger/smaller*, the functions of two numbers, *kept between* and
+*random decimal* after *convert*; Text gains *length of*, *letter … of*,
+*lowercase/uppercase*, *split*, *text … as number*, *as text*,
+*contains/starts with/ends with*, *part of*, *trim* and *replace all*;
+Control gains *switch on* (two cases and a default part), *go on into the
+next case* and *wait*; Loops gains *do … then repeat* after *repeat while*,
+and *for each* and *for each key, value* at its end; Input / Output gains
+*show numbers with … decimal places*. Collections lists *add*, *item*, *set
+item*, *length of*, *is empty*, *list of*, *contains*, *remove item at*,
+*remove*, *clear*, *sort*, *next item* and *remove next*; Types lists
+*struct*, *new … with* (with no parts: on the canvas ⊕ is offered until it
+has one part per field of the chosen struct), *… of*, *set … of*, *enum* and
+*enum value*; Files lists *for each line* and *open file*, both with their
+*if it can't be opened* part, *read line*, *write* and *file exists*; Errors
+lists *try … catch*, *throw*, *message of* and *throw the error again*. The
+type menus list the module's structs and enums and lists of them
+([03 §3.5.2](03-block-language.md#352-friendly-and-c-display-modes)). The
+toolbox takes about 45 ms to show its flyout again after a new variable on
+the guessing game (225 ms before blocks were kept) and 52 ms at 1,000 blocks
+(300 ms), and no longer grows with the number of catalog blocks.
+
 ## 4.3 Code panel (live C++)
 
 * A read-only CodeMirror 6 view of the generated C++ for the active module,
@@ -238,7 +283,7 @@ toolbox search in M3.
 | ------- | ------ |
 | On the block | A badge (✖ error, ⚠ warning, ℹ info) at the block's top-right corner. The block outline is tinted. Hovering shows the friendly message. |
 | On an expression slot | Squiggly underline under the offending token |
-| Problems panel | A sortable list: severity, message, module, block path ("when program starts › repeat until › if"). Clicking selects the block. |
+| Problems panel | A sortable list: severity, message, module, block path ("when program starts › repeat until › if"). Clicking selects the block. A block in a path is named by its friendly label with the current field values filled in; a type field reads as its menu shows it, a list or a struct or enum included ("when program starts › create list of Student variable"), and a type the document does not declare reads *unknown type*. |
 | Code panel | Gutter marker and underline |
 | Toolbar | ▶ Run is disabled with a tooltip ("2 errors – click to see the first") when analyser errors exist (configurable) |
 
@@ -473,7 +518,8 @@ console and selected text.
   reflow.
 * Screen-reader support: ARIA roles and labels for panels. Blocks are
   announced with their full textual form ("if guess less than secret, then, 1
-  statement").
+  statement"); a type field is read as its menu shows it, a list or a
+  struct or enum included ("create Action variable action").
 * Colour is never the only signal. Categories have icons, diagnostics have
   icons and text, and Raw C++ has a pattern and a badge.
 * Themes: Light, Dark, High Contrast (light and dark), and a colour-blind-safe
