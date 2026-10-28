@@ -27,6 +27,21 @@ export const B2C_MUTATOR_NAMES: readonly B2cMutatorName[] = [
   B2C_MUTATOR_PARAMS,
 ];
 
+/**
+ * The prefix of each kind of row's fields (`B2C_PARAM0_TYPE`, `B2C_FIELD1_NAME`, `B2C_VALUE0_NAME`),
+ * which the rows mutator names its rows by.
+ */
+export const ROW_FIELD_PREFIXES = Object.freeze({
+  params: 'B2C_PARAM',
+  fields: 'B2C_FIELD',
+  values: 'B2C_VALUE',
+} as const);
+
+/** The name of the type field of row `index` of a row extra of `kind` (`B2C_PARAM0_TYPE`). */
+export function rowTypeFieldName(kind: keyof typeof ROW_FIELD_PREFIXES, index: number): string {
+  return `${ROW_FIELD_PREFIXES[kind]}${String(index)}_TYPE`;
+}
+
 /** How a parameter is passed (03 §3.7.7): by value, by `&`, or by `const&`. */
 export type ParamMode = 'copy' | 'editable' | 'read_only';
 

@@ -1709,7 +1709,17 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         repeat: null,
       },
     ],
-    inputs: [],
+    inputs: [
+      {
+        name: 'DEFAULT',
+        check: 'any',
+        optional: true,
+        repeat: { count: 'params', plus: 0 },
+        default: [],
+        type: { kind: 'param', field: 'NAME' },
+        assign: false,
+      },
+    ],
     statements: [{ name: 'BODY', repeat: null, when: null }],
     extra: [
       {
@@ -1732,7 +1742,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       },
     ],
     typeVars: { R: 'value' },
-    order: [{ field: 'RETURNS' }],
+    order: [{ field: 'RETURNS' }, { input: 'DEFAULT' }],
     placeVar: null,
     members: {},
     headers: [],

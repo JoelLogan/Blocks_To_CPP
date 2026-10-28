@@ -468,7 +468,10 @@ fn duplicate_symbol_ids() {
         .expect("twice");
     assert_eq!(
         twice.kind,
-        b2c_ir::sast::SymbolKind::Function { params: Vec::new() },
+        b2c_ir::sast::SymbolKind::Function {
+            params: Vec::new(),
+            optional: 0,
+        },
         "the duplicate is left out of the program"
     );
 }

@@ -992,6 +992,8 @@ pub(crate) struct CParam {
     pub(crate) name: Ident,
     /// Where it was declared.
     pub(crate) origin: Origin,
+    /// Its default value (w2.md §2.8), printed in the declaration only.
+    pub(crate) default: Option<CExpr>,
 }
 
 /// A function definition (`main` included).

@@ -716,6 +716,8 @@ describe('call argument labels', () => {
 describe('call argument buttons', () => {
   /** The parameters of `sym_greet` in the latest analysis. */
   let params: string[];
+  /** How many of them have a default value (w2.md §2.8). */
+  let optional: number;
 
   function callTo(ref: unknown, count: number, on = workspace): B2cMutatorBlock {
     const call = on.newBlock('func.call_stmt');
@@ -733,6 +735,7 @@ describe('call argument buttons', () => {
 
   beforeEach(() => {
     params = ['sym_name', 'sym_times'];
+    optional = 0;
     const names = new Map([
       ['sym_name', 'name'],
       ['sym_times', 'times'],
@@ -740,7 +743,7 @@ describe('call argument buttons', () => {
     ]);
     configureMutators({
       symbols: {
-        symbolsAt: () => [{ id: 'sym_greet', kind: 'function', params }],
+        symbolsAt: () => [{ id: 'sym_greet', kind: 'function', params, optional }],
         nameOf: (id) => names.get(id) ?? null,
       },
     });
@@ -766,6 +769,27 @@ describe('call argument buttons', () => {
     press(long, 'count:remove');
     expect(long.b2cGetExtra()).toEqual({ argCount: 2 });
     expect(buttonKeys(long)).toEqual([]);
+  });
+
+  it('offer to leave out and give back the arguments of parameters with a default', () => {
+    optional = 1;
+    const call = callTo({ ref: 'sym_greet' }, 2);
+    expect(buttonKeys(call)).toEqual(['count:remove']);
+    press(call, 'count:remove');
+    expect(call.b2cGetExtra()).toEqual({ argCount: 1 });
+    expect(buttonKeys(call)).toEqual(['count:add']);
+    // Not below the parameters without a default.
+    expect(buttonKeys(callTo({ ref: 'sym_greet' }, 0))).toEqual(['count:add']);
+    // The editor's own answer, without a scope query.
+    configureMutators({
+      symbols: {
+        symbolsAt: () => [],
+        nameOf: () => null,
+        functionParams: () => ['sym_name', 'sym_times', 'sym_extra'],
+        functionOptional: () => 2,
+      },
+    });
+    expect(buttonKeys(callTo({ ref: 'sym_greet' }, 2))).toEqual(['count:remove', 'count:add']);
   });
 
   it('follow the definition after each analysis, recording nothing', async () => {

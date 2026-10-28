@@ -153,7 +153,18 @@ describe('paramsSpec', () => {
         '{"std::vector":"std::string"}',
       ],
       typeClass: 'value',
-      rowInputs: [],
+      // A row's default value (w2.md §2.8, package C2), typed by its parameter.
+      rowInputs: [
+        {
+          name: 'DEFAULT',
+          check: 'any',
+          optional: true,
+          repeat: { count: 'params', plus: 0 },
+          default: [],
+          type: { kind: 'param', field: 'NAME' },
+          assign: false,
+        },
+      ],
       anchorArgs: ['RETURNS', 'BODY'],
     });
   });

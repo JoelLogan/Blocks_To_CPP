@@ -149,6 +149,7 @@ impl Builder {
             name,
             SymbolKind::Function {
                 params: param_ids.clone(),
+                optional: 0,
             },
             ret.clone(),
         );
@@ -441,6 +442,7 @@ impl Builder {
                     symbol: symbol.clone(),
                     mode: *mode,
                     origin: param_origin,
+                    default: None,
                 }
             })
             .collect();

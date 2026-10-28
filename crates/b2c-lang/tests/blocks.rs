@@ -499,7 +499,7 @@ fn functions_calls_and_returns() {
     };
     assert_eq!(square.ret, Type::Int);
     let fn_sym = a.program.symbols.get(&square.symbol).expect("function symbol");
-    assert!(matches!(&fn_sym.kind, SymbolKind::Function { params } if params.len() == 1));
+    assert!(matches!(&fn_sym.kind, SymbolKind::Function { params, .. } if params.len() == 1));
     assert_eq!(fn_sym.ty, Type::Int);
 
     let stmts = main_stmts(&a);

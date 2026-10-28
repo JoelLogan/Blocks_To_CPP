@@ -320,6 +320,9 @@ pub(super) fn enum_uses(program: &b2c_ir::sast::Program) -> EnumUses {
                 walk_block(&def.body, &mut walk, 0);
             }
             b2c_ir::sast::ItemKind::Function(def) => {
+                for value in def.params.iter().filter_map(|param| param.default.as_ref()) {
+                    walk_expr(value, &mut walk, 0);
+                }
                 walk_block(&def.body, &mut walk, 0);
             }
             b2c_ir::sast::ItemKind::Global(def) => {
@@ -390,7 +393,7 @@ impl Writes<'_> {
     /// Whether argument `index` of a call to `function` is passed by editable
     /// reference. Unknown functions count as editable, to stay on the safe side.
     fn is_editable_arg(&self, function: &SymbolId, index: usize) -> bool {
-        let Some(SymbolKind::Function { params }) = self.symbols.get(function).map(|s| &s.kind) else {
+        let Some(SymbolKind::Function { params, .. }) = self.symbols.get(function).map(|s| &s.kind) else {
             return true;
         };
         match params

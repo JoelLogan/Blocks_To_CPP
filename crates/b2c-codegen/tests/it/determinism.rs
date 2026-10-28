@@ -81,6 +81,10 @@ proptest! {
                 let j = usize::try_from(state >> 33).unwrap() % (i + 1);
                 items.swap(i, j);
             }
+            // The layout lists item indices (the declaration order the
+            // analysis works out), so the shuffled program gets its own, as
+            // the analyser would give it.
+            shuffled.layout = b2c_ir::layout::Layout::flat(&shuffled.modules, &shuffled.symbols);
             prop_assert_eq!(generate(&shuffled, &options("P")), reference);
         }
     }

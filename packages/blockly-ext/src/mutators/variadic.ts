@@ -9,7 +9,8 @@
  * A call to a function the latest analysis knows has as many arguments as the function has
  * parameters (docs/spec/04-user-interface.md §4.2), so its ⊖/⊕ are hidden while the counts match.
  * When the definition gains or loses a parameter, the call offers only the button that brings it
- * back in line. Calls in the toolbox show none: the toolbox builds them from the analysis with one
+ * back in line. A parameter with a default value may be left out (w2.md §2.8): the call offers ⊖
+ * down to the parameters without one, and ⊕ back up to all of them. Calls in the toolbox show none: the toolbox builds them from the analysis with one
  * argument per parameter, and blocks there cannot be edited.
  *
  * Milestone M3's wave W2 (docs/plans/m3-contracts/w2.md §2.1) adds:
@@ -88,7 +89,11 @@ function structRefOf(value: unknown): string | null {
  * with* names (`null` for a name that is not known), or `null` when that function or struct is not
  * known.
  */
-type CalledParameters = readonly (string | null)[] | null;
+type CalledParameters = {
+  readonly names: readonly (string | null)[];
+  /** How many of the last ones may be left out (a function's parameters with a default value). */
+  readonly optional: number;
+} | null;
 
 /** Quoted label words for button text: `"else if"`. */
 function quoted(words: readonly string[]): string {
@@ -482,6 +487,7 @@ export class VariadicController implements MutatorController {
     }
     try {
       let params: readonly string[] | null | undefined;
+      let optional = 0;
       if (this.refIsStruct) {
         params =
           symbols.structFields === undefined
@@ -489,17 +495,22 @@ export class VariadicController implements MutatorController {
                 .symbolsAt(this.block.id, null)
                 .find((symbol) => symbol.id === ref && symbol.kind === 'struct')?.fields
             : symbols.structFields(this.block.id, ref);
+      } else if (symbols.functionParams === undefined) {
+        const fn = symbols
+          .symbolsAt(this.block.id, null)
+          .find((symbol) => symbol.id === ref && symbol.kind === 'function');
+        params = fn?.params;
+        optional = fn?.optional ?? 0;
       } else {
-        params =
-          symbols.functionParams === undefined
-            ? symbols
-                .symbolsAt(this.block.id, null)
-                .find((symbol) => symbol.id === ref && symbol.kind === 'function')?.params
-            : symbols.functionParams(this.block.id, ref);
+        params = symbols.functionParams(this.block.id, ref);
+        optional = symbols.functionOptional?.(this.block.id, ref) ?? 0;
       }
       return params === undefined || params === null
         ? null
-        : params.map((param) => symbols.nameOf(param));
+        : {
+            names: params.map((param) => symbols.nameOf(param)),
+            optional: Math.min(Math.max(optional, 0), params.length),
+          };
     } catch {
       // The symbols come from the latest analysis; failing there must not break the block.
       return null;
@@ -518,7 +529,7 @@ export class VariadicController implements MutatorController {
         continue;
       }
       const labelName = `${ARG_LABEL_PREFIX}${input.name}`;
-      const name = names?.[copy] ?? null;
+      const name = names?.names[copy] ?? null;
       const text = name === null || name === '' ? null : `${displayName(name)}:`;
       const existing = this.block.getField(labelName);
       silently(() => {
@@ -565,11 +576,13 @@ export class VariadicController implements MutatorController {
     let remove = count > this.spec.count.min && count > 0;
     let add = count < max;
     if (this.mutator === B2C_MUTATOR_CALL_ARGS) {
-      // A call in the toolbox already has the function's count (the toolbox built it so).
-      const expected = this.block.isInFlyout ? count : params?.length;
-      if (expected !== undefined) {
-        remove &&= count > expected;
-        add &&= count < expected;
+      // A call in the toolbox already has the function's count (the toolbox built it so). A
+      // call may leave out the arguments of parameters with a default value.
+      const most = this.block.isInFlyout ? count : params?.names.length;
+      const least = this.block.isInFlyout ? count : (most ?? 0) - (params?.optional ?? 0);
+      if (most !== undefined) {
+        remove &&= count > least;
+        add &&= count < most;
       }
     }
     return { remove, add };

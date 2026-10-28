@@ -432,7 +432,7 @@ proptest! {
         ret in any_type(),
     ) {
         let (symbols, ids) = symbols();
-        let params = vec![Param { symbol: ids[ids.len() - 2].clone(), mode: PassMode::ReadOnly, origin: origin() }];
+        let params = vec![Param { symbol: ids[ids.len() - 2].clone(), mode: PassMode::ReadOnly, origin: origin(), default: None }];
         let items = vec![
             Item {
                 kind: ItemKind::Main(MainDef { body: Block { stmts: main_body } }),

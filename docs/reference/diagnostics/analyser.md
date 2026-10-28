@@ -75,8 +75,9 @@ Codes by area:
 * **Meaning:** a symbol is used outside the part of the program where it
   exists: a variable created inside an `if` or a loop is used after it, a
   variable of `when program starts` is used in a function, a function's input
-  is used outside the function, or a `for` counter is used outside its loop
-  (including in the loop's own start, end or step).
+  is used outside the function (also in a default value of an input), or a
+  `for` counter is used outside its loop (including in the loop's own start,
+  end or step).
 * **Example:**
 
   ```text
@@ -87,7 +88,9 @@ Codes by area:
 
 * **Message:** "`bonus` can't be used here: it only exists from the block that
   creates it to the end of that group of blocks (including the blocks nested
-  inside them)."
+  inside them)." / in a default value: "`first` is an input of the function
+  `make`, and a default value can't use the inputs: C++ works it out before
+  the function runs. Use a value, or a constant, instead."
 * **How to fix:** create the variable earlier, outside the inner group of
   blocks, and only *set* it inside. To share a value with a function, pass it
   as an input.
@@ -308,14 +311,16 @@ Codes by area:
 ## B2C-E0306 Wrong number of values for a function
 
 * **Severity:** error
-* **Meaning:** a call gives a function more or fewer values than it has
-  inputs, or *new … with* has a number of parts other than its struct's
-  fields. Default values for inputs are not supported yet.
+* **Meaning:** a call gives a function more values than it has inputs, or
+  fewer than its inputs without a default value, or *new … with* has a
+  number of parts other than its struct's fields.
 * **Example:** `area (5)` typed in a slot, where `area` has the inputs
   `width` and `height`.
-* **Message:** "`area` needs 2 values, but 1 is given." / "`Student` has 2
-  fields, but this block has 1 part. Choose the struct again so that the
-  block has one part for each field."
+* **Message:** "`area` needs 2 values, but 1 is given." / "`greet` needs 1
+  to 2 values, but 0 are given." (`times` has a default value) / "`beep`
+  needs at most 1 value, but 2 are given." / "`Student` has 2 fields, but
+  this block has 1 part. Choose the struct again so that the block has one
+  part for each field."
 * **How to fix:** add or remove values in the call block (⊕ / ⊖).
 
 ## B2C-E0307 Editable input needs a variable
@@ -323,7 +328,8 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** the function can change an *editable* input (`T&` in C++), so
   the call must give a variable of exactly the input's type that may be
-  changed, not a value, a calculation, a constant or a loop counter.
+  changed, not a value, a calculation, a constant or a loop counter. The
+  same holds for an editable input's default value.
 * **Example:** `add to (score + 1) (5)` where the first input of `add to` is
   editable.
 * **Message:** "The `total` input of `add_to` is editable (the function may
@@ -651,6 +657,10 @@ Codes by area:
   has one. A call may leave out inputs only from the end, so once an input
   has a default, every input after it needs one too.
 * **Example:** `define [greet] with ([string] name = ("you")) ([int] times)`.
+* **Message:** "`times` has no default value, but `name` before it has one.
+  In C++, once an input of `greet` has a default value, every input after it
+  needs one too: give `times` a default value, or remove the default value of
+  `name`."
 * **How to fix:** give the later inputs defaults too, or move the inputs with
   defaults to the end.
 

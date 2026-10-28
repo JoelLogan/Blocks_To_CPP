@@ -133,23 +133,7 @@ describe('specs of W2-shaped blocks', () => {
   });
 
   it('read the inputs a row extra counts as row parts, not as a group (DEFAULT)', () => {
-    const base = blockDefOf('func.define');
-    const withDefaults: BlockDefJson = {
-      ...base,
-      inputs: [
-        ...base.inputs,
-        {
-          name: 'DEFAULT',
-          check: 'any',
-          optional: true,
-          repeat: { count: 'params', plus: 0 },
-          default: [],
-          type: { kind: 'param', field: 'NAME' },
-          assign: false,
-        },
-      ],
-    };
-    const spec = rowsSpec(withDefaults);
+    const spec = rowsSpec(blockDefOf('func.define'));
     expect(spec.rowInputs.map((input) => input.name)).toEqual(['DEFAULT']);
     expect(spec.anchorArgs).toEqual(['RETURNS', 'BODY']);
   });

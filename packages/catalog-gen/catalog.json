@@ -1733,7 +1733,22 @@
           }
         }
       ],
-      "input": [],
+      "input": [
+        {
+          "name": "DEFAULT",
+          "check": "any",
+          "optional": true,
+          "repeat": {
+            "count": "params",
+            "plus": 0
+          },
+          "default": [],
+          "type": {
+            "field": "NAME",
+            "kind": "param"
+          }
+        }
+      ],
       "statement": [
         {
           "name": "BODY",
@@ -1770,6 +1785,9 @@
       "order": [
         {
           "field": "RETURNS"
+        },
+        {
+          "input": "DEFAULT"
         }
       ]
     },

@@ -453,7 +453,15 @@ fn block_types(program: &Program) -> BTreeMap<BlockId, Type> {
     for item in program.modules.iter().flat_map(|module| &module.items) {
         let (body, values): (Option<&b2c_ir::sast::Block>, Vec<&Expr>) = match &item.kind {
             ItemKind::Main(main) => (Some(&main.body), Vec::new()),
-            ItemKind::Function(function) => (Some(&function.body), Vec::new()),
+            // A function's default values (W2) belong to its own block.
+            ItemKind::Function(function) => (
+                Some(&function.body),
+                function
+                    .params
+                    .iter()
+                    .filter_map(|p| p.default.as_ref())
+                    .collect(),
+            ),
             // A definition's values (W2): a global's starting value, a
             // struct's field defaults.
             ItemKind::Global(global) => (None, global.init.iter().collect()),
@@ -698,7 +706,10 @@ mod tests {
             values: vec![sym("e_red")],
         };
         let red = SymbolKind::Enumerator { owner: sym("s_col") };
-        let area = SymbolKind::Function { params: Vec::new() };
+        let area = SymbolKind::Function {
+            params: Vec::new(),
+            optional: 0,
+        };
         let mut table = b2c_ir::sast::SymbolTable::default();
         for (id, entry) in [
             ("s_x", variable("x", "b0")),

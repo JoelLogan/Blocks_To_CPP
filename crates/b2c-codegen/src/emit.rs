@@ -21,7 +21,7 @@ use crate::cast::{
     ParamStyle, RangeBinding,
 };
 use crate::helpers::{self, Helper};
-use crate::lower::LoweredModule;
+use crate::lower::{CDecl, LoweredModule};
 use crate::{CodegenOptions, HelperPlacement};
 
 /// Preferred maximum line length (spec §6.8.3).
@@ -151,15 +151,27 @@ pub(crate) fn source_file(module: &LoweredModule, module_name: &str, options: &C
         }
     }
     let mut emitter = Emitter { p };
-    for def in &module.types {
-        emitter.p.section();
-        emitter.type_def(def);
-    }
-    if !module.functions.is_empty() {
-        emitter.p.section();
-        for function in &module.functions {
-            emitter.declaration(function);
+    // Each type in a section of its own; a run of function declarations,
+    // or of globals, in one section.
+    let mut last: Option<&CDecl> = None;
+    for decl in &module.decls {
+        let same_run = matches!(
+            (last, decl),
+            (Some(CDecl::Function(_)), CDecl::Function(_)) | (Some(CDecl::Global(_)), CDecl::Global(_))
+        );
+        if !same_run {
+            emitter.p.section();
         }
+        match decl {
+            CDecl::Type(def) => emitter.type_def(def),
+            CDecl::Global(global) => emitter.global(global),
+            CDecl::Function(index) => {
+                if let Some(function) = module.functions.get(*index) {
+                    emitter.declaration(function);
+                }
+            }
+        }
+        last = Some(decl);
     }
     for function in module.functions.iter().chain(&module.mains) {
         emitter.p.section();
@@ -267,8 +279,9 @@ impl Emitter {
         }
     }
 
-    /// `ret name(params)`.
-    fn signature(&mut self, function: &CFunction) {
+    /// `ret name(params)`, with the parameters' default values in a
+    /// declaration (w2.md §2.8), never in a definition.
+    fn signature(&mut self, function: &CFunction, defaults: bool) {
         self.ty(&function.ret);
         self.p.fixed(" ");
         self.p.ident(&function.name);
@@ -277,13 +290,14 @@ impl Emitter {
             if index > 0 {
                 self.p.fixed(", ");
             }
-            self.param(param);
+            self.param(param, defaults);
         }
         self.p.fixed(")");
     }
 
-    /// `int x`, `int& x` or `const std::string& x`.
-    fn param(&mut self, param: &CParam) {
+    /// `int x`, `int& x` or `const std::string& x`, then `= value` when
+    /// `default` and the parameter has a default value.
+    fn param(&mut self, param: &CParam, default: bool) {
         let start = self.p.position();
         if param.style == ParamStyle::ConstRef {
             self.p.fixed("const ");
@@ -294,13 +308,17 @@ impl Emitter {
         }
         self.p.fixed(" ");
         self.p.ident(&param.name);
+        if default && let Some(value) = &param.default {
+            self.p.fixed(" = ");
+            self.expr(value);
+        }
         self.p.map(start, &param.origin);
     }
 
     /// A forward declaration: `ret name(params);`.
     fn declaration(&mut self, function: &CFunction) {
         let start = self.p.position();
-        self.signature(function);
+        self.signature(function, true);
         self.p.fixed(";");
         self.p.map(start, &function.origin);
         self.p.newline();
@@ -312,7 +330,7 @@ impl Emitter {
         if let Some(comment) = &function.comment {
             self.p.comment(comment);
         }
-        self.signature(function);
+        self.signature(function, false);
         self.p.fixed(" ");
         self.block(&function.body);
         self.p.map(start, &function.origin);
@@ -526,7 +544,6 @@ impl Emitter {
 
     /// A global variable or constant (w2.md §2.7), with its comment:
     /// `constexpr double kGravity = 9.81;`.
-    #[cfg_attr(not(test), allow(dead_code, reason = "printed once W2's globals are lowered"))]
     pub(crate) fn global(&mut self, global: &CGlobal) {
         let start = self.p.position();
         if let Some(comment) = &global.comment {

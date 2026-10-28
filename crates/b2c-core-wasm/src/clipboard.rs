@@ -724,6 +724,7 @@ mod tests {
             SymbolInfoKind::Function {
                 params: Vec::new(),
                 returns: Type::Int,
+                optional: 0,
             },
         )
     }

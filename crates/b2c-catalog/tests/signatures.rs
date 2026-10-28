@@ -215,7 +215,20 @@ fn m2_blocks_have_the_patterns_of_w1() {
     let define = sigs.get("func.define").unwrap();
     assert_eq!(define.vars, BTreeMap::from([(var("R"), TypeClass::Value)]));
     assert_eq!(define.fields["RETURNS"], TypePattern::Var(var("R")));
-    assert_eq!(define.order, [PartName::Field("RETURNS".into())]);
+    // A parameter row's default value takes its parameter's type (w2.md
+    // §2.8, package C2): `param:` on the block's own declaration.
+    assert_eq!(
+        define.inputs["DEFAULT"].pattern,
+        Some(TypePattern::parse("param:NAME").unwrap())
+    );
+    assert_eq!(
+        define.order,
+        [
+            PartName::Field("RETURNS".into()),
+            PartName::Input("DEFAULT".into())
+        ]
+    );
+    assert_eq!(define.repeated, names(&["DEFAULT"]));
 
     // The other blocks of M2 keep their M2 rules: no variables and no
     // patterns on their parts. M2's `symbol` output names the block's

@@ -399,11 +399,30 @@ fn check_forms(
         TypePattern::Param(name) if !repeated_input => Some(format!(
             "{at} uses param:{name}, which only a repeated value input can use"
         )),
+        // On a declaration (w2.md §2.8, a function's default values), the
+        // parameter of the row the part belongs to: the input repeats by the
+        // `params` rows.
+        TypePattern::Param(name) if has_field(name, &[FieldKind::SymbolDecl]) => {
+            (!repeats_by_rows(place, "params")).then(|| {
+                format!(
+                    "{at} uses param:{name} on the symbol_decl field {name}, which only an input repeated by the params rows can use"
+                )
+            })
+        }
         TypePattern::Param(name) => (!has_field(name, &[FieldKind::SymbolRef]))
             .then(|| format!("{at} uses param:{name}, but the block has no symbol_ref field {name}")),
         TypePattern::Member(name) if !repeated_input => Some(format!(
             "{at} uses member:{name}, which only a repeated value input can use"
         )),
+        // On a declaration (a struct's field defaults), the field of the
+        // row the part belongs to: the input repeats by the `fields` rows.
+        TypePattern::Member(name) if has_field(name, &[FieldKind::SymbolDecl]) => {
+            (!repeats_by_rows(place, "fields")).then(|| {
+                format!(
+                    "{at} uses member:{name} on the symbol_decl field {name}, which only an input repeated by the fields rows can use"
+                )
+            })
+        }
         TypePattern::Member(name) => {
             (!has_field(name, &[FieldKind::Type, FieldKind::SymbolRef])).then(|| {
                 format!("{at} uses member:{name}, but the block has no type or symbol_ref field {name}")
@@ -413,6 +432,12 @@ fn check_forms(
             .then(|| format!("{at} uses result, which only a value input can use")),
     };
     problems.extend(problem);
+}
+
+/// Whether `place` is an input repeated by the row extra `rows` (`params`
+/// or `fields`), one part per row.
+fn repeats_by_rows(place: Place<'_>, rows: &str) -> bool {
+    matches!(place, Place::Input(input) if input.repeat.as_ref().is_some_and(|repeat| repeat.count == rows))
 }
 
 /// A part that can bind type variables (types.md §4.3, rule 1): a `type` or
@@ -982,6 +1007,42 @@ mod tests {
                 "the output type uses result, which only a value input can use",
                 "the type of field T can only be made of types, type variables and templates, so that the field knows which types it offers",
                 "the type of input A uses symbol, which needs exactly one symbol_ref field to take the type from, but the block has 0",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_declaration_types_the_inputs_of_its_rows() {
+        // A function's default values (w2.md §2.8) and a struct's field
+        // defaults: `param:` and `member:` on the block's own declaration,
+        // one part per row.
+        let rows = |extra: &str, kind: &str, repeat: &str, pattern: &str| {
+            def(&format!(
+                "shape = \"definition\"\nlabel = {{ friendly = \"x %NAME …\", cpp = \"x\" }}\n\
+                 [[block.field]]\nname = \"NAME\"\nkind = \"symbol_decl\"\n\
+                 [[block.extra]]\nname = \"{extra}\"\nkind = \"{kind}\"\nmax = 4\ntypes = [\"int\"]\n\
+                 [[block.extra]]\nname = \"n\"\nkind = \"count\"\nmin = 0\nmax = 4\ndefault = \"0\"\n\
+                 [[block.input]]\nname = \"DEFAULT\"\ncheck = \"any\"\noptional = true\nrepeat = {{ count = \"{repeat}\" }}\ntype = \"{pattern}\"\n"
+            ))
+        };
+        assert_eq!(
+            problems(&rows("params", "params", "params", "param:NAME")),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            problems(&rows("fields", "fields", "fields", "member:NAME")),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            problems(&rows("params", "params", "n", "param:NAME")),
+            [
+                "the type of input DEFAULT uses param:NAME on the symbol_decl field NAME, which only an input repeated by the params rows can use"
+            ]
+        );
+        assert_eq!(
+            problems(&rows("params", "params", "params", "member:NAME")),
+            [
+                "the type of input DEFAULT uses member:NAME on the symbol_decl field NAME, which only an input repeated by the fields rows can use"
             ]
         );
     }

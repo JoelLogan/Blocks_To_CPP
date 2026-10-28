@@ -7,7 +7,14 @@ import { buttonKey } from './controller';
 import { MutatorStateError } from './errors';
 import { configureMutators, randomSymbolId } from './hooks';
 import { isB2cMutatorBlock, registerB2cMutators } from './register';
-import { defineTestBlocks, flushEvents, inputNames, labelTexts } from './test-fixtures';
+import {
+  defineHelperBlocks,
+  defineTestBlocks,
+  flushEvents,
+  inputNames,
+  labelTexts,
+  TEST_UNKNOWN_REPORTER,
+} from './test-fixtures';
 import type { B2cMutatorBlock, ParamRow } from './types';
 
 let workspace: Blockly.Workspace;
@@ -15,6 +22,7 @@ let workspace: Blockly.Workspace;
 beforeAll(() => {
   registerB2cMutators();
   defineTestBlocks();
+  defineHelperBlocks();
 });
 
 beforeEach(() => {
@@ -94,16 +102,20 @@ describe('func.define rows', () => {
     const block = define();
     block.b2cSetExtra({ params: greet });
     expect(rows(block)).toEqual(greet);
+    // Each row is its default value's input (holding the row's fields, then `=`) and ⊖.
     expect(inputNames(block)).toEqual([
       'b2c_row0',
+      'DEFAULT0',
       'B2C_PARAM0',
+      'DEFAULT1',
       'B2C_PARAM1',
       'B2C_BUTTONS',
       'b2c_repeat',
       'b2c_row1',
       'BODY',
     ]);
-    expect(labelTexts(block, 'B2C_PARAM0')).toEqual(['with']);
+    expect(labelTexts(block, 'DEFAULT0')).toEqual(['with', '=']);
+    expect(labelTexts(block, 'DEFAULT1')).toEqual(['=']);
     expect(block.getFieldValue('B2C_PARAM0_TYPE')).toBe('std::string');
     expect(block.getField('B2C_PARAM0_TYPE')?.getText()).toBe('string');
     expect(block.getFieldValue('B2C_PARAM0_NAME')).toBe('name');
@@ -214,6 +226,82 @@ describe('func.define rows', () => {
     block.b2cSetExtra({ params: [greet[0]] });
     stale?.showEditor();
     expect(rows(block)).toEqual([greet[0]]);
+  });
+});
+
+describe('func.define default values (w2.md §2.8)', () => {
+  const three: ParamRow[] = [
+    { sym: 'sym_a', name: 'a', type: 'int', mode: 'copy' },
+    { sym: 'sym_b', name: 'b', type: 'int', mode: 'copy' },
+    { sym: 'sym_c', name: 'c', type: 'int', mode: 'copy' },
+  ];
+
+  /** A reporter connected to `DEFAULT<row>`. */
+  function giveDefault(block: Blockly.Block, row: number): Blockly.Block {
+    const value = workspace.newBlock(TEST_UNKNOWN_REPORTER);
+    const output = value.outputConnection;
+    const input = block.getInput(`DEFAULT${String(row)}`)?.connection;
+    if (output === null || input === null || input === undefined) {
+      throw new Error('no connection');
+    }
+    input.connect(output);
+    return value;
+  }
+
+  function holder(value: Blockly.Block): string | null {
+    return value.outputConnection?.targetConnection?.getParentInput()?.name ?? null;
+  }
+
+  it('keep a row’s default with its row when a row before it goes', async () => {
+    const block = define();
+    block.b2cSetExtra({ params: three });
+    const first = giveDefault(block, 0);
+    const last = giveDefault(block, 2);
+    await flushEvents();
+    workspace.clearUndo();
+    press(block, 'param:1:remove');
+    expect(rows(block).map((row) => row.name)).toEqual(['a', 'c']);
+    expect(holder(first)).toBe('DEFAULT0');
+    expect(holder(last)).toBe('DEFAULT1');
+    expect(block.getInput('DEFAULT2')).toBeNull();
+    // A row's own default leaves with it, and stays on the canvas.
+    press(block, 'param:0:remove');
+    expect(holder(last)).toBe('DEFAULT0');
+    expect(holder(first)).toBeNull();
+    expect(first.isDisposed()).toBe(false);
+    await flushEvents();
+    // Two undo steps: each click's moves and mutation share one event group.
+    expect(new Set(workspace.getUndoStack().map((event) => event.group)).size).toBe(2);
+    // Undo puts every default back in its row.
+    workspace.undo(false);
+    await flushEvents();
+    expect(rows(block).map((row) => row.name)).toEqual(['a', 'c']);
+    expect(holder(first)).toBe('DEFAULT0');
+    expect(holder(last)).toBe('DEFAULT1');
+    workspace.undo(false);
+    await flushEvents();
+    expect(rows(block).map((row) => row.name)).toEqual(['a', 'b', 'c']);
+    expect(holder(first)).toBe('DEFAULT0');
+    expect(holder(last)).toBe('DEFAULT2');
+  });
+
+  it('give a new row an empty default', () => {
+    const block = define();
+    block.b2cSetExtra({ params: [three[0]] });
+    const value = giveDefault(block, 0);
+    press(block, 'param:add');
+    expect(holder(value)).toBe('DEFAULT0');
+    expect(block.getInput('DEFAULT1')?.connection?.targetBlock()).toBeNull();
+  });
+
+  it('save each default in its input', () => {
+    const block = define();
+    block.b2cSetExtra({ params: three });
+    giveDefault(block, 1);
+    const state = Blockly.serialization.blocks.save(block);
+    expect(Object.keys(state?.inputs ?? {})).toEqual(['DEFAULT1']);
+    const copy = Blockly.serialization.blocks.append(state ?? { type: 'func.define' }, workspace);
+    expect(copy.getInput('DEFAULT1')?.connection?.targetBlock()?.type).toBe(TEST_UNKNOWN_REPORTER);
   });
 });
 

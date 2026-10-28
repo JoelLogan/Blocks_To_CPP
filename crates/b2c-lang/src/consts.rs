@@ -251,6 +251,16 @@ pub(crate) fn check_item(
         constants,
         ret,
     };
+    // A function's default values convert to their parameters' types
+    // (w2.md §2.8).
+    if let ItemKind::Function(function) = &item.kind {
+        for param in &function.params {
+            if let Some(value) = &param.default {
+                let ty = symbols.get(&param.symbol).map(|symbol| symbol.ty.clone());
+                checker.eval_into(value, ty.as_ref());
+            }
+        }
+    }
     checker.block(body);
 }
 
@@ -833,7 +843,7 @@ impl Folder<'_, '_> {
     /// The types of a function's parameters, in order, when they are known.
     fn parameter_types(&self, function: &SymbolId) -> Option<Vec<Type>> {
         let symbols = self.context?.symbols;
-        let SymbolKind::Function { params } = &symbols.get(function)?.kind else {
+        let SymbolKind::Function { params, .. } = &symbols.get(function)?.kind else {
             return None;
         };
         params

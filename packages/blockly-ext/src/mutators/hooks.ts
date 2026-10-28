@@ -23,6 +23,8 @@ export interface MutatorSymbolInfo {
   readonly kind: string;
   /** For a function: its parameters' symbol IDs, in order. */
   readonly params?: readonly string[];
+  /** For a function: how many of its last parameters have a default value (w2.md §2.8). */
+  readonly optional?: number;
   /** For a struct: its fields' symbol IDs, in row order (w2.md §2.2). */
   readonly fields?: readonly string[];
 }
@@ -41,6 +43,11 @@ export interface MutatorSymbols {
    * per analysis gives it, so refreshing the labels of every call costs no scope query.
    */
   functionParams?(blockId: string, funcId: string): readonly string[] | null;
+  /**
+   * How many of the last parameters of that function have a default value, so that a call may
+   * leave their arguments out (w2.md §2.8). Optional, with {@link functionParams}.
+   */
+  functionOptional?(blockId: string, funcId: string): number;
   /**
    * The fields (their symbol IDs, in row order) of the struct `structId` that a *new … with* block
    * `blockId` names, or `null` when it names no such struct (w2.md §2.1, *Call arguments named by

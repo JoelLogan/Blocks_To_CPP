@@ -201,6 +201,7 @@ mod tests {
                 SymbolInfoKind::Function {
                     params: Vec::new(),
                     returns: Type::Int,
+                    optional: 0,
                 },
                 &module,
             ),
@@ -209,6 +210,7 @@ mod tests {
                 SymbolInfoKind::Function {
                     params: Vec::new(),
                     returns: Type::Int,
+                    optional: 0,
                 },
                 &other,
             ),

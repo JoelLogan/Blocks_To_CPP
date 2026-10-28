@@ -197,6 +197,7 @@ mod tests {
                             part: Part::Whole,
                             ..origin(block)
                         },
+                        default: None,
                     })
                     .collect(),
                 ret: Type::Void,

@@ -627,11 +627,15 @@ impl Lowerer<'_> {
                 origin,
             };
         };
-        if args.len() != sig.params.len() {
-            let expected = match sig.params.len() {
-                0 => String::from("no values"),
-                1 => String::from("1 value"),
-                n => format!("{n} values"),
+        // A call may leave out the arguments of parameters with a default
+        // value (w2.md §2.8).
+        if args.len() < sig.required || args.len() > sig.params.len() {
+            let expected = match (sig.required, sig.params.len()) {
+                (_, 0) => String::from("no values"),
+                (1, 1) => String::from("1 value"),
+                (0, n) => format!("at most {n} {}", if n == 1 { "value" } else { "values" }),
+                (required, n) if required == n => format!("{n} values"),
+                (required, n) => format!("{required} to {n} values"),
             };
             let given = match args.len() {
                 1 => String::from("1 is"),
@@ -678,7 +682,7 @@ impl Lowerer<'_> {
 
     /// An argument for an editable (`&`) parameter: a changeable variable of
     /// exactly the parameter's type (`B2C-E0307`).
-    fn check_editable_argument(&mut self, arg: &Expr, param: &ParamSig, function: &str) {
+    pub(super) fn check_editable_argument(&mut self, arg: &Expr, param: &ParamSig, function: &str) {
         if arg.ty == Type::Error || param.ty == Type::Error {
             return;
         }

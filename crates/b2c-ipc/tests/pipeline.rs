@@ -231,10 +231,17 @@ fn symbol_infos() {
         b2c_ir::SymbolInfoKind::Function {
             params: Vec::new(),
             returns: Type::Void,
+            optional: 0,
         },
         b2c_ir::SymbolInfoKind::Function {
             params: vec![sym("p_w"), sym("p_h")],
             returns: Type::Double,
+            optional: 0,
+        },
+        b2c_ir::SymbolInfoKind::Function {
+            params: vec![sym("p_w"), sym("p_h")],
+            returns: Type::Double,
+            optional: 1,
         },
     ]);
     kinds.extend(MODES.map(|mode| b2c_ir::SymbolInfoKind::Parameter { mode }));
@@ -417,9 +424,12 @@ fn symbol_info() -> impl Strategy<Value = b2c_ir::SymbolInfo> {
         any::<bool>().prop_map(|is_const| b2c_ir::SymbolInfoKind::Variable { is_const }),
         prop::sample::select(MODES.to_vec()).prop_map(|mode| b2c_ir::SymbolInfoKind::Parameter { mode }),
         Just(b2c_ir::SymbolInfoKind::LoopVariable),
-        (vec(id(), 0..4), ty()).prop_map(|(params, returns)| b2c_ir::SymbolInfoKind::Function {
-            params: params.iter().map(|p| sym(p)).collect(),
-            returns,
+        (vec(id(), 0..4), ty(), 0..3_usize).prop_map(|(params, returns, optional)| {
+            b2c_ir::SymbolInfoKind::Function {
+                optional: optional.min(params.len()),
+                params: params.iter().map(|p| sym(p)).collect(),
+                returns,
+            }
         }),
         (vec(id(), 0..4), any::<bool>(), any::<bool>()).prop_map(|(fields, comparable, printable)| {
             b2c_ir::SymbolInfoKind::Struct {

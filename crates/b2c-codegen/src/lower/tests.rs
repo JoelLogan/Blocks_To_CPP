@@ -19,7 +19,7 @@ use b2c_ir::sast::{
 use b2c_ir::text::{Ident, NumLit, NumType, StrLit};
 use b2c_ir::types::{LibType, Type};
 
-use super::{LoweredModule, Lowerer, name_expr};
+use super::{CDecl, LoweredModule, Lowerer, name_expr};
 use crate::CodegenOptions;
 use crate::cast::{BinOp, CBlock, CExpr, CStmt, CStmtKind, CTypeDef};
 use crate::emit;
@@ -776,6 +776,7 @@ fn forms_program(standard: CppStandard) -> String {
         "show",
         SymbolKind::Function {
             params: param_ids.clone(),
+            optional: 0,
         },
         Type::Void,
     );
@@ -788,6 +789,7 @@ fn forms_program(standard: CppStandard) -> String {
                 symbol: id.clone(),
                 mode: *mode,
                 origin: origin("param"),
+                default: None,
             })
             .collect(),
         ret: Type::Void,
@@ -910,8 +912,10 @@ fn forms_program(standard: CppStandard) -> String {
     splice(&mut main.body, extra, true);
     splice(&mut show_fn.body, vec![sizes], false);
 
+    let mut decls: Vec<CDecl> = types.into_iter().map(CDecl::Type).collect();
+    decls.push(CDecl::Function(0));
     let module = LoweredModule {
-        types,
+        decls,
         functions: vec![show_fn],
         mains: vec![main],
         usage: lowerer.usage,

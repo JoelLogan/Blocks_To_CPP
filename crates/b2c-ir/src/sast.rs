@@ -203,6 +203,10 @@ pub struct Param {
     pub mode: PassMode,
     /// Where the parameter was declared (the function block, part = extra row).
     pub origin: Origin,
+    /// Its default value (w2.md §2.8), printed in the function's declaration
+    /// only: a call may leave the argument out. Serialised only when set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<Expr>,
 }
 
 /// How an argument is passed (spec §3.7.7).
@@ -1025,6 +1029,12 @@ pub enum BinaryOp {
     Or,
 }
 
+/// Whether a count is 0 (serde's `skip_serializing_if`).
+#[allow(clippy::trivially_copy_pass_by_ref, reason = "serde passes a reference")]
+fn is_zero(count: &usize) -> bool {
+    *count == 0
+}
+
 /// Every symbol in a program, by ID.
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct SymbolTable {
@@ -1111,6 +1121,11 @@ pub enum SymbolKind {
     Function {
         /// Parameter symbols in order.
         params: Vec<SymbolId>,
+        /// How many of the last parameters have a default value, so that a
+        /// call may leave their arguments out (w2.md §2.8). Serialised only
+        /// when not 0.
+        #[serde(skip_serializing_if = "is_zero")]
+        optional: usize,
     },
     /// A user struct (from milestone M3).
     Struct {

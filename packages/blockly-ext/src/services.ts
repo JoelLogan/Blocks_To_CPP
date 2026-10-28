@@ -56,6 +56,11 @@ export interface SymbolInfo {
   readonly mode?: PassMode;
   /** Functions: the parameter symbol IDs, in order. */
   readonly params?: readonly string[];
+  /**
+   * Functions: how many of the last parameters have a default value, so that a call may leave
+   * their arguments out (w2.md §2.8); absent for none.
+   */
+  readonly optional?: number;
   /** Functions: the return type. */
   readonly returns?: TypeJson;
   /** Structs: the field symbol IDs, in order. */
@@ -97,6 +102,12 @@ export interface SymbolProvider {
    * {@link symbolsAt}, one scope query per call block whenever the labels are refreshed.
    */
   functionParams?(blockId: string, funcId: string): readonly string[] | null;
+  /**
+   * Optional, with {@link functionParams}: how many of the last parameters of that function have a
+   * default value, so that a call may leave their arguments out (docs/plans/m3-contracts/w2.md
+   * §2.8). Without it, a call counts none.
+   */
+  functionOptional?(blockId: string, funcId: string): number;
   /**
    * Optional: the field symbol IDs, in row order, of the struct `structId` that a *new … with*
    * block `blockId` names, or null when it names no such struct (docs/plans/m3-contracts/w2.md

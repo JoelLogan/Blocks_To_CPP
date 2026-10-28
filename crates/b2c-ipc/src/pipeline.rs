@@ -159,6 +159,12 @@ string_enum! {
     }
 }
 
+/// Whether a count is 0 (serde's `skip_serializing_if`).
+#[allow(clippy::trivially_copy_pass_by_ref, reason = "serde passes a reference")]
+fn is_zero(count: &usize) -> bool {
+    *count == 0
+}
+
 /// A symbol as the editor sees it (spec 06 §6.5): enough to fill a dropdown,
 /// label a getter block or pick the type of a reporter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -217,6 +223,11 @@ pub enum SymbolInfoKind {
         params: Vec<String>,
         /// The type it gives back (`void` for nothing).
         returns: TypeJson,
+        /// How many of the last parameters have a default value, so that a
+        /// call may leave their arguments out; omitted when 0.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        #[cfg_attr(feature = "ts", ts(optional, type = "number"))]
+        optional: usize,
     },
     /// A user struct (milestone M3).
     Struct {
@@ -332,9 +343,14 @@ impl From<&b2c_ir::SymbolInfoKind> for SymbolInfoKind {
             b2c_ir::SymbolInfoKind::Parameter { mode } => Self::Parameter { mode: (*mode).into() },
             b2c_ir::SymbolInfoKind::LoopVariable => Self::LoopVariable,
             b2c_ir::SymbolInfoKind::Global { is_const } => Self::Global { is_const: *is_const },
-            b2c_ir::SymbolInfoKind::Function { params, returns } => Self::Function {
+            b2c_ir::SymbolInfoKind::Function {
+                params,
+                returns,
+                optional,
+            } => Self::Function {
                 params: ids(params),
                 returns: returns.into(),
+                optional: *optional,
             },
             b2c_ir::SymbolInfoKind::Struct {
                 fields,

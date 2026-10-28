@@ -27,7 +27,7 @@ use b2c_ir::headers::{Header, ItemHeaders};
 use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
 use b2c_ir::layout::Layout;
 use b2c_ir::sast::{
-    FunctionDef, Item, ItemKind, MainDef, Module, Origin, Param, PassMode, Program, Symbol, SymbolKind,
+    Expr, FunctionDef, Item, ItemKind, MainDef, Module, Origin, Param, PassMode, Program, Symbol, SymbolKind,
     SymbolTable,
 };
 use b2c_ir::sig::SigTable;
@@ -130,6 +130,12 @@ struct FuncSig {
     ret: Type,
     /// Parameters that were declared successfully.
     params: Vec<ParamSig>,
+    /// How many arguments a call must give: the parameters up to the last
+    /// one without a default value (w2.md §2.8).
+    required: usize,
+    /// The catalog headers of the blocks in its default values, which are
+    /// printed with its declaration.
+    default_headers: ItemHeaders,
 }
 
 /// One parameter of a [`FuncSig`].
@@ -145,6 +151,13 @@ struct ParamSig {
     /// the signature with an unknown type, so that calls are not reported
     /// again, but is left out of the program.
     declared: bool,
+    /// The parameter's row, which its default value's input is numbered by
+    /// (`DEFAULT<row>`).
+    row: usize,
+    /// Whether its row holds a default value (w2.md §2.8).
+    has_default: bool,
+    /// Its default value, lowered once every function is declared.
+    default: Option<Expr>,
 }
 
 /// How a type field or a parameter row's type is used, for its checks and
@@ -233,12 +246,24 @@ struct Lowerer<'d> {
     slot_types: BTreeMap<BlockId, BTreeMap<String, Type>>,
     /// The `const` variables whose value is known (L10).
     constants: BTreeMap<SymbolId, Constant>,
+    /// Whether a function's default values are being lowered, which see the
+    /// module's definitions but not the function's parameters (w2.md §2.8).
+    in_defaults: bool,
 }
 
 /// A field part.
 fn field(name: &str) -> Part {
     Part::Field {
         name: name.to_owned(),
+    }
+}
+
+/// Whether an input holds a value: an enabled block or a slot with tokens.
+fn holds_value(block: &Block, name: &str) -> bool {
+    match access::input(block, name) {
+        Some(b2c_model::Input::Block(nested)) => !nested.block.disabled,
+        Some(b2c_model::Input::Expr(slot)) => !slot.expr.is_empty(),
+        None => false,
     }
 }
 
@@ -351,6 +376,7 @@ impl<'d> Lowerer<'d> {
             headers: ItemHeaders::default(),
             slot_types: BTreeMap::new(),
             constants: BTreeMap::new(),
+            in_defaults: false,
         }
     }
 
@@ -373,6 +399,16 @@ impl<'d> Lowerer<'d> {
             for block in sorted_blocks(module) {
                 if block.block_type == "func.define" && !block.disabled {
                     self.declare_function(block, &mut names);
+                }
+            }
+        }
+        // Default values may call any function of the module, so they are
+        // lowered once every signature is known.
+        for (index, module) in document.modules.iter().enumerate() {
+            self.enter_module(index, &module.id);
+            for block in sorted_blocks(module) {
+                if block.block_type == "func.define" && !block.disabled {
+                    self.function_defaults(block);
                 }
             }
         }
@@ -449,9 +485,13 @@ impl<'d> Lowerer<'d> {
     fn check_nesting(&mut self, item: &Item) -> bool {
         let location = match &item.kind {
             ItemKind::Main(main) => nesting::too_deep(&main.body).map(|stmt| stmt.origin.location()),
-            ItemKind::Function(function) => {
-                nesting::too_deep(&function.body).map(|stmt| stmt.origin.location())
-            }
+            ItemKind::Function(function) => function
+                .params
+                .iter()
+                .filter_map(|param| param.default.as_ref())
+                .find(|value| nesting::expr_too_deep(value, 0))
+                .map(|value| value.origin.location())
+                .or_else(|| nesting::too_deep(&function.body).map(|stmt| stmt.origin.location())),
             // A definition's values: a global's starting value, a struct's
             // field defaults (w2.md §1.9).
             ItemKind::Global(global) => global
@@ -567,6 +607,8 @@ impl<'d> Lowerer<'d> {
         });
         self.record_block(&block.id);
         self.add_headers(block, true);
+        self.headers.decl.extend(sig.default_headers.decl.iter().copied());
+        self.headers.decl.extend(sig.default_headers.body.iter().copied());
         self.scopes.push(ListKey::new(&block.id, PARAMS_LIST), false);
         for param in &sig.params {
             self.scopes.declare(&param.name, &param.sym);
@@ -581,6 +623,7 @@ impl<'d> Lowerer<'d> {
                 symbol: p.sym.clone(),
                 mode: p.mode,
                 origin: p.origin.clone(),
+                default: p.default.clone(),
             })
             .collect();
         Some(Item {
@@ -630,6 +673,7 @@ impl<'d> Lowerer<'d> {
             names.insert(decl.name.clone(), decl.sym.clone());
         }
         let params = self.declare_params(block, &decl.name);
+        let required = self.check_default_order(&params, &decl.name);
         let symbol = Symbol {
             name: ident,
             kind: SymbolKind::Function {
@@ -638,6 +682,7 @@ impl<'d> Lowerer<'d> {
                     .filter(|p| p.declared)
                     .map(|p| p.sym.clone())
                     .collect(),
+                optional: params.iter().skip(required).filter(|p| p.declared).count(),
             },
             ty: ret.clone(),
             origin: self.origin(&block.id, field("NAME")),
@@ -648,6 +693,8 @@ impl<'d> Lowerer<'d> {
                 module: self.module_index,
                 ret,
                 params,
+                required,
+                default_headers: ItemHeaders::default(),
             };
             self.functions.insert(decl.sym.clone(), sig);
         }
@@ -709,9 +756,115 @@ impl<'d> Lowerer<'d> {
                 mode,
                 origin,
                 declared,
+                row: i,
+                has_default: holds_value(block, &format!("DEFAULT{i}")),
+                default: None,
             });
         }
         params
+    }
+
+    /// Reports each parameter without a default value after one with a
+    /// default (`B2C-E0426`, w2.md §2.8), and returns how many arguments a
+    /// call must give: the parameters up to the last one without a default.
+    fn check_default_order(&mut self, params: &[ParamSig], function: &str) -> usize {
+        let mut first: Option<&ParamSig> = None;
+        for param in params {
+            if param.has_default {
+                first.get_or_insert(param);
+                continue;
+            }
+            let Some(first) = first else {
+                continue;
+            };
+            let message = format!(
+                "{} has no default value, but {} before it has one. In C++, once an input of {} has a \
+                 default value, every input after it needs one too: give {} a default value, or remove \
+                 the default value of {}.",
+                quoted(&param.name),
+                quoted(&first.name),
+                quoted(function),
+                quoted(&param.name),
+                quoted(&first.name),
+            );
+            let location = param.origin.location();
+            self.error_with_decl(
+                codes::DEFAULT_ORDER,
+                location,
+                message,
+                &first.sym,
+                "the input with a default value",
+            );
+        }
+        params
+            .iter()
+            .rposition(|p| !p.has_default)
+            .map_or(0, |last| last + 1)
+    }
+
+    /// Lowers the default values of a function's parameters (w2.md §2.8),
+    /// typed by their parameters (`param:NAME`). A default sees the module's
+    /// definitions but not the parameters, as in C++.
+    fn function_defaults(&mut self, block: &Block) {
+        let Ok(decl) = access::decl_field(block, "NAME") else {
+            return;
+        };
+        let Some(sig) = self.functions.get(&decl.sym).cloned() else {
+            return;
+        };
+        let rows = access::param_rows(block).len();
+        let any = (0..rows).any(|row| access::input(block, &format!("DEFAULT{row}")).is_some());
+        if !any {
+            return;
+        }
+        self.begin_item(ItemCtx::Function {
+            name: sig.name.clone(),
+            ret: sig.ret.clone(),
+        });
+        self.in_defaults = true;
+        let mut by_row = vec![Type::Error; rows];
+        for param in &sig.params {
+            if let Some(ty) = by_row.get_mut(param.row) {
+                *ty = param.ty.clone();
+            }
+        }
+        let mut typed = self.typed(self.block_sig(&block.block_type));
+        typed.params("NAME", by_row);
+        typed.count("DEFAULT", rows);
+        for row in 0..rows {
+            let part = format!("DEFAULT{row}");
+            self.record_input(&block.id, &part);
+            self.typed_input(block, &mut typed, &part, false);
+        }
+        let typing = self.type_parts(block, &mut typed, None);
+        let mut defaults = BTreeMap::new();
+        for param in &sig.params {
+            let part = format!("DEFAULT{}", param.row);
+            let Some(value) = typed.take(&part) else {
+                continue;
+            };
+            let subject = convert::Subject::Phrase {
+                text: format!("The default value of {}", quoted(&param.name)),
+                stores: true,
+            };
+            if param.mode == PassMode::Editable {
+                // `int& x = …` binds the parameter to what the default
+                // names, so it must be a changeable variable, as an
+                // argument must (`B2C-E0307`).
+                self.check_editable_argument(&value, param, &sig.name);
+            } else {
+                self.report_fit(&typed, &typing, &part, &value, &subject);
+            }
+            defaults.insert(param.sym.clone(), value);
+        }
+        self.in_defaults = false;
+        let headers = std::mem::take(&mut self.headers);
+        if let Some(sig) = self.functions.get_mut(&decl.sym) {
+            for param in &mut sig.params {
+                param.default = defaults.remove(&param.sym);
+            }
+            sig.default_headers = headers;
+        }
     }
 
     // --- The Lowerer context of W2 (w2.md §2.13) ---------------------------------

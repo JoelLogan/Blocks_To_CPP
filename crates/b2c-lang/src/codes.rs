@@ -94,10 +94,6 @@ pub(crate) const NOT_CONSTANT: &str = "B2C-E0424";
 pub(crate) const DUPLICATE_CASE: &str = "B2C-E0425";
 /// A parameter without a default value after one with a default (w2.md
 /// §2.8).
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "emitted by W2's default arguments (package C2)")
-)]
 pub(crate) const DEFAULT_ORDER: &str = "B2C-E0426";
 /// *go on into the next case* that is not the last block of a case, or is
 /// in the last part of a switch.

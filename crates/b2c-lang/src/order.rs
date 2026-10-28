@@ -1,41 +1,41 @@
 //! The declaration graph (docs/plans/m3-contracts/modules.md §4, ADR-0019;
-//! w2.md §2.2): in which order a module's declarations are printed, and the
-//! cycles C++ cannot order (`B2C-E0420`, `B2C-E0421`).
+//! w2.md §2.2, §2.7, §2.8): in which order a module's declarations are
+//! printed, and the cycles C++ cannot order (`B2C-E0420`, `B2C-E0421`).
 //!
-//! Nodes are a module's type definitions (structs and enums) and function
-//! declarations; `main` is not one. An edge from `a` to `b` says that `b`
-//! comes before `a`:
+//! Nodes are a module's type definitions (structs and enums), function
+//! declarations and globals; `main` is not one. An edge from `a` to `b` says
+//! that `b` comes before `a`:
 //!
 //! * **complete**: `a` holds `b` by value, so `b`'s definition must be
 //!   before `a`'s: a field of type `b`, or `b` inside a container other than
 //!   a list (the standard allows an element type that is not complete yet
 //!   only in `std::vector`), or `b` anywhere in a field of a struct that is
 //!   comparable or printable, whose generated operators compare or print the
-//!   field. An enum is always needed complete.
+//!   field. An enum is always needed complete. A default value (a
+//!   parameter's, w2.md §2.8, or a field's) needs complete every user type
+//!   its values have, and the declaration of every function it calls.
 //! * **forward**: `a` names the struct `b` only inside lists (`std::vector`,
-//!   at any depth): a forward declaration (`struct b;`) is enough, which
-//!   code generation prints when `b`'s definition is not already before `a`.
-//!   Such an edge is kept where it can be, so that a definition comes first
-//!   whenever no cycle needs the forward declaration, and never closes a
-//!   cycle.
+//!   at any depth), or a function names it in its parameters or result: a
+//!   forward declaration (`struct b;`) is enough, which code generation
+//!   prints when `b`'s definition is not already before `a`. Such an edge is
+//!   kept where it can be, so that a definition comes first whenever no
+//!   cycle needs the forward declaration, and never closes a cycle.
 //!
-//! Functions need nothing before their declarations until default arguments
-//! arrive (package C2 adds them, with globals and their `initialised`
-//! edges). When several declarations are ready, types come before functions
-//! (06 §6.7 step 3), each sorted by name, then block ID; functions keep the
-//! flat layout's order, so a program with only functions prints exactly as
-//! before.
+//! When several declarations are ready, 06 §6.7's rule applies: constants,
+//! types, functions, then variables, each sorted by name, then block ID;
+//! functions with one name keep the flat layout's order (their parameters'
+//! types). A program with only functions prints exactly as before.
 //!
 //! A cycle of complete edges through struct fields is `B2C-E0420`, reported
-//! at each struct of the cycle; any other cycle (C2's globals) is
-//! `B2C-E0421`. Every walk is iterative.
+//! at each struct of the cycle; any other cycle is `B2C-E0421`. Every walk is
+//! iterative.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::diag::Location;
 use b2c_ir::ids::{BlockId, SymbolId};
 use b2c_ir::layout::Layout;
-use b2c_ir::sast::{ItemKind, Module, SymbolKind, SymbolTable};
+use b2c_ir::sast::{Expr, ExprKind, ItemKind, Module, SymbolKind, SymbolTable};
 use b2c_ir::types::{LibType, Type};
 
 use crate::codes;
@@ -54,14 +54,19 @@ pub(crate) enum Need {
 /// declarations that are ready together.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum NodeKind {
+    /// A global constant (w2.md §2.7).
+    #[expect(dead_code, reason = "globals join the graph in the next commit")]
+    Constant,
     /// A struct.
     Struct,
     /// An enum.
     Enum,
-    /// Any other declaration (C2's globals, for instance).
+    /// A function's declaration.
+    Function,
+    /// A global variable, or any other declaration.
     #[cfg_attr(
         not(test),
-        allow(dead_code, reason = "W2's globals join the graph with package C2")
+        expect(dead_code, reason = "globals join the graph in the next commit")
     )]
     Other,
 }
@@ -73,6 +78,9 @@ pub(crate) struct Node {
     pub(crate) kind: NodeKind,
     /// The name it is sorted and reported by.
     pub(crate) name: String,
+    /// Its place among the declarations of its kind with the same name
+    /// (the flat layout's order of overloads), the next key of the order.
+    pub(crate) seq: usize,
     /// Its defining block, the last key of the order.
     pub(crate) block: BlockId,
     /// The index of its item in its module.
@@ -87,8 +95,12 @@ pub(crate) struct Dep {
     pub(crate) on: usize,
     /// How.
     pub(crate) need: Need,
-    /// The field that needs it, by name, with its location.
+    /// What needs it, by name, with its location: a struct's field, or
+    /// the node itself for any other need.
     pub(crate) via: Option<(String, Location)>,
+    /// Whether a struct's field needs it (by value, `B2C-E0420`), rather
+    /// than a default value or a declaration's own parts.
+    pub(crate) field: bool,
 }
 
 /// The declarations of one module and what each needs.
@@ -109,13 +121,15 @@ impl Graph {
     }
 
     /// The sort key of a node among those that are ready together.
-    fn key(&self, node: usize) -> (u8, &str, &BlockId) {
+    fn key(&self, node: usize) -> (u8, &str, usize, &BlockId) {
         let node = &self.nodes[node];
         let rank = match node.kind {
-            NodeKind::Struct | NodeKind::Enum => 0,
-            NodeKind::Other => 1,
+            NodeKind::Constant => 0,
+            NodeKind::Struct | NodeKind::Enum => 1,
+            NodeKind::Function => 2,
+            NodeKind::Other => 3,
         };
-        (rank, node.name.as_str(), &node.block)
+        (rank, node.name.as_str(), node.seq, &node.block)
     }
 
     /// The nodes in printing order: each after what it needs complete, and
@@ -277,15 +291,16 @@ impl Graph {
     pub(crate) fn report_cycles(&self, diags: &mut Diags) {
         for cycle in self.cycles() {
             let members: BTreeSet<usize> = cycle.iter().copied().collect();
-            let structs = cycle
-                .iter()
-                .all(|node| self.nodes[*node].kind == NodeKind::Struct);
             // One walk round the cycle serves every node on it; a node off
             // that walk gets its own.
             let start = cycle.first().copied();
             let round = start
                 .map(|first| self.path_back(first, &members))
                 .unwrap_or_default();
+            let structs = cycle
+                .iter()
+                .all(|node| self.nodes[*node].kind == NodeKind::Struct)
+                && round.iter().all(|dep| dep.field);
             let on_round: BTreeMap<usize, usize> =
                 round.iter().enumerate().map(|(at, dep)| (dep.on, at)).collect();
             for &node in &cycle {
@@ -406,16 +421,64 @@ fn named_types(ty: &Type, symbols: &SymbolTable, out: &mut Vec<(SymbolId, Need)>
     }
 }
 
-/// The type definitions of a module as a graph: one node per struct and enum
-/// item whose symbol is in the table, with the needs of each struct's fields
-/// on the other types of the module.
+/// What the values of a declaration use: the functions they call, the
+/// symbols they name and the user types their values have.
+#[derive(Debug, Default)]
+struct Uses<'p> {
+    calls: BTreeSet<&'p SymbolId>,
+    symbols: BTreeSet<&'p SymbolId>,
+    types: BTreeSet<&'p SymbolId>,
+}
+
+impl<'p> Uses<'p> {
+    /// Adds what `exprs` and everything inside them use.
+    fn exprs(&mut self, exprs: impl IntoIterator<Item = &'p Expr>) {
+        let mut stack: Vec<&'p Expr> = exprs.into_iter().collect();
+        while let Some(expr) = stack.pop() {
+            match &expr.kind {
+                ExprKind::Call { function, .. } => {
+                    self.calls.insert(function);
+                }
+                ExprKind::Var(sym) => {
+                    self.symbols.insert(sym);
+                }
+                _ => {}
+            }
+            let mut named = Vec::new();
+            user_types_in(&expr.ty, &mut named);
+            self.types.extend(named);
+            stack.extend(crate::flow::children(expr));
+        }
+    }
+}
+
+/// The user types a type names, at any depth.
+fn user_types_in<'t>(ty: &'t Type, out: &mut Vec<&'t SymbolId>) {
+    let mut stack = vec![ty];
+    while let Some(ty) = stack.pop() {
+        match ty {
+            Type::Named(id) => out.push(id),
+            Type::Lib(app) => stack.extend(app.args()),
+            _ => {}
+        }
+    }
+}
+
+/// The declarations of a module as a graph: one node per struct, enum and
+/// function item whose symbol is in the table, with the needs of each
+/// struct's fields on the other types of the module, and those of the
+/// default values of functions and fields.
 pub(crate) fn module_graph(module: &Module, symbols: &SymbolTable) -> Graph {
     let mut graph = Graph::default();
     let mut by_symbol: BTreeMap<&SymbolId, usize> = BTreeMap::new();
+    let mut by_item: BTreeMap<usize, usize> = BTreeMap::new();
+    // Functions keep the flat layout's order among those with one name.
+    let flat = function_seq(module, symbols);
     for (index, item) in module.items.iter().enumerate() {
         let (symbol, kind) = match &item.kind {
             ItemKind::Struct(def) => (&def.symbol, NodeKind::Struct),
             ItemKind::Enum(def) => (&def.symbol, NodeKind::Enum),
+            ItemKind::Function(def) => (&def.symbol, NodeKind::Function),
             _ => continue,
         };
         let Some(found) = symbols.get(symbol) else {
@@ -424,51 +487,153 @@ pub(crate) fn module_graph(module: &Module, symbols: &SymbolTable) -> Graph {
         let node = graph.add(Node {
             kind,
             name: found.name.as_str().to_owned(),
+            seq: flat.get(&index).copied().unwrap_or(0),
             block: item.origin.block.clone(),
             item: index,
         });
         by_symbol.entry(symbol).or_insert(node);
+        by_item.insert(index, node);
     }
     for (symbol, &node) in &by_symbol {
-        let Some(SymbolKind::Struct {
-            fields,
-            comparable,
-            printable,
-        }) = symbols.get(symbol).map(|symbol| &symbol.kind)
-        else {
+        match symbols.get(symbol).map(|symbol| &symbol.kind) {
+            Some(SymbolKind::Struct {
+                fields,
+                comparable,
+                printable,
+            }) => field_needs(
+                &mut graph,
+                &by_symbol,
+                symbols,
+                node,
+                fields,
+                *comparable || *printable,
+            ),
+            Some(SymbolKind::Function { params, .. }) => {
+                // The parameters' and the result's types: a forward
+                // declaration of a struct is enough, an enum is complete.
+                let ret = symbols.get(symbol).map(|s| &s.ty);
+                let mut named = Vec::new();
+                for ty in params
+                    .iter()
+                    .filter_map(|p| symbols.get(p))
+                    .map(|p| &p.ty)
+                    .chain(ret)
+                {
+                    user_types_in(ty, &mut named);
+                }
+                let location = graph.nodes[node].location(module);
+                for id in named {
+                    let Some(&on) = by_symbol.get(id) else {
+                        continue;
+                    };
+                    let need = if graph.nodes[on].kind == NodeKind::Struct {
+                        Need::Forward
+                    } else {
+                        Need::Complete
+                    };
+                    graph.need(node, on, need, location.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    // Default values: a parameter's, a field's.
+    for (index, item) in module.items.iter().enumerate() {
+        let Some(&node) = by_item.get(&index) else {
             continue;
         };
-        for field in fields {
-            let Some(field) = symbols.get(field) else {
-                continue;
-            };
-            let mut named = Vec::new();
-            named_types(&field.ty, symbols, &mut named);
-            for (id, need) in named {
-                let Some(&on) = by_symbol.get(&id) else {
-                    continue;
-                };
-                // The generated operators of a comparable or printable struct
-                // compare or print the field, which needs the type complete.
-                let need = if *comparable || *printable {
-                    Need::Complete
-                } else {
-                    need
-                };
-                graph.deps[node].push(Dep {
-                    on,
-                    need,
-                    via: Some((field.name.as_str().to_owned(), field.origin.location())),
-                });
+        let mut uses = Uses::default();
+        match &item.kind {
+            ItemKind::Function(def) => uses.exprs(def.params.iter().filter_map(|p| p.default.as_ref())),
+            ItemKind::Struct(def) => uses.exprs(def.defaults.values()),
+            _ => continue,
+        }
+        let location = item.origin.location();
+        for id in uses.calls.iter().chain(&uses.types) {
+            if let Some(&on) = by_symbol.get(id)
+                && on != node
+            {
+                graph.need(node, on, Need::Complete, location.clone());
             }
         }
     }
     graph
 }
 
-/// Puts each module's declarations in the declaration graph's order: its
-/// types first, in [`Graph::order`], then its functions as `layout` already
-/// lists them. Reports the cycles.
+impl Graph {
+    /// Adds a need of `node` on `on`, from the declaration at `location`
+    /// (not from one of its fields).
+    fn need(&mut self, node: usize, on: usize, need: Need, location: Location) {
+        let name = self.nodes[on].name.clone();
+        self.deps[node].push(Dep {
+            on,
+            need,
+            via: Some((name, location)),
+            field: false,
+        });
+    }
+}
+
+impl Node {
+    /// Where the node's declaration is, for messages.
+    fn location(&self, module: &Module) -> Location {
+        module
+            .items
+            .get(self.item)
+            .map_or_else(Location::project, |item| item.origin.location())
+    }
+}
+
+/// Each function item's place in the flat layout's order of the module.
+fn function_seq(module: &Module, symbols: &SymbolTable) -> BTreeMap<usize, usize> {
+    let flat = b2c_ir::layout::Layout::flat(std::slice::from_ref(module), symbols);
+    flat.modules
+        .first()
+        .map(|files| {
+            files
+                .source_order
+                .iter()
+                .enumerate()
+                .map(|(seq, item)| (*item, seq))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The needs of a struct's fields on the other types of the module.
+fn field_needs(
+    graph: &mut Graph,
+    by_symbol: &BTreeMap<&SymbolId, usize>,
+    symbols: &SymbolTable,
+    node: usize,
+    fields: &[SymbolId],
+    operators: bool,
+) {
+    for field in fields {
+        let Some(field) = symbols.get(field) else {
+            continue;
+        };
+        let mut named = Vec::new();
+        named_types(&field.ty, symbols, &mut named);
+        for (id, need) in named {
+            let Some(&on) = by_symbol.get(&id) else {
+                continue;
+            };
+            // The generated operators of a comparable or printable struct
+            // compare or print the field, which needs the type complete.
+            let need = if operators { Need::Complete } else { need };
+            graph.deps[node].push(Dep {
+                on,
+                need,
+                via: Some((field.name.as_str().to_owned(), field.origin.location())),
+                field: true,
+            });
+        }
+    }
+}
+
+/// Puts each module's declarations in the declaration graph's order (its
+/// types, functions and globals) and reports the cycles.
 pub(crate) fn order_declarations(
     modules: &[Module],
     symbols: &SymbolTable,
@@ -478,13 +643,11 @@ pub(crate) fn order_declarations(
     for (module, files) in modules.iter().zip(&mut layout.modules) {
         let graph = module_graph(module, symbols);
         graph.report_cycles(diags);
-        let mut order: Vec<usize> = graph
+        files.source_order = graph
             .order()
             .into_iter()
             .map(|node| graph.nodes[node].item)
             .collect();
-        order.append(&mut files.source_order);
-        files.source_order = order;
     }
 }
 
@@ -499,6 +662,7 @@ mod tests {
         Node {
             kind,
             name: name.to_owned(),
+            seq: 0,
             block: BlockId::new(&format!("b_{name}")).expect("id"),
             item: 0,
         }
@@ -519,6 +683,7 @@ mod tests {
             on,
             need,
             via: Some((field.to_owned(), location(field))),
+            field: true,
         });
     }
 

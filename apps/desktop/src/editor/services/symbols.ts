@@ -106,6 +106,7 @@ export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
       return preview === null ? null : (symbolsById(preview).get(symId)?.name ?? null);
     },
     functionParams: (blockId, funcId) => calledFunctionParams(deps, blockId, funcId),
+    functionOptional: (blockId, funcId) => calledFunctionOptional(deps, blockId, funcId),
     structFields: (blockId, structId) => namedStructFields(deps, blockId, structId),
     userTypes: () => userTypesOf(deps),
   };
@@ -164,6 +165,23 @@ function calledFunctionParams(
     return null;
   }
   return fn.params;
+}
+
+/**
+ * How many of the last parameters of the function `funcId` have a default value (w2.md §2.8), so
+ * that a call may leave their arguments out: 0 when the call has no such function.
+ */
+function calledFunctionOptional(
+  deps: Pick<SymbolServiceDeps, 'preview' | 'workspace'>,
+  blockId: string,
+  funcId: string,
+): number {
+  if (calledFunctionParams(deps, blockId, funcId) === null) {
+    return 0;
+  }
+  const preview = deps.preview();
+  const fn = preview === null ? undefined : symbolsById(preview).get(funcId);
+  return fn?.kind === 'function' ? (fn.optional ?? 0) : 0;
 }
 
 /** The symbol a reference reporter names: `var.get`'s VAR, a call's FUNC, a reference shadow. */

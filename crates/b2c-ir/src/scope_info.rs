@@ -11,7 +11,8 @@
 //!
 //! `kind` is `variable` (with `isConst`), `parameter` (with `mode`: `copy`,
 //! `editable` or `read_only`), `loopVariable`, or `function` (with `params`,
-//! the parameter symbol IDs in order, and `returns`). Types are written as
+//! the parameter symbol IDs in order, `returns`, and `optional`, how many of
+//! the last parameters have a default value, written only when not 0). Types are written as
 //! their terms (`"int"`, `"std::string"`, `{"std::vector": "int"}`,
 //! `{"ref": "sym_x"}`), and `"error"` for an expression that already has an
 //! error (`crate::types::term_form`).
@@ -27,6 +28,12 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{BlockId, ModuleId, SymbolId};
 use crate::sast::{PassMode, Symbol, SymbolKind};
 use crate::types::Type;
+
+/// Whether a count is 0 (serde's `skip_serializing_if`).
+#[allow(clippy::trivially_copy_pass_by_ref, reason = "serde passes a reference")]
+fn is_zero(count: &usize) -> bool {
+    *count == 0
+}
 
 /// A symbol as the editor sees it: enough to fill a dropdown, label a getter
 /// block or pick the type of a reporter.
@@ -84,6 +91,11 @@ pub enum SymbolInfoKind {
         params: Vec<SymbolId>,
         /// The type it gives back (`void` for nothing).
         returns: Type,
+        /// How many of the last parameters have a default value, so that a
+        /// call may leave their arguments out (w2.md §2.8). Written only when
+        /// not 0.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        optional: usize,
     },
     /// A user struct.
     Struct {
@@ -125,9 +137,10 @@ impl SymbolInfo {
             SymbolKind::Parameter { mode } => SymbolInfoKind::Parameter { mode: *mode },
             SymbolKind::LoopVariable => SymbolInfoKind::LoopVariable,
             SymbolKind::Global { is_const } => SymbolInfoKind::Global { is_const: *is_const },
-            SymbolKind::Function { params } => SymbolInfoKind::Function {
+            SymbolKind::Function { params, optional } => SymbolInfoKind::Function {
                 params: params.clone(),
                 returns: symbol.ty.clone(),
+                optional: *optional,
             },
             SymbolKind::Struct {
                 fields,
@@ -256,6 +269,7 @@ mod tests {
             "area",
             SymbolKind::Function {
                 params: vec![sym("p_w"), sym("p_h")],
+                optional: 0,
             },
             Type::Double,
             "fn_area",
@@ -268,7 +282,10 @@ mod tests {
         );
         let void = symbol(
             "stop",
-            SymbolKind::Function { params: Vec::new() },
+            SymbolKind::Function {
+                params: Vec::new(),
+                optional: 0,
+            },
             Type::Void,
             "fn_stop",
             field("NAME"),
@@ -278,10 +295,28 @@ mod tests {
             info.kind,
             SymbolInfoKind::Function {
                 params: Vec::new(),
-                returns: Type::Void
+                returns: Type::Void,
+                optional: 0,
             }
         );
         assert_eq!(serde_json::to_value(&info).expect("json")["returns"], "void");
+        // A function whose last parameter has a default value says so.
+        let greet = symbol(
+            "greet",
+            SymbolKind::Function {
+                params: vec![sym("p_name"), sym("p_times")],
+                optional: 1,
+            },
+            Type::Void,
+            "fn_greet",
+            field("NAME"),
+        );
+        round_trip(
+            &SymbolInfo::new(sym("f_greet"), "greet", &greet),
+            &json!({"id": "f_greet", "name": "greet", "kind": "function", "params": ["p_name", "p_times"],
+                    "returns": "void", "optional": 1, "type": "void", "module": "mod_main",
+                    "declBlock": "fn_greet"}),
+        );
     }
 
     #[test]

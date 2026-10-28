@@ -11,7 +11,7 @@
 use b2c_ir::sast::{GlobalDef, Item, StmtKind};
 
 use super::Lowerer;
-use crate::cast::CStmtKind;
+use crate::cast::{CGlobal, CStmtKind};
 
 impl Lowerer<'_> {
     /// *flip* (`StmtKind::Flip`).
@@ -26,7 +26,8 @@ impl Lowerer<'_> {
     /// fills this in; until then the item prints nothing, and no analysis
     /// makes one.
     #[allow(clippy::unused_self, reason = "a stub until package C2 lowers the items")]
-    pub(super) fn global_item(&mut self, def: &GlobalDef, item: &Item) {
+    pub(super) fn global_item(&mut self, def: &GlobalDef, item: &Item) -> Option<CGlobal> {
         let _ = (def, item);
+        None
     }
 }

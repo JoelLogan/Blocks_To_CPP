@@ -288,10 +288,7 @@ impl Lowerer<'_> {
             ),
             (DeclStatus::Active, DeclKind::Parameter) => (
                 codes::OUT_OF_SCOPE,
-                format!(
-                    "{name} is an input of the function {} and can only be used inside that function.",
-                    quoted(decl.owner.as_deref().unwrap_or_default())
-                ),
+                self.parameter_out_of_scope(&name, decl.owner.as_deref().unwrap_or_default()),
             ),
             (DeclStatus::Active, DeclKind::Counter) => (
                 codes::OUT_OF_SCOPE,
@@ -327,6 +324,23 @@ impl Lowerer<'_> {
             b2c_ir::Diagnostic::error(code, b2c_ir::DiagSource::Analyser, location.clone(), message)
                 .with_related(decl.location, format!("{name} is created here"));
         self.diags.push(diagnostic);
+    }
+
+    /// Why the parameter `name` of `function` can't be used here: outside its
+    /// function, or in one of its default values (w2.md §2.8).
+    fn parameter_out_of_scope(&self, name: &str, function: &str) -> String {
+        if self.in_defaults {
+            format!(
+                "{name} is an input of the function {}, and a default value can't use the inputs: C++ works \
+                 it out before the function runs. Use a value, or a constant, instead.",
+                quoted(function)
+            )
+        } else {
+            format!(
+                "{name} is an input of the function {} and can only be used inside that function.",
+                quoted(function)
+            )
+        }
     }
 
     /// Checks a new local name (variable or counter) against the names

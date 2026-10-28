@@ -47,7 +47,7 @@ use b2c_ir::text::{Ident, NumLit};
 use b2c_ir::types::{Type, TypeFacts, UserKind};
 
 use crate::cast::{
-    CBlock, CExpr, CExprKind, CFunction, CParam, CStmt, CStmtKind, CType, CTypeDef, ParamStyle,
+    CBlock, CExpr, CExprKind, CFunction, CGlobal, CParam, CStmt, CStmtKind, CType, CTypeDef, ParamStyle,
 };
 use crate::helpers::Helper;
 
@@ -63,10 +63,12 @@ pub(crate) struct Usage {
 /// A module, desugared and ordered for printing.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LoweredModule {
-    /// User structs and enums with their generated functions, printed before
-    /// the function declarations. None before W2's definition blocks.
-    pub(crate) types: Vec<CTypeDef>,
-    /// User functions, sorted by name (then signature, then block ID).
+    /// The declarations, in the declaration graph's order (06 §6.7 step 3,
+    /// modules.md §4): user structs and enums with their generated
+    /// functions, globals, and function declarations.
+    pub(crate) decls: Vec<CDecl>,
+    /// User functions, sorted by name (then signature, then block ID): their
+    /// definitions are printed in this order.
     pub(crate) functions: Vec<CFunction>,
     /// `main` (normally exactly one), sorted by block ID.
     pub(crate) mains: Vec<CFunction>,
@@ -74,57 +76,120 @@ pub(crate) struct LoweredModule {
     pub(crate) usage: Usage,
 }
 
+/// One declaration of a module, in printing order.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum CDecl {
+    /// A struct or enum (or a struct's forward declaration).
+    Type(CTypeDef),
+    /// A global variable or constant (w2.md §2.7).
+    Global(CGlobal),
+    /// The declaration of `functions[i]`.
+    Function(usize),
+}
+
 /// Desugars one module of a program.
 pub(crate) fn lower_module(program: &Program, module: &Module) -> LoweredModule {
     let mut lowerer = Lowerer::new(program);
-    let mut functions = Vec::new();
     let mut mains = Vec::new();
-    let mut types = Vec::new();
-    // Structs and enums in the declaration graph's order (modules.md §4),
-    // which the analysis puts in the module's layout; any the layout does
-    // not list come after, in item order.
+    // The declarations in the declaration graph's order, which the analysis
+    // puts in the module's layout (modules.md §4). A type or global the
+    // layout does not list comes first, in item order, and a function it
+    // does not list last.
     let listed = program
         .layout
         .modules
         .iter()
         .find(|files| files.module == module.id)
         .map_or(&[][..], |files| files.source_order.as_slice());
-    let is_type = |index: &usize| {
-        module
-            .items
-            .get(*index)
-            .is_some_and(|item| matches!(item.kind, ItemKind::Struct(_) | ItemKind::Enum(_)))
-    };
-    let mut type_order: Vec<usize> = listed.iter().copied().filter(is_type).collect();
-    let seen: BTreeSet<usize> = type_order.iter().copied().collect();
-    let unlisted: Vec<usize> = (0..module.items.len())
-        .filter(|index| is_type(index) && !seen.contains(index))
+    let seen: BTreeSet<usize> = listed.iter().copied().collect();
+    let is_function = |index: &usize| matches!(module.items[*index].kind, ItemKind::Function(_));
+    let unlisted = || (0..module.items.len()).filter(|index| !seen.contains(index));
+    let order: Vec<usize> = unlisted()
+        .filter(|index| !is_function(index))
+        .chain(listed.iter().copied().filter(|index| *index < module.items.len()))
         .collect();
-    type_order.extend(unlisted);
-    if !type_order.is_empty() {
-        let uses = scan::enum_uses(program);
-        let mut printed = BTreeSet::new();
-        for index in type_order {
-            types.extend(lowerer.type_item(&module.items[index], &uses, &mut printed));
+    let uses = scan::enum_uses(program);
+    let mut printed = BTreeSet::new();
+    // The structs this module defines, which a function's declaration may
+    // name before their definitions.
+    let structs: BTreeSet<SymbolId> = module
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            ItemKind::Struct(def) => Some(def.symbol.clone()),
+            _ => None,
+        })
+        .collect();
+    let mut decls = Vec::new();
+    // Functions by item, sorted for their definitions below.
+    let mut functions: Vec<(usize, CFunction)> = Vec::new();
+    for index in order {
+        let item = &module.items[index];
+        match &item.kind {
+            ItemKind::Struct(_) | ItemKind::Enum(_) => {
+                decls.extend(
+                    lowerer
+                        .type_item(item, &uses, &mut printed)
+                        .into_iter()
+                        .map(CDecl::Type),
+                );
+            }
+            ItemKind::Global(def) => decls.extend(lowerer.global_item(def, item).map(CDecl::Global)),
+            ItemKind::Function(def) => {
+                if let Some(function) = lowerer.function(def, item) {
+                    // A struct the declaration names before its definition
+                    // is printed needs a forward declaration (modules.md §4).
+                    decls.extend(
+                        lowerer
+                            .signature_forwards(def, &structs, &mut printed)
+                            .map(CDecl::Type),
+                    );
+                    decls.push(CDecl::Function(index));
+                    functions.push((index, function));
+                }
+            }
+            // A used header is merged into the includes; `main` comes last.
+            ItemKind::UseHeader { header } => lowerer.use_header(*header, item),
+            ItemKind::Main(def) => mains.push(lowerer.main(def, item)),
         }
     }
-    for item in &module.items {
-        match &item.kind {
-            ItemKind::Main(def) => mains.push(lowerer.main(def, item)),
-            ItemKind::Function(def) => functions.extend(lowerer.function(def, item)),
-            // W2's definitions (w2.md §3.2): structs and enums are C1's,
-            // lowered above, globals C2's, a used header D's.
-            ItemKind::Struct(_) | ItemKind::Enum(_) => {}
-            ItemKind::Global(def) => lowerer.global_item(def, item),
-            ItemKind::UseHeader { header } => lowerer.use_header(*header, item),
+    // Functions the layout does not list: declared last, in definition
+    // order.
+    let mut rest: Vec<(usize, CFunction)> = unlisted()
+        .filter(is_function)
+        .filter_map(|index| match &module.items[index].kind {
+            ItemKind::Function(def) => lowerer.function(def, &module.items[index]).map(|f| (index, f)),
+            _ => None,
+        })
+        .collect();
+    rest.sort_by_cached_key(|(_, f)| (f.name.clone(), signature_key(f), f.origin.block.clone()));
+    for (index, function) in rest {
+        if let ItemKind::Function(def) = &module.items[index].kind {
+            decls.extend(
+                lowerer
+                    .signature_forwards(def, &structs, &mut printed)
+                    .map(CDecl::Type),
+            );
         }
+        decls.push(CDecl::Function(index));
+        functions.push((index, function));
     }
     // Definition order never depends on canvas position (spec §6.7).
-    functions.sort_by_cached_key(|f| (f.name.clone(), signature_key(f), f.origin.block.clone()));
+    functions.sort_by_cached_key(|(_, f)| (f.name.clone(), signature_key(f), f.origin.block.clone()));
+    let position: std::collections::BTreeMap<usize, usize> = functions
+        .iter()
+        .enumerate()
+        .map(|(at, (index, _))| (*index, at))
+        .collect();
+    for decl in &mut decls {
+        if let CDecl::Function(index) = decl {
+            *index = position.get(index).copied().unwrap_or(usize::MAX);
+        }
+    }
     mains.sort_by(|a, b| a.origin.block.cmp(&b.origin.block));
     LoweredModule {
-        types,
-        functions,
+        decls,
+        functions: functions.into_iter().map(|(_, f)| f).collect(),
         mains,
         usage: lowerer.usage,
     }
@@ -376,11 +441,14 @@ impl<'a> Lowerer<'a> {
                 }
                 PassMode::Copy | PassMode::ReadOnly => ParamStyle::Value,
             };
+            // A default value is printed with the declaration (w2.md §2.8).
+            let default = param.default.as_ref().map(|value| self.expr(value));
             params.push(CParam {
                 ty,
                 style,
                 name: param_symbol.name.clone(),
                 origin: param.origin.clone(),
+                default,
             });
         }
         self.start_body();
@@ -396,6 +464,43 @@ impl<'a> Lowerer<'a> {
             origin: item.origin.clone(),
             comment: item.comment.clone(),
         })
+    }
+
+    /// The forward declarations a function's declaration needs: one for each
+    /// struct of the module (`structs`) its parameters or result name (at
+    /// any depth) that is not in `printed` yet, which then holds it. The declaration graph puts a
+    /// function before such a struct only when a default value of the
+    /// struct's fields needs the function (modules.md §4.1).
+    fn signature_forwards(
+        &self,
+        def: &FunctionDef,
+        structs: &BTreeSet<SymbolId>,
+        printed: &mut BTreeSet<SymbolId>,
+    ) -> impl Iterator<Item = CTypeDef> + use<> {
+        let symbols = self.symbols;
+        let mut types: Vec<&Type> = def
+            .params
+            .iter()
+            .filter_map(|param| symbols.get(&param.symbol))
+            .map(|param| &param.ty)
+            .collect();
+        types.push(&def.ret);
+        let mut forwards = Vec::new();
+        while let Some(ty) = types.pop() {
+            match ty {
+                Type::Named(id) => {
+                    if structs.contains(id)
+                        && let Some(symbol) = symbols.get(id)
+                        && printed.insert(id.clone())
+                    {
+                        forwards.push(CTypeDef::Forward(symbol.name.clone()));
+                    }
+                }
+                Type::Lib(app) => types.extend(app.args()),
+                _ => {}
+            }
+        }
+        forwards.into_iter()
     }
 
     /// Desugars a block in a new scope.

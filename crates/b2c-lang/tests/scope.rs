@@ -191,7 +191,8 @@ fn parameters_are_visible_only_in_their_function() {
         area.kind,
         SymbolInfoKind::Function {
             params: vec![sym("sym_w"), sym("sym_h")],
-            returns: Type::Void
+            returns: Type::Void,
+            optional: 0,
         }
     );
 }

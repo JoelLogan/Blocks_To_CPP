@@ -1489,7 +1489,12 @@ params: Array<string>,
 /**
  * The type it gives back (`void` for nothing).
  */
-returns: TypeJson, } | { "kind": "struct",
+returns: TypeJson,
+/**
+ * How many of the last parameters have a default value, so that a
+ * call may leave their arguments out; omitted when 0.
+ */
+optional?: number, } | { "kind": "struct",
 /**
  * Its fields' symbol IDs, in order.
  */
@@ -1540,7 +1545,12 @@ params: Array<string>,
 /**
  * The type it gives back (`void` for nothing).
  */
-returns: TypeJson, } | { "kind": "struct",
+returns: TypeJson,
+/**
+ * How many of the last parameters have a default value, so that a
+ * call may leave their arguments out; omitted when 0.
+ */
+optional?: number, } | { "kind": "struct",
 /**
  * Its fields' symbol IDs, in order.
  */

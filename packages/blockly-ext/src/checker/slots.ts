@@ -23,6 +23,7 @@ import type * as Blockly from 'blockly/core';
 
 import { blockDef, fieldDef, partIndex } from './catalog';
 import type { BlockDefJson, InputDefJson, TokenJson } from '../generated/catalog';
+import { rowTypeFieldName } from '../mutators/types';
 import { readExprShadow } from '../shadows/state';
 import type { SymbolInfo, TypeOracle } from '../services';
 import { blockSignature, type BlockSigTs } from '../types/pattern';
@@ -471,8 +472,14 @@ class CanvasParts implements BlockParts {
     return count;
   }
 
-  /** `param:F`: parameter `index` of the function chosen in `field`. */
+  /**
+   * `param:F`: parameter `index` of the function chosen in `field`; on the function's own
+   * declaration (its default values, w2.md §2.8), the type of its row `index`.
+   */
   param(field: string, index: number): PartType {
+    if (fieldDef(this.def, field)?.kind === 'symbol_decl') {
+      return this.rowType(rowTypeFieldName('params', index));
+    }
     const fn = symbolOf(this.ctx, refId(this.rawValue(field)));
     if (fn?.kind !== 'function') {
       return EMPTY;
@@ -481,8 +488,25 @@ class CanvasParts implements BlockParts {
     return param === undefined ? EMPTY : symbolType(symbolOf(this.ctx, param));
   }
 
-  /** `member:F`: field `index` of the struct chosen (or bound) in `field`. */
+  /** The type a row's type field holds (`empty` without the row, `unknown` for no type). */
+  private rowType(name: string): PartType {
+    const value: unknown = this.block.getField(name)?.getValue();
+    if (typeof value !== 'string' || value === '') {
+      return EMPTY;
+    }
+    const term = termFromKey(value);
+    const type = term === null ? null : typeFromTerm(term);
+    return type === null ? UNKNOWN : known(type);
+  }
+
+  /**
+   * `member:F`: field `index` of the struct chosen (or bound) in `field`; on the struct's own
+   * declaration (its field defaults), the type of its row `index`.
+   */
   member(field: string, index: number): PartType {
+    if (fieldDef(this.def, field)?.kind === 'symbol_decl') {
+      return this.rowType(rowTypeFieldName('fields', index));
+    }
     const value = this.rawValue(field);
     const term = typeof value === 'string' && value.startsWith('{') ? termFromKey(value) : null;
     const owner = symbolOf(this.ctx, term?.kind === 'ref' ? term.id : refId(value));

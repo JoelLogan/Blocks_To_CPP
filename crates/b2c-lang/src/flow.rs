@@ -606,7 +606,7 @@ impl Flow<'_> {
 
     /// Whether parameter `index` of `function` is editable.
     fn is_editable(&self, function: &SymbolId, index: usize) -> bool {
-        let Some(SymbolKind::Function { params }) = self.symbols.get(function).map(|s| &s.kind) else {
+        let Some(SymbolKind::Function { params, .. }) = self.symbols.get(function).map(|s| &s.kind) else {
             return false;
         };
         params

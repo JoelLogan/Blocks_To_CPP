@@ -33,6 +33,16 @@ max = 16
 types = ["int", "double", "bool", "char", "std::string", "std::vector<int>", "std::vector<double>", "std::vector<std::string>"]
 type_class = "value"
 
+# A parameter row may end with a default value, typed by its own parameter
+# (w2.md §2.8): a call may then leave that argument out. The default is
+# printed in the function's declaration only.
+[[block.input]]
+name = "DEFAULT"
+check = "any"
+optional = true
+repeat = { count = "params" }
+type = "param:NAME"
+
 [[block.statement]]
 name = "BODY"
 

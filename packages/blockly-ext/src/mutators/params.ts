@@ -12,6 +12,12 @@
  * A row's fields are named `B2C_PARAM<i>_TYPE`, `_NAME` and `_MODE` (`B2C_FIELD<i>_…` for fields,
  * `B2C_VALUE<i>_NAME` for values); editing them records ordinary field changes, and adding or
  * removing a row records one mutation step with every row's values, so undo restores rows exactly.
+ *
+ * A block whose value inputs are counted by its rows (`func.define`'s `DEFAULT`, w2.md §2.8) gets
+ * one such input per row, `DEFAULT<i>`, which holds the row's fields and draws `= (…)` at the end
+ * of the row. The block in it stays with its row: when a row before it is added or removed, the
+ * block moves to the row's new input; when its own row is removed, it is unplugged and kept on the
+ * canvas, as the other mutators keep a user's block. Those moves belong to the same undo step.
  */
 import * as Blockly from 'blockly/core';
 
@@ -31,7 +37,7 @@ import {
   readName,
 } from './fields';
 import { mutatorHooks, randomSymbolId } from './hooks';
-import { placeParts } from './parts';
+import { placeParts, silently } from './parts';
 import type { RowKind, RowsSpec } from './spec';
 import {
   isShowableName,
@@ -41,16 +47,13 @@ import {
   rowTypeKey,
   writeRow,
 } from './state';
-import { PARAM_MODES, type ParamMode, type RowState } from './types';
+import { partIndex } from '../checker/catalog';
+import { PARAM_MODES, type ParamMode, ROW_FIELD_PREFIXES, type RowState } from './types';
 
 /** The prefix of a parameter row's dummy input (`B2C_PARAM0`). */
-export const PARAM_ROW_PREFIX = 'B2C_PARAM';
+export const PARAM_ROW_PREFIX = ROW_FIELD_PREFIXES.params;
 /** The prefix of each kind of row's dummy input and fields (`B2C_FIELD0`, `B2C_VALUE0_NAME`). */
-export const ROW_PREFIXES: Readonly<Record<RowKind, string>> = Object.freeze({
-  params: PARAM_ROW_PREFIX,
-  fields: 'B2C_FIELD',
-  values: 'B2C_VALUE',
-});
+export const ROW_PREFIXES: Readonly<Record<RowKind, string>> = ROW_FIELD_PREFIXES;
 /** The dummy input holding the ⊕ button. */
 const BUTTONS_INPUT = 'B2C_BUTTONS';
 /**
@@ -84,6 +87,12 @@ const TYPE_LABELS: Readonly<Record<RowKind, string>> = Object.freeze({
 const SYMBOL_ID = /^[A-Za-z0-9_]{1,32}$/;
 /** What a user may type as a name (03 §3.6); other names from files are kept but not typed. */
 const NAME_ENTRY = /^[A-Za-z0-9_]{1,64}$/;
+
+/** The user's block and the shadow of one value input of a row, kept while the rows are rebuilt. */
+interface RowPart {
+  readonly block: Blockly.Block | null;
+  readonly shadow: Blockly.serialization.blocks.State | null;
+}
 
 /** A row's fields: a `values` row has no type, and only a `params` row has a mode. */
 interface RowFields {
@@ -178,29 +187,106 @@ export class ParamsController implements MutatorController {
     });
   }
 
+  /** Whether `name` is a part of one of the value inputs the rows count (`DEFAULT2`). */
+  private isRowInput(name: string): boolean {
+    return this.spec.rowInputs.some((input) => partIndex(name, input.name) !== null);
+  }
+
   private readonly isOwned = (input: Blockly.Input): boolean =>
-    input.name === BUTTONS_INPUT || input.name.startsWith(this.prefix);
+    input.name === BUTTONS_INPUT ||
+    input.name.startsWith(this.prefix) ||
+    this.isRowInput(input.name);
+
+  /**
+   * Takes the user's blocks (and the shadows) out of the rows' value inputs before the rows are
+   * rebuilt for `next`, by row symbol and input: a block whose row stays is unplugged to be
+   * connected again, one whose row goes is unplugged and bumped away, as removed parts' blocks are.
+   */
+  private takeRowParts(next: readonly RowState[]): Map<string, RowPart> {
+    const kept = new Map<string, RowPart>();
+    const staying = new Set(next.map((row) => row.sym));
+    for (const [index, row] of this.rows.entries()) {
+      for (const def of this.spec.rowInputs) {
+        const connection = this.block.getInput(`${def.name}${String(index)}`)?.connection ?? null;
+        if (connection === null) {
+          continue;
+        }
+        const shadow = connection.getShadowState(true);
+        const target = connection.targetBlock();
+        const user = target !== null && !target.isShadow() ? target : null;
+        if (user !== null) {
+          user.unplug(false);
+        }
+        if (staying.has(row.sym)) {
+          kept.set(`${row.sym}/${def.name}`, { block: user, shadow });
+        } else if (user instanceof Blockly.BlockSvg && !user.isInFlyout) {
+          const offset = Blockly.config.snapRadius;
+          user.moveBy(user.RTL ? -offset : offset, offset, ['bump']);
+        }
+      }
+    }
+    return kept;
+  }
+
+  /** Puts the parts `takeRowParts` kept back into the rows' new inputs. */
+  private restoreRowParts(kept: ReadonlyMap<string, RowPart>): void {
+    for (const [index, row] of this.rows.entries()) {
+      for (const def of this.spec.rowInputs) {
+        const part = kept.get(`${row.sym}/${def.name}`);
+        const connection = this.block.getInput(`${def.name}${String(index)}`)?.connection ?? null;
+        if (part === undefined || connection === null) {
+          continue;
+        }
+        if (part.shadow !== null) {
+          try {
+            connection.setShadowState(part.shadow);
+          } catch {
+            connection.setShadowState(null);
+          }
+        }
+        const output = part.block?.outputConnection ?? null;
+        if (output !== null && !(part.block?.isDeadOrDying() ?? true)) {
+          try {
+            connection.connect(output);
+          } catch {
+            // A block the input no longer takes stays on the canvas.
+          }
+        }
+      }
+    }
+  }
 
   /** Rebuilds every row for `rows`, then the ⊕ button, and places them. */
   private reshape(rows: readonly RowState[]): void {
+    const kept = this.takeRowParts(rows);
     for (const input of [...this.block.inputList]) {
-      if (input.name.startsWith(this.prefix)) {
-        this.block.removeInput(input.name);
+      if (input.name.startsWith(this.prefix) || this.isRowInput(input.name)) {
+        silently(() => this.block.removeInput(input.name));
       }
     }
     this.rows = rows.map((row) => ({ ...row }));
     this.fields = [];
     const order: Blockly.Input[] = [];
     for (const [index, row] of this.rows.entries()) {
-      order.push(this.createRow(index, row));
+      order.push(...this.createRow(index, row));
     }
     order.push(buttonRow(this.block, BUTTONS_INPUT, this.buttonItems()));
     placeParts(this.block, order, this.isOwned, this.spec.anchorArgs);
+    this.restoreRowParts(kept);
   }
 
-  private createRow(index: number, row: RowState): Blockly.Input {
+  /**
+   * The inputs of one row: a dummy input holding its fields and ⊖, or, on a block whose value
+   * inputs the rows count, those inputs (`DEFAULT<i>`, the first holding the row's fields, each
+   * after `=`) and a dummy input holding ⊖.
+   */
+  private createRow(index: number, row: RowState): Blockly.Input[] {
     const prefix = `${this.prefix}${String(index)}`;
-    const input = this.block.appendDummyInput(prefix);
+    const [firstValue, ...otherValues] = this.spec.rowInputs;
+    const input =
+      firstValue === undefined
+        ? this.block.appendDummyInput(prefix)
+        : this.block.appendValueInput(`${firstValue.name}${String(index)}`);
     if (index === 0) {
       for (const text of this.spec.groupLeading) {
         input.appendField(new Blockly.FieldLabel(text));
@@ -226,8 +312,23 @@ export class ParamsController implements MutatorController {
     if (mode !== null) {
       input.appendField(mode, `${prefix}_MODE`);
     }
+    const inputs = [input];
+    if (firstValue !== undefined) {
+      input.appendField(new Blockly.FieldLabel('='));
+      for (const def of otherValues) {
+        inputs.push(
+          this.block
+            .appendValueInput(`${def.name}${String(index)}`)
+            .appendField(new Blockly.FieldLabel('=')),
+        );
+      }
+    }
+    const buttons = firstValue === undefined ? input : this.block.appendDummyInput(prefix);
+    if (buttons !== input) {
+      inputs.push(buttons);
+    }
     const key = `${this.buttonPrefix()}:${String(index)}:remove`;
-    input.appendField(
+    buttons.appendField(
       createButton({
         key,
         action: 'remove',
@@ -238,7 +339,7 @@ export class ParamsController implements MutatorController {
       }),
     );
     this.fields.push({ type, name, mode });
-    return input;
+    return inputs;
   }
 
   /** The prefix of the rows' button keys (`param:add`, `field:0:remove`, `value:add`). */
