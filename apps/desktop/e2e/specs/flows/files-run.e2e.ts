@@ -108,11 +108,13 @@ describe('Files', () => {
     copyFileSync(path.join(FIXTURES, DATA), path.join(folder, DATA));
     const before = readdirSync(folder).sort();
 
-    // (2) F5 reads it line by line from the project folder.
+    // (2) F5 reads it line by line from the project folder. Windows' pseudoconsole may repaint a
+    // line with cursor moves, which the transcript strips, so a space can go missing ("1:first
+    // line" on WebView2): the lines are matched without the spaces after their numbers.
     await pressKey(app.driver, Key.F5);
     await waitForTranscript(
       app,
-      (text) => /1: first line\D+2: \D+3: third line\D+done/.test(text),
+      (text) => /1:\s*first line\D+2:\D+3:\s*third line\D+done/.test(text),
       BUILD_TIMEOUT_MS,
       'the three lines of the file and done',
     );
