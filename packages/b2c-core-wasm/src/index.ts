@@ -71,7 +71,7 @@ export type {
 export { FORMAT_TAG, MAX_FORMAT_VERSION } from './bdm';
 export { MAX_DOCUMENT_BYTES } from './core';
 export { CoreError, type CoreErrorKind, CoreTrap } from './errors';
-export { initCore, initCoreFromBytes, resetCore } from './loader';
+export { coreModule, initCore, initCoreFromBytes, resetCore } from './loader';
 export { randomSeedHex, type RandomSource, SEED_BYTES } from './seed';
 /**
  * The pipeline's shared shapes, generated from the Rust types into `@blocks2cpp/ipc-types` (the

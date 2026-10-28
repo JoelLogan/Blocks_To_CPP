@@ -8,6 +8,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./worker": "./src/worker/index.ts",
     "./build-info": {
       "types": "./scripts/build-info.d.mts",
       "default": "./scripts/build-info.mjs"

@@ -31,6 +31,8 @@ import { BLOCKLY_MEDIA_DIR } from './media';
 import { ModuleSwitcher } from './modules/ModuleSwitcher';
 import { appCoreHost, type CoreHost } from './preview/coreHost';
 import type { PreviewService } from './preview/service';
+import { appWorkerPreviewService } from './preview/worker/spawn';
+import { previewWorkerEnabled } from './preview/workerService';
 import {
   createSymbolServices,
   fieldDialogs,
@@ -228,11 +230,15 @@ export function EditorWorkspace() {
     const darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
     const theme = (): Blockly.Theme => (darkScheme.matches ? b2cDarkTheme : b2cLightTheme);
     const workspace = Blockly.inject(element, editorInjectOptions(theme()));
+    // The preview worker only in builds made with B2C_PREVIEW_WORKER=1 (ADR-0016; off until the
+    // integration after W2, docs/plans/m3-contracts/w5-worker.md §4).
+    const service = previewWorkerEnabled() ? appWorkerPreviewService(appCoreHost()) : null;
     const editor = attachEditor(workspace, {
       store: useAppStore,
       host: appCoreHost(),
       dialogs: appDialogs,
       plugins: EDITOR_PLUGINS,
+      ...(service === null ? {} : { service }),
     });
 
     // Blockly sizes its SVG once; follow the panel when the window or a dock resizes, and when
@@ -253,6 +259,7 @@ export function EditorWorkspace() {
       darkScheme.removeEventListener('change', onSchemeChange);
       resizeObserver.disconnect();
       editor.detach();
+      service?.dispose();
       // Children first and without events: Blockly's own disposal recurses along `next` chains,
       // and a delete event would serialise every block.
       clearWorkspace(workspace);

@@ -10,7 +10,8 @@
  * The hook reads the app's state and adds blocks to the open project as the editor itself would;
  * it changes nothing else. Everything it is given comes from the test and is checked.
  */
-import type { CoreWasm } from '@blocks2cpp/b2c-core-wasm';
+import type { CoreVersion, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
+import type { CoreWorkerClient, WorkerLike, WorkerProbe } from '@blocks2cpp/b2c-core-wasm/worker';
 import type * as Blockly from 'blockly/core';
 
 import type { BootPhase } from '../app/bootstrap';
@@ -33,6 +34,7 @@ import {
   grabPoint,
 } from './locate';
 import { ConsoleTranscript, tapConsoleBridge } from './transcript';
+import { startWorkerCheck, type WorkerCheck } from './workerCheck';
 
 export { E2E_HOOK_NAME } from './contract';
 
@@ -51,10 +53,25 @@ export interface E2eHookDeps {
   /** The console bridge, whose output the transcript records. */
   readonly console: ConsoleBridge;
   readonly trustedTypes: () => TrustedTypesReport;
+  /** How many of those violations were Trusted Types' own (`require-trusted-types-for`). */
+  readonly trustedTypesCount: () => number;
   /** `document.elementFromPoint`, by default. */
   readonly elementAt?: ElementAtPoint;
   /** Parses HTML for {@link E2eHook.probeTrustedTypes}; a `DOMParser` by default. */
   readonly parseHtml?: (html: string) => void;
+  /** Creates a preview worker client for {@link E2eHook.startWorkerCheck}. */
+  readonly workerClient: (acceptVersion: (version: CoreVersion) => boolean) => CoreWorkerClient;
+  /** Creates the preview worker from a plain string URL, without the Trusted Types policy. */
+  readonly spawnUnwrappedWorker: () => WorkerLike;
+  /** The worker probe's request to the IPC endpoint, made from the page. */
+  readonly pageRequest: () => Promise<WorkerProbe['request']>;
+  /** Whether this build previews in the worker (`B2C_PREVIEW_WORKER=1`). */
+  readonly previewWorkerEnabled: () => boolean;
+  /** The open editor's worker preview service, or `null`. */
+  readonly previewService: () => {
+    thread(): 'worker' | 'main';
+    client(): CoreWorkerClient | null;
+  } | null;
 }
 
 /** The editor's workspace, or an error when there is none. */
@@ -128,6 +145,7 @@ function defaultParseHtml(html: string): void {
 export function createE2eHook(deps: E2eHookDeps, transcript: ConsoleTranscript): E2eHook {
   const elementAt: ElementAtPoint = deps.elementAt ?? ((x, y) => document.elementFromPoint(x, y));
   const parseHtml = deps.parseHtml ?? defaultParseHtml;
+  let check: WorkerCheck | null = null;
   return Object.freeze({
     ready: () => deps.phase().kind === 'ready',
     insertBlocks: (parentBlockId: string, input: string, blocks: readonly unknown[]) => {
@@ -197,6 +215,39 @@ export function createE2eHook(deps: E2eHookDeps, transcript: ConsoleTranscript):
       grabPoint(workspaceOf(deps.editor()), stringArg(blockId, 'blockId'), elementAt),
     probeTrustedTypes: () => {
       parseHtml('<p>Blocks2Cpp Trusted Types probe</p>');
+    },
+    startWorkerCheck: (rounds: number) => {
+      check = startWorkerCheck(
+        {
+          documentJson: () => {
+            const doc = deps.store.getState().project?.document;
+            return doc === undefined ? null : JSON.stringify(doc);
+          },
+          core: deps.core,
+          options: () => ({
+            indentWidth: deps.store.getState().settings.value?.codeStyle.indentWidth ?? 4,
+          }),
+          client: deps.workerClient,
+          spawnUnwrapped: deps.spawnUnwrappedWorker,
+          trustedTypesViolations: deps.trustedTypesCount,
+          pageRequest: deps.pageRequest,
+        },
+        rounds,
+      );
+    },
+    workerCheck: () => check?.result() ?? null,
+    previewThread: () => {
+      if (!deps.previewWorkerEnabled()) {
+        return 'off';
+      }
+      return deps.previewService()?.thread() ?? null;
+    },
+    stopPreviewWorker: () => {
+      const client = deps.previewService()?.client() ?? null;
+      if (client === null) {
+        throw new Error('The editor has no preview worker');
+      }
+      client.kill();
     },
   });
 }

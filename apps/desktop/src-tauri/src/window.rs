@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use b2c_app::Backend;
-use tauri::http::header::{CONTENT_SECURITY_POLICY_REPORT_ONLY, CONTENT_TYPE};
+use tauri::http::header::{CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY_REPORT_ONLY, CONTENT_TYPE};
 use tauri::http::{HeaderMap, HeaderValue, Response, Uri};
 use tauri::webview::NewWindowResponse;
 use tauri::{
@@ -38,6 +38,19 @@ const MAX_WINDOW_EXTENT: u32 = 10_000;
 /// counts, but is never blocked. The enforced policy (`tauri.conf.json`) is
 /// unchanged; enforcement comes once Blockly runs cleanly under this one.
 pub(crate) const TRUSTED_TYPES_REPORT_ONLY: &str = "require-trusted-types-for 'script'";
+
+/// The preview worker's own policy (ADR-0016 §2), sent as
+/// `Content-Security-Policy` with its script ([`add_worker_csp`]): a dedicated
+/// worker runs under its script's policy, not the page's, and Tauri adds its
+/// policy to HTML only. The worker may compile WebAssembly and nothing more:
+/// no `eval`, no request of any kind, no nested worker (`worker-src` would
+/// otherwise fall back to `script-src`).
+pub(crate) const WORKER_CSP: &str =
+    "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'none'";
+
+/// Where the frontend's build puts the preview worker's scripts
+/// (`apps/desktop/vite.config.ts`, `worker`).
+const WORKER_PATH_PREFIX: &str = "/workers/";
 
 /// Opens the editor window from its entry in `tauri.conf.json` (which has
 /// `"create": false`), adding what the configuration file cannot express:
@@ -76,6 +89,7 @@ pub(crate) fn open_main_window<R: Runtime>(
         // serves the bundled frontend (not the dev server).
         .on_web_resource_request(|request, response| {
             add_trusted_types_report_only(request.uri(), response);
+            add_worker_csp(request.uri(), response);
         });
     // End-to-end builds pass on a WebDriver's browser arguments, which
     // WebView2 would otherwise drop in favour of wry's (see the function).
@@ -281,6 +295,46 @@ pub(crate) fn add_trusted_types_report_only(uri: &Uri, response: &mut Response<C
         );
         tracing::debug!(path = uri.path(), "added the Trusted Types report-only policy");
     }
+}
+
+/// Adds the preview worker's policy ([`WORKER_CSP`]) to `response` when it is
+/// a script (`Content-Type` `text/javascript` or `application/javascript`, any
+/// parameters) of the app's own frontend ([`is_app_resource`]) under
+/// `/workers/`. A policy already on the response stays: each one applies, so
+/// the worker runs under the stricter of them, and this one is never added
+/// twice. Other responses are left alone.
+///
+/// Logged at debug level with the script's path (never project content).
+pub(crate) fn add_worker_csp(uri: &Uri, response: &mut Response<Cow<'static, [u8]>>) {
+    if !is_app_resource(uri)
+        || !uri.path().starts_with(WORKER_PATH_PREFIX)
+        || !is_javascript(response.headers())
+    {
+        return;
+    }
+    let headers = response.headers_mut();
+    let present = headers
+        .get_all(CONTENT_SECURITY_POLICY)
+        .iter()
+        .any(|value| value == WORKER_CSP);
+    if !present {
+        headers.append(CONTENT_SECURITY_POLICY, HeaderValue::from_static(WORKER_CSP));
+        tracing::debug!(path = uri.path(), "added the preview worker's policy");
+    }
+}
+
+/// Whether the response is a script: its `Content-Type` is `text/javascript`
+/// or `application/javascript`, ignoring letter case and parameters.
+fn is_javascript(headers: &HeaderMap) -> bool {
+    headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|essence| {
+            let essence = essence.trim();
+            essence.eq_ignore_ascii_case("text/javascript")
+                || essence.eq_ignore_ascii_case("application/javascript")
+        })
 }
 
 /// Whether a request that Tauri's `tauri` protocol answers is for the app's
@@ -554,6 +608,105 @@ mod tests {
         let csp = config["app"]["security"]["csp"].as_str().unwrap();
         assert!(!csp.contains("trusted-types"), "{csp}");
         assert_eq!(TRUSTED_TYPES_REPORT_ONLY, "require-trusted-types-for 'script'");
+    }
+
+    /// The enforced policies on `response`.
+    fn enforced(response: &Response<Cow<'static, [u8]>>) -> Vec<String> {
+        response
+            .headers()
+            .get_all(CONTENT_SECURITY_POLICY)
+            .iter()
+            .map(|value| value.to_str().unwrap().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn worker_scripts_get_the_worker_policy() {
+        let (app, _) = origins();
+        for script in [
+            "tauri://localhost/workers/core.worker-CF3pky4O.js".to_owned(),
+            "tauri://localhost/workers/glue-DB-2SuJU.js?x=1".to_owned(),
+            format!("{app}/workers/core.worker-CF3pky4O.js"),
+        ] {
+            for content_type in [
+                "text/javascript",
+                "text/javascript; charset=utf-8",
+                "Application/JavaScript",
+            ] {
+                let mut response = asset(content_type);
+                add_worker_csp(&uri(&script), &mut response);
+                assert_eq!(enforced(&response), [WORKER_CSP], "{script} ({content_type})");
+                // The Trusted Types trial is for documents only.
+                add_trusted_types_report_only(&uri(&script), &mut response);
+                assert!(report_only(&response).is_empty(), "{script}");
+            }
+        }
+    }
+
+    #[test]
+    fn other_resources_get_no_worker_policy() {
+        let (_, other_platform) = origins();
+        let mut cases = vec![
+            // Not a script.
+            ("tauri://localhost/workers/core.worker.js", "text/html"),
+            ("tauri://localhost/workers/x.wasm", "application/wasm"),
+            ("tauri://localhost/workers/", ""),
+            // Not under /workers/.
+            ("tauri://localhost/assets/index-Bgk4hAxZ.js", "text/javascript"),
+            ("tauri://localhost/index.html", "text/html"),
+            ("tauri://localhost/workersx/core.js", "text/javascript"),
+            ("tauri://localhost/assets/workers/core.js", "text/javascript"),
+            // Not the app.
+            ("tauri://example.com/workers/core.js", "text/javascript"),
+            ("tauri://localhost:1420/workers/core.js", "text/javascript"),
+            ("http://localhost:1420/workers/core.js", "text/javascript"),
+            ("https://example.com/workers/core.js", "text/javascript"),
+            ("isolation://localhost/workers/core.js", "text/javascript"),
+        ];
+        let other = format!("{other_platform}/workers/core.js");
+        // On Windows the other platform's origin is `tauri://localhost`, which is the app's there too.
+        if !cfg!(windows) {
+            cases.push((other.as_str(), "text/javascript"));
+        }
+        for (resource, content_type) in cases {
+            let mut response = asset(content_type);
+            let before = enforced(&response);
+            add_worker_csp(&uri(resource), &mut response);
+            assert_eq!(enforced(&response), before, "{resource} ({content_type})");
+        }
+        let mut no_type = Response::new(Cow::Borrowed(&b""[..]));
+        add_worker_csp(&uri("tauri://localhost/workers/core.js"), &mut no_type);
+        assert!(enforced(&no_type).is_empty());
+    }
+
+    #[test]
+    fn the_worker_policy_is_added_once_and_keeps_an_existing_policy() {
+        let mut response = asset("text/javascript");
+        response.headers_mut().append(
+            CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("script-src 'self'"),
+        );
+        let script = uri("tauri://localhost/workers/core.worker.js");
+        add_worker_csp(&script, &mut response);
+        add_worker_csp(&script, &mut response);
+        assert_eq!(enforced(&response), ["script-src 'self'", WORKER_CSP]);
+    }
+
+    /// The worker's policy allows what the worker needs and no more: its
+    /// own scripts and WebAssembly, no `eval`, no request, no nested worker.
+    #[test]
+    fn the_worker_policy_is_strict() {
+        assert_eq!(
+            WORKER_CSP,
+            "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'none'"
+        );
+        assert!(
+            WORKER_CSP
+                .split_whitespace()
+                .all(|source| source != "'unsafe-eval'")
+        );
+        assert!(!WORKER_CSP.contains("connect-src"));
+        assert!(!WORKER_CSP.contains("blob:") && !WORKER_CSP.contains("data:"));
     }
 
     #[test]

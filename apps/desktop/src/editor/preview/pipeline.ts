@@ -16,17 +16,21 @@
  * User Timing span (`b2c:preview`, `b2c:preview:read`, `b2c:preview:update`, …,
  * src/lib/timing.ts).
  *
- * A sequence number discards results that a newer run has overtaken. When the core traps, the
- * instance is replaced, the run is tried once more on the new one, and the analysis gets the
- * notice `trapRecovered`. When the update fails even so (the new instance trapped too, or the core
- * failed in another way), the document is still made the project's through `canonical()` alone
- * (on a fresh instance after a trap), and the last good preview stays: an edit the analysis cannot
- * handle still counts as unsaved, and autosave still keeps it. When the document read from the
- * canvas does not load (blocks nested deeper than a project may be, B2C-E0104, or a bug in the
- * sync), nothing is committed: the project and the last good preview stay, and the analysis gets
- * the notice `syncFailed` (with the loader's codes) until the canvas loads again. The window shows
- * both notices in a banner (src/features/analysis), and Build and Run refuse such a canvas instead
- * of building the older document (src/features/build-run).
+ * A sequence number discards results that a newer run has overtaken. An answer is also dropped
+ * when something else (a rename, an adopted save) wrote the project's document after the run read
+ * the canvas: it was computed for a document the project no longer holds, so the canvas is read again instead (ADR-0016 §5; on the main thread the read, `update()`
+ * and the commit are one task and this never happens, with the preview worker it can). When the
+ * core traps, the service gets a fresh instance (`PreviewService.recover`), the run is tried once
+ * more on it, and the analysis gets the notice `trapRecovered`. When the update fails even so (the
+ * new instance trapped too, or the core failed in another way), the document is still made the
+ * project's through `canonical()` alone (on a fresh instance after a trap), and the last good
+ * preview stays: an edit the analysis cannot handle still counts as unsaved, and autosave still
+ * keeps it. When the document read from the canvas does not load (blocks nested deeper than a
+ * project may be, B2C-E0104, or a bug in the sync), nothing is committed: the project and the last
+ * good preview stay, and the analysis gets the notice `syncFailed` (with the loader's codes) until
+ * the canvas loads again. The window shows both notices in a banner (src/features/analysis), and
+ * Build and Run refuse such a canvas instead of building the older document
+ * (src/features/build-run).
  */
 import {
   type BdmDocument,
@@ -42,7 +46,7 @@ import {
 import type { AnalysisNotice, useAppStore } from '../../app/store';
 import { startSpan, timed } from '../../lib/timing';
 import type { CoreHost } from './coreHost';
-import { mainThreadPreviewService, type PreviewService } from './service';
+import { mainThreadPreviewService, type PreviewAnswer, type PreviewService } from './service';
 
 /** How long the pipeline waits after the last change before it runs (02 §2.4.1). */
 export const PREVIEW_DEBOUNCE_MS = 50;
@@ -79,10 +83,12 @@ interface DocumentHashes {
   readonly contentHash: string;
 }
 
-/** The document read for a run, and the JSON text the core was given. */
+/** The document read for a run, the JSON text the core was given, and what it was read against. */
 interface ReadDocument {
   readonly doc: BdmDocument;
   readonly json: string;
+  /** The project's document when the run read the canvas. */
+  readonly base: BdmDocument | null;
 }
 
 /** The hashes of an update whose document loaded, or `null` when it did not load. */
@@ -200,29 +206,37 @@ export class PreviewPipeline {
       check();
       const run = startSpan('b2c:preview');
       const reading = startSpan('b2c:preview:read');
+      // The project's document this run reads against.
+      const base = this.options.store.getState().project?.document ?? null;
       const doc = this.options.read();
       if (doc === null) {
         return;
       }
       const json = JSON.stringify(doc);
-      read = { doc, json };
+      read = { doc, json, base };
       reading.end();
 
       const previewOptions: PreviewOptions = { indentWidth: this.indentWidth() };
       const update = startSpan('b2c:preview:update');
-      let result: UpdateResult;
+      let answer: PreviewAnswer | null;
       try {
-        result = await this.service.update(json, previewOptions);
+        answer = await this.service.update(json, previewOptions);
       } catch (error: unknown) {
         if (!(error instanceof CoreTrap)) {
           throw error;
         }
         trapped = true;
-        await this.recover(error);
+        await this.recoverService(error);
         check();
-        result = await this.service.update(json, previewOptions);
+        answer = await this.service.update(json, previewOptions);
       }
+      if (answer === null) {
+        // A newer run's request replaced this one.
+        throw new Abandoned();
+      }
+      const result: UpdateResult = answer.result;
       check();
+      this.checkBase(seq, read);
       update.end();
       const hashes = hashesOf(result);
       if (hashes === null) {
@@ -258,7 +272,10 @@ export class PreviewPipeline {
       } else {
         console.error('The live preview failed', error);
       }
-      if (read !== null) {
+      // A run that failed after its commit (`onCommitted`, or a hook or a store subscriber that
+      // throws while the preview is published) has its document committed already: committing it
+      // again would trip the base check on its own write and read the canvas forever.
+      if (read !== null && this.committed !== seq) {
         await this.commitWithoutPreview(seq, read, check);
       }
     }
@@ -289,6 +306,7 @@ export class PreviewPipeline {
         check();
         canonical = core.canonical(read.json);
       }
+      this.checkBase(seq, read);
       if (canonical.ok) {
         this.commit(seq, read.doc, { textHash: canonical.textHash, contentHash: canonical.hash });
       } else {
@@ -323,6 +341,8 @@ export class PreviewPipeline {
     if (project === null) {
       return;
     }
+    // Before the store update, whose subscribers may throw after the document is written.
+    this.committed = seq;
     actions.updateProjectAndAnalysis(
       {
         document: doc,
@@ -332,8 +352,25 @@ export class PreviewPipeline {
       },
       analysis.notice === 'syncFailed' ? { seq, notice: null } : { seq },
     );
-    this.committed = seq;
     this.options.onCommitted?.(doc);
+  }
+
+  /**
+   * Drops a run's answer (throws {@link Abandoned}) when the project's document is no longer the
+   * one the run read against: something else (a rename, an adopted save) wrote it since, and
+   * committing the run's document would undo that. When the run is the latest, the canvas is read
+   * again. A run's own commit would trip it too, so it is checked only before that commit: a run
+   * that fails after committing does not commit again (see the end of `run`).
+   */
+  private checkBase(seq: number, read: ReadDocument): void {
+    const current = this.options.store.getState().project?.document ?? null;
+    if (current === read.base) {
+      return;
+    }
+    if (seq === this.latest) {
+      this.schedule();
+    }
+    throw new Abandoned();
   }
 
   /** The running core, starting it if needed. */
@@ -342,6 +379,18 @@ export class PreviewPipeline {
       return this.options.host.current() ?? (await this.options.host.start());
     } catch (error: unknown) {
       console.error('The compiler core could not be started', error);
+      throw new Abandoned();
+    }
+  }
+
+  /** Gets the service a fresh instance after a trap in `update()`. */
+  private async recoverService(trap: CoreTrap): Promise<void> {
+    console.error('The compiler core stopped; starting a new one', trap);
+    try {
+      await this.service.recover();
+    } catch (error: unknown) {
+      console.error('The compiler core could not be restarted', error);
+      this.setNotice('trapRecovered');
       throw new Abandoned();
     }
   }

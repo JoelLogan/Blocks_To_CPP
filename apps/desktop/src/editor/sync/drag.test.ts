@@ -27,7 +27,7 @@
  *   one Undo takes the drop back, and the drop runs one preview (04 §4.2). A *set* whose variable
  *   was chosen in the toolbox keeps it, with the start value of its type.
  */
-import type { BdmDocument, UpdateResult } from '@blocks2cpp/b2c-core-wasm';
+import type { BdmDocument } from '@blocks2cpp/b2c-core-wasm';
 import { b2cDarkTheme, b2cLightTheme, readExprShadow } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -36,7 +36,7 @@ import appCss from '../../app/app.css?raw';
 import { contrastOf, declarationsOf, parseRules, themeTokens } from '../../app/layout/cssAudit';
 import { useAppStore } from '../../app/store';
 import { editorInjectOptions } from '../EditorWorkspace';
-import type { PreviewService } from '../preview/service';
+import type { PreviewAnswer, PreviewService } from '../preview/service';
 import { createToolboxPlugin, toolboxInjectOptions } from '../toolbox';
 import {
   B2cBlockDragger,
@@ -1287,10 +1287,16 @@ function countingPreviews(): PreviewService & { readonly runs: () => number } {
   let runs = 0;
   return {
     runs: () => runs,
-    update(json, options): Promise<UpdateResult> {
+    thread: () => 'main',
+    update(json, options): Promise<PreviewAnswer> {
       runs += 1;
-      return Promise.resolve(wasm.update(json, options));
+      return Promise.resolve({
+        result: wasm.update(json, options),
+        scopeJson: null,
+        timing: { startedAt: 0, updateMs: 0, indexMs: 0 },
+      });
     },
+    recover: () => Promise.resolve(),
   };
 }
 

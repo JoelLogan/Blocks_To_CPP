@@ -123,10 +123,27 @@ describe('the main-thread preview service', () => {
       getCore,
       setCore,
     });
-    const result = (await mainThreadPreviewService(host).update('{"a":1}', {
-      indentWidth: 4,
-    })) as unknown as { method: string; args: unknown[] };
+    const times = [10, 25];
+    const service = mainThreadPreviewService(host, () => times.shift() ?? 0);
+    expect(service.thread()).toBe('main');
+    const answer = await service.update('{"a":1}', { indentWidth: 4 });
+    const result = answer?.result as unknown as { method: string; args: unknown[] };
     expect(result.method).toBe('update');
     expect(result.args).toEqual(['{"a":1}', { indentWidth: 4 }]);
+    expect(answer?.scopeJson).toBeNull();
+    expect(answer?.timing).toEqual({ startedAt: 10, updateMs: 15, indexMs: 0 });
+  });
+
+  it('recovers by restarting the host’s core', async () => {
+    const resetCore = vi.fn();
+    const host = createCoreHost({
+      initCore: () => Promise.resolve(namedCore('fresh')),
+      resetCore,
+      getCore,
+      setCore,
+    });
+    await mainThreadPreviewService(host).recover();
+    expect(resetCore).toHaveBeenCalledTimes(1);
+    expect((host.current()?.version() as unknown as { name: string }).name).toBe('fresh');
   });
 });
