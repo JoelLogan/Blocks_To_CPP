@@ -840,6 +840,31 @@ fn the_program_reads_its_arguments_but_never_changes_them() {
     );
 }
 
+/// `create int args = 0` with its own symbol, beside the program's
+/// arguments `args`.
+fn local_args() -> Value {
+    serde_json::json!({"id": "local", "type": "var.declare", "v": 1,
+                       "fields": {"TYPE": "int", "NAME": {"sym": "sym_local_args", "name": "args"}},
+                       "inputs": {"VALUE": e("0")}})
+}
+
+#[test]
+fn a_local_at_the_top_of_main_cannot_take_the_arguments_name() {
+    // C++ declares the arguments in `main`'s own block: a second `args`
+    // there does not compile.
+    let a = analyze(&doc(vec![main_with_args(true, vec![local_args()])]));
+    assert_codes(&a, &["B2C-E0210"]);
+    // In a nested block it hides them, as C++ allows.
+    let a = analyze(&doc(vec![main_with_args(
+        true,
+        vec![if_then(e("true"), vec![local_args()])],
+    )]));
+    assert_codes(&a, &["B2C-W0501"]);
+    // Without the tick there are no arguments to clash with.
+    let a = analyze(&doc(vec![main_with_args(false, vec![local_args()])]));
+    assert_clean(&a);
+}
+
 // --- Struct field defaults (w2.md §1.9) ---------------------------------------------------
 
 /// *struct* `name` with these `(field, type, default)` rows; a field's

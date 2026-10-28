@@ -625,7 +625,9 @@ impl<'d> Lowerer<'d> {
         self.record_block(&block.id);
         self.add_headers(block, true);
         // With arguments (w2.md §1.9): `ARGV` encloses the body, as a
-        // function's parameters do.
+        // function's parameters do, and shares its scope: C++ declares it
+        // in the body's own block, so a top-level local of its name is a
+        // second declaration there, not one that hides it.
         let with_args = self.checkbox(block, "ARGS", false);
         let args = if with_args {
             self.scopes.push(ListKey::new(&block.id, PARAMS_LIST), false);
@@ -633,7 +635,7 @@ impl<'d> Lowerer<'d> {
         } else {
             None
         };
-        let (body, end) = self.body_and_end(block, "BODY", false);
+        let (body, end) = self.body_and_end(block, "BODY", with_args);
         if with_args {
             self.scopes.pop();
         }
