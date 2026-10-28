@@ -16,20 +16,25 @@
 //! 3. prepares `<cache>/builds/<project>/<config>-<hash8>/`, waits for its
 //!    lock (or for cancellation) and marks it as used;
 //! 4. writes the generated files that changed, the source map and, for IDE
-//!    builds, the init unit (07 §7.6.3);
-//! 5. is *up to date* when nothing was written and the build manifest
-//!    records exactly this build's inputs and still matches the executable;
+//!    builds, the init unit (07 §7.6.3), and deletes the generated files of
+//!    an earlier build that this one does not generate (a renamed module's),
+//!    so `gen/` holds exactly this build's files;
+//! 5. is *up to date* when nothing was written or deleted and the build
+//!    manifest records exactly this build's inputs and still matches the
+//!    executable;
 //! 6. otherwise deletes the manifest and compiles: a single translation
 //!    unit (plus the init unit) in one compile-and-link invocation, several
 //!    in parallel (at most `min(available_parallelism, 8)` at once) and then
-//!    a link once all have succeeded;
+//!    a link once all have succeeded, with the objects named relative to the
+//!    compiler's working directory (`../out/<stem>.o`);
 //! 7. maps every compiler and linker message to the blocks through the source
 //!    map (07 §7.5.3), sorted by translation unit, so the order never
 //!    depends on which compiler finished first;
 //! 8. on success records the manifest atomically and marks the folder as
 //!    used again (so it is the most recently used entry when eviction runs
 //!    after the build; an up-to-date build does the same); on failure or
-//!    cancellation deletes the executable and the objects it was making.
+//!    cancellation deletes the executable and the objects it was making, by
+//!    their absolute paths.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -51,7 +56,10 @@ use b2c_toolchain::probe::{ProbeError, ProbeOptions, Toolchain, probe};
 use b2c_toolchain::target::Platform;
 use sha2::{Digest as _, Sha256};
 
-use crate::build_dir::{BuildDir, BuildDirError, write_generated_tracked, write_if_changed};
+use crate::build_dir::{
+    BuildDir, BuildDirError, prune_generated, stale_generated_files, write_generated_tracked,
+    write_if_changed,
+};
 use crate::frontend::{FrontendOptions, run_frontend_cancellable};
 use crate::ide;
 use crate::manifest::{self, ManifestInputs, ManifestStep, ManifestToolchain, StepKind};
@@ -598,6 +606,12 @@ struct Project<'a> {
 struct Step {
     kind: StepKind,
     command: CompilerCommand,
+    /// The absolute path of what the step writes (an object or the
+    /// executable). Its argv may name it relative to the compiler's working
+    /// directory (`../out/main.o`); whatever opens or deletes the output uses
+    /// this path, never the argv's text, which would be read relative to
+    /// this process's working folder (w3-modules.md §2.7).
+    output: PathBuf,
 }
 
 /// Prepares the build folder, decides whether the program is up to date,
@@ -703,13 +717,18 @@ fn prepare(
     plan: &CommandPlan,
     project_hash: [u8; 32],
 ) -> Result<Prepared, BuildError> {
-    // A build whose generated files change must never look up to date, even
-    // if it is interrupted before it compiles: drop the manifest first.
-    let pending = files_differ(dir, project.generated, input.ide);
+    // A build whose generated files change (or go) must never look up to
+    // date, even if it is interrupted before it compiles: drop the manifest
+    // first.
+    let pending = files_differ(dir, project.generated, input.ide)
+        || !stale_generated_files(&dir.gen_dir(), project.generated).is_empty();
     if pending {
         manifest::remove(dir.root()).map_err(|error| manifest_error(&error))?;
     }
     let written = write_generated_tracked(&dir.gen_dir(), project.generated)?;
+    // `gen/` holds exactly this build's files: those of a renamed or deleted
+    // module go (w3-modules.md §2.7), and a deletion is a change.
+    let pruned = prune_generated(&dir.gen_dir(), project.generated)?;
     if let Ok(json) = serde_json::to_vec_pretty(&project.generated.source_map) {
         write_if_changed(&dir.root().join("sourcemap.json"), &json)?;
     }
@@ -718,7 +737,7 @@ fn prepare(
         return Err(BuildError::Internal("the generated project has no source file"));
     }
     let mut sources = written.sources;
-    let mut changed = pending || written.changed;
+    let mut changed = pending || written.changed || pruned;
     if input.ide {
         let (path, ide_changed) = ide::write_init_unit(dir)?;
         changed |= ide_changed;
@@ -826,21 +845,13 @@ fn files_differ(dir: &BuildDir, generated: &GeneratedProject, ide: bool) -> bool
             ))
 }
 
-/// Deletes what the steps write (objects and the executable), best effort:
-/// a running program on Windows cannot be deleted, and its manifest is
-/// already gone.
+/// Deletes what the steps write (objects and the executable), by their
+/// absolute paths, best effort: a running program on Windows cannot be
+/// deleted, and its manifest is already gone.
 fn remove_outputs(steps: &[Step]) {
     for step in steps {
-        if let Some(output) = output_of(&step.command) {
-            let _ = std::fs::remove_file(output);
-        }
+        let _ = std::fs::remove_file(&step.output);
     }
-}
-
-/// The `-o` argument of a compiler command.
-fn output_of(command: &CompilerCommand) -> Option<PathBuf> {
-    let position = command.args.iter().position(|arg| arg == "-o")?;
-    command.args.get(position + 1).map(PathBuf::from)
 }
 
 /// `<config>-<hash8>`: one build folder per configuration, toolchain and set
@@ -895,6 +906,12 @@ pub(crate) fn program_name(document: &Document) -> String {
 /// `main_count`) followed by the IDE init unit, if any. One generated source
 /// is compiled and linked with the init unit in one invocation; several are
 /// compiled one by one (the init unit too) and then linked.
+///
+/// The objects are named relative to the compiler's working directory
+/// (`../out/<stem>.o`, [`BuildDir::out_dir_from_diag`]), so the link line of
+/// 257 units stays well under Windows' 32,767 characters however deep the
+/// cache folder is (w3-modules.md §2.7); each step also keeps its output's
+/// absolute path, for [`remove_outputs`].
 fn plan_steps(
     plan: &CommandPlan,
     sources: &[PathBuf],
@@ -906,29 +923,35 @@ fn plan_steps(
         return vec![Step {
             kind: StepKind::CompileAndLink,
             command: plan.compile_and_link_many(sources, executable),
+            output: executable.to_path_buf(),
         }];
     }
-    let objects: Vec<PathBuf> = sources
+    let names: Vec<String> = sources
         .iter()
         .map(|source| {
             let stem = source
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            dir.out_dir().join(format!("{stem}.o"))
+            format!("{stem}.o")
         })
         .collect();
+    let from_diag = dir.out_dir_from_diag();
+    let objects: Vec<PathBuf> = names.iter().map(|name| from_diag.join(name)).collect();
     let mut steps: Vec<Step> = sources
         .iter()
         .zip(&objects)
-        .map(|(source, object)| Step {
+        .zip(&names)
+        .map(|((source, object), name)| Step {
             kind: StepKind::Compile,
             command: plan.compile(source, object),
+            output: dir.out_dir().join(name),
         })
         .collect();
     steps.push(Step {
         kind: StepKind::Link,
         command: plan.link(&objects, executable),
+        output: executable.to_path_buf(),
     });
     steps
 }
@@ -2011,20 +2034,147 @@ mod tests {
         }
     }
 
+    /// [`fake_toolchain`] for Windows (MinGW), which links statically.
+    fn windows_toolchain() -> Toolchain {
+        let mut windows = fake_toolchain();
+        windows.target = b2c_toolchain::target::Target::parse("x86_64-w64-mingw32");
+        windows.fingerprint.path = PathBuf::from("/opt/mingw64/bin/g++.exe");
+        windows.capabilities.static_link = true;
+        windows
+    }
+
+    /// The steps of a build of `stems` (and the IDE init unit) in `dir`.
+    fn steps_for(toolchain: &Toolchain, dir: &BuildDir, stems: &[String]) -> Vec<Step> {
+        let document = document();
+        let extra = ExtraFlags::none();
+        let inputs = BuildInputs::new(
+            toolchain,
+            Configuration::Debug.settings(&document),
+            document.project.language,
+            dir.gen_dir(),
+            &extra,
+        );
+        let plan = CommandPlan::new(&inputs).unwrap();
+        let mut sources: Vec<PathBuf> = stems
+            .iter()
+            .map(|stem| dir.gen_dir().join(format!("{stem}.cpp")))
+            .collect();
+        sources.push(dir.ide_dir().join(ide::INIT_UNIT_FILE));
+        plan_steps(&plan, &sources, stems.len(), dir, &dir.out_dir().join("main.exe"))
+    }
+
+    /// The `-o` argument of a step.
+    fn dash_o(step: &Step) -> &std::ffi::OsStr {
+        let args = &step.command.args;
+        let position = args.iter().position(|arg| arg == "-o").unwrap();
+        &args[position + 1]
+    }
+
+    /// How long the command line that `CreateProcess` gets for `command`
+    /// is: every argument, a space after each, quotes around one that is
+    /// empty or holds a space or tab.
+    fn command_line_length(command: &CompilerCommand) -> usize {
+        std::iter::once(command.program.as_os_str())
+            .chain(command.args.iter().map(std::ffi::OsString::as_os_str))
+            .map(|arg| {
+                let text = arg.to_string_lossy();
+                let quotes = if text.is_empty() || text.contains([' ', '\t']) {
+                    2
+                } else {
+                    0
+                };
+                text.len() + 1 + quotes
+            })
+            .sum()
+    }
+
+    /// In the compiler's argv, objects are named from its working folder
+    /// (`../out/main.o`); each step keeps the absolute path of its output,
+    /// and a failed build deletes the outputs by those paths only.
     #[test]
-    fn outputs_are_the_dash_o_arguments() {
-        let command = CompilerCommand {
-            program: PathBuf::from("/usr/bin/g++"),
-            args: vec!["-c".into(), "a.cpp".into(), "-o".into(), "/b/out/a.o".into()],
-            format: b2c_toolchain::probe::DiagnosticsFormat::Plain,
-            sarif_files: Vec::new(),
-        };
-        assert_eq!(output_of(&command), Some(PathBuf::from("/b/out/a.o")));
-        let no_output = CompilerCommand {
-            args: vec!["-c".into(), "a.cpp".into(), "-o".into()],
-            ..command
-        };
-        assert_eq!(output_of(&no_output), None);
+    fn objects_are_named_from_the_compiler_folder_and_deleted_by_absolute_path() {
+        let cache = tempfile::tempdir().unwrap();
+        let project = b2c_ir::ids::ProjectId::new("prj_paths").unwrap();
+        let dir = BuildDir::create(cache.path(), &project, "debug-0123abcd").unwrap();
+        let steps = steps_for(
+            &fake_toolchain(),
+            &dir,
+            &[String::from("main"), String::from("utils")],
+        );
+        let kinds: Vec<StepKind> = steps.iter().map(|step| step.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                StepKind::Compile,
+                StepKind::Compile,
+                StepKind::Compile,
+                StepKind::Link
+            ]
+        );
+        for (step, name) in steps.iter().zip(["main.o", "utils.o", "b2c_ide_init.o"]) {
+            assert_eq!(step.output, dir.out_dir().join(name));
+            assert_eq!(Path::new(dash_o(step)), Path::new("..").join("out").join(name));
+            assert!(step.command.args.iter().any(|arg| arg == "-c"));
+        }
+        let link = &steps[3];
+        let executable = dir.out_dir().join("main.exe");
+        assert_eq!(link.output, executable);
+        assert_eq!(Path::new(dash_o(link)), executable);
+        for name in ["main.o", "utils.o", "b2c_ide_init.o"] {
+            let relative = Path::new("..").join("out").join(name);
+            assert!(
+                link.command.args.iter().any(|arg| Path::new(arg) == relative),
+                "{:?}",
+                link.command.args
+            );
+        }
+        // The relative names reach the outputs from the compiler's folder.
+        for step in &steps {
+            std::fs::write(&step.output, "built").unwrap();
+            assert!(dir.diag_dir().join(dash_o(step)).is_file());
+        }
+        remove_outputs(&steps);
+        for step in &steps {
+            assert!(!step.output.exists(), "{}", step.output.display());
+        }
+
+        // One translation unit: one step, writing the executable.
+        let single = steps_for(&fake_toolchain(), &dir, &[String::from("main")]);
+        assert_eq!(single.len(), 1);
+        assert_eq!(single[0].kind, StepKind::CompileAndLink);
+        assert_eq!(single[0].output, executable);
+    }
+
+    /// g++'s link argv for 256 modules with 64-character stems (and the
+    /// IDE init unit) stays under 26,000 characters however deep the cache
+    /// folder is, leaving room under Windows' 32,767 for what collect2 and
+    /// ld add (w3-modules.md §2.7).
+    #[test]
+    fn the_link_line_of_256_modules_with_long_stems_stays_short() {
+        let cache = tempfile::tempdir().unwrap();
+        let deep = cache
+            .path()
+            .join("a".repeat(60))
+            .join("b".repeat(60))
+            .join("c".repeat(60));
+        let project = b2c_ir::ids::ProjectId::new("prj_long_names").unwrap();
+        let dir = BuildDir::create(&deep, &project, "release-0123abcd").unwrap();
+        let modules: Vec<String> = (0..256).map(|index| format!("m{index:063}")).collect();
+        assert!(modules.iter().all(|stem| stem.len() == 64));
+        for toolchain in [fake_toolchain(), windows_toolchain()] {
+            let planned = steps_for(&toolchain, &dir, &modules);
+            assert_eq!(planned.len(), 258);
+            let link = planned.last().unwrap();
+            assert_eq!(link.kind, StepKind::Link);
+            let length = command_line_length(&link.command);
+            assert!(length < 26_000, "{length}");
+            // Absolute objects would not fit: the bound is the relative names'.
+            let absolute: usize = modules
+                .iter()
+                .map(|stem| dir.out_dir().join(format!("{stem}.o")).as_os_str().len() + 1)
+                .sum();
+            assert!(absolute > 32_767, "{absolute}");
+        }
     }
 
     fn document() -> Document {

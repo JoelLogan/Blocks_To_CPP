@@ -2,7 +2,9 @@
 //!
 //! ```text
 //! <cache>/builds/<project folder>/<config>-<optionsHash8>/
-//! ├── gen/    generated sources (rewritten only when their content changes)
+//! ├── gen/    exactly the generated sources: each rewritten only when its
+//! │           content changes, and the files of an earlier build that this
+//! │           one does not generate (a renamed module's) deleted
 //! ├── ide/    the IDE-only init unit (never exported)
 //! ├── diag/   compiler working directory (SARIF files land here)
 //! ├── out/    the final executable
@@ -38,6 +40,9 @@ use sha2::{Digest as _, Sha256};
 
 /// The lock file's name inside a build folder (also used by `crate::cache`).
 const LOCK_FILE: &str = "lock";
+
+/// The executable's (and the objects') folder inside a build folder.
+const OUT_DIR: &str = "out";
 
 /// How long [`BuildDir::try_lock_until`] waits between attempts.
 const LOCK_POLL: Duration = Duration::from_millis(20);
@@ -175,9 +180,19 @@ impl BuildDir {
         self.root.join("diag")
     }
 
-    /// The final executable's folder.
+    /// The final executable's folder, which also holds the objects of a
+    /// build with several translation units.
     pub fn out_dir(&self) -> PathBuf {
-        self.root.join("out")
+        self.root.join(OUT_DIR)
+    }
+
+    /// [`Self::out_dir`] as the compiler reaches it from its working
+    /// directory, [`Self::diag_dir`]: `../out`. Objects are named this way in
+    /// a compiler's argv, so the link line of 257 objects stays short however
+    /// deep the cache folder is (`docs/plans/m3-contracts/w3-modules.md`
+    /// §2.7); whatever opens or deletes a file uses its absolute path.
+    pub fn out_dir_from_diag(&self) -> PathBuf {
+        Path::new("..").join(OUT_DIR)
     }
 
     /// A private temporary folder for the compiler.
@@ -343,6 +358,59 @@ pub(crate) fn write_generated_tracked(
         }
     }
     Ok(written)
+}
+
+/// The files of `dir` that a build of `project` must delete so the folder
+/// holds exactly the generated files (`docs/plans/m3-contracts/w3-modules.md`
+/// §2.7): every regular file (looked at with `symlink_metadata`, so a link is
+/// never one) whose name is a generated file name and is not among
+/// `project`'s files. A renamed or deleted module leaves such a file behind.
+/// Anything else (a link, a folder, a file with another name, a temporary
+/// file) is left alone; a folder that cannot be read has none.
+pub(crate) fn stale_generated_files(dir: &Path, project: &GeneratedProject) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut stale: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry.file_name().to_str().is_some_and(|name| {
+                is_generated_file_name(name) && !project.files.iter().any(|file| file.path == name)
+            })
+        })
+        .map(|entry| entry.path())
+        .filter(|path| {
+            fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file() && !metadata.is_symlink())
+        })
+        .collect();
+    stale.sort();
+    stale
+}
+
+/// Deletes the files [`stale_generated_files`] names, so `dir` (a build
+/// folder's `gen/`) holds exactly `project`'s files; returns whether it
+/// deleted any (a deletion is a change of the build's inputs). Only a
+/// build's own `gen/` is pruned: [`write_generated_files`], which
+/// `b2c generate` uses on a folder the user chose, never deletes anything.
+///
+/// # Errors
+/// Fails when a stale file cannot be deleted.
+pub(crate) fn prune_generated(dir: &Path, project: &GeneratedProject) -> Result<bool, BuildDirError> {
+    let stale = stale_generated_files(dir, project);
+    for path in &stale {
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(BuildDirError::Io {
+                    action: "delete the old generated file",
+                    path: path.clone(),
+                    source,
+                });
+            }
+        }
+    }
+    Ok(!stale.is_empty())
 }
 
 /// Creates (or reuses) `<cache_root>/sandbox/<project folder>/`, the working
@@ -630,6 +698,65 @@ mod tests {
             fs::read_to_string(folder.path().join("main.hpp")).unwrap(),
             "// b\n"
         );
+    }
+
+    /// Pruning deletes the generated files of an earlier build that this one
+    /// does not generate, and nothing else: not a file with another name, not
+    /// a folder, never a link (nor what it points to). Writing never prunes.
+    #[test]
+    fn pruning_deletes_only_stale_generated_files() {
+        let folder = tempfile::tempdir().unwrap();
+        let dir = folder.path();
+        let project = generated("main.cpp", "int main() {}\n");
+        write_generated_tracked(dir, &project).unwrap();
+        for name in [
+            "old.cpp",
+            "old.hpp",
+            "notes.txt",
+            "Upper.cpp",
+            "b2c_ide_init.cpp",
+            ".tmp123.cpp",
+        ] {
+            fs::write(dir.join(name), "// kept or not").unwrap();
+        }
+        fs::create_dir(dir.join("folder.cpp")).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let victim = outside.path().join("victim.cpp");
+        fs::write(&victim, "keep me").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&victim, dir.join("link.cpp")).unwrap();
+
+        // Writing alone leaves every file there.
+        assert!(!write_generated_tracked(dir, &project).unwrap().changed);
+        assert!(dir.join("old.cpp").is_file());
+
+        assert_eq!(
+            stale_generated_files(dir, &project),
+            vec![dir.join("old.cpp"), dir.join("old.hpp")]
+        );
+        assert!(prune_generated(dir, &project).unwrap());
+        let mut left: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        let mut expected = vec![
+            ".tmp123.cpp",
+            "Upper.cpp",
+            "b2c_ide_init.cpp",
+            "folder.cpp",
+            "main.cpp",
+            "notes.txt",
+        ];
+        if cfg!(unix) {
+            expected.push("link.cpp");
+            expected.sort_unstable();
+        }
+        assert_eq!(left, expected);
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "keep me");
+        // Nothing more to delete: no change.
+        assert!(!prune_generated(dir, &project).unwrap());
+        assert!(stale_generated_files(&dir.join("missing"), &project).is_empty());
     }
 
     /// Windows device names (any case) are refused as generated file stems
