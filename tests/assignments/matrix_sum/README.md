@@ -1,7 +1,6 @@
 # Matrix sum
 
-An M3 acceptance assignment ([index](../README.md)). Status: pending, until
-the blocks it needs arrive in wave W2.
+An M3 acceptance assignment ([index](../README.md)). Status: green since W2.
 
 ## The assignment
 

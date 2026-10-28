@@ -22,6 +22,10 @@
 //!   `README.md` and, if it has one, `reference.cpp`, which must pass on the
 //!   golden run data.
 //!
+//! Each assignment's README says where it stands in its opening "Status:"
+//! sentence, which must match `status.toml`, as must the index of
+//! `tests/assignments/README.md`.
+//!
 //! Every program runs through `common::run_data`, as in `golden.rs`: in a
 //! copy of its run folder, which must be unchanged afterwards. When g++ is
 //! there, the run check prints a progress line, such as "M3 assignments: 1
@@ -204,8 +208,9 @@ fn layout_problems(assignment: &Assignment) -> Vec<String> {
     let name = &assignment.name;
     let folder = assignment.folder();
     let mut problems = Vec::new();
-    if !folder.join("README.md").is_file() {
-        problems.push(format!("{name}: tests/assignments/{name}/ has no README.md"));
+    match std::fs::read_to_string(folder.join("README.md")) {
+        Ok(readme) => problems.extend(status_line_problem(&readme, assignment)),
+        Err(_) => problems.push(format!("{name}: tests/assignments/{name}/ has no README.md")),
     }
     match assignment.status {
         Status::Pending => {
@@ -258,6 +263,30 @@ fn layout_problems(assignment: &Assignment) -> Vec<String> {
         }
     }
     problems
+}
+
+/// What is wrong with the "Status:" sentence of an assignment's own
+/// README, if anything: its first word after "Status:" (where the text may
+/// wrap) must be the assignment's status in `status.toml`, as in "Status:
+/// pending, until …" or "Status: green since W2.".
+fn status_line_problem(readme: &str, assignment: &Assignment) -> Option<String> {
+    let name = &assignment.name;
+    let at = format!("tests/assignments/{name}/README.md");
+    let mut words = readme.split_whitespace();
+    if !words.any(|word| word == "Status:") {
+        return Some(format!("{name}: {at} has no \"Status:\" sentence"));
+    }
+    let said = words
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(|c: char| !c.is_ascii_alphanumeric());
+    let expected = assignment.status.word();
+    (said != expected).then(|| {
+        format!(
+            "{name}: is {expected} in status.toml but its {at} says \"Status: {said}\"; \
+             update that sentence (tests/assignments/README.md, \"Turning an assignment green\")"
+        )
+    })
 }
 
 /// One assignment row of the README's index.
@@ -453,6 +482,53 @@ fn the_index_is_read_strictly() {
     ] {
         let problems = index_problems(&bad, &listed).join("\n");
         assert!(problems.contains(expected), "{bad}\n{problems}");
+    }
+}
+
+#[test]
+fn the_status_sentence_is_read_strictly() {
+    let pending = Assignment {
+        name: "a".to_owned(),
+        status: Status::Pending,
+    };
+    let green = Assignment {
+        name: "a".to_owned(),
+        status: Status::Green,
+    };
+    let page =
+        |status: &str| format!("# A\n\nAn M3 acceptance assignment. Status: {status}\n\n## The assignment\n");
+    assert_eq!(status_line_problem(&page("green since W2."), &green), None);
+    assert_eq!(status_line_problem(&page("green since M2."), &green), None);
+    assert_eq!(
+        status_line_problem(&page("pending, until\nthe blocks arrive."), &pending),
+        None
+    );
+    // The sentence may wrap right after "Status:".
+    assert_eq!(
+        status_line_problem("Status:\npending, until W2.\n", &pending),
+        None
+    );
+    for (readme, assignment, expected) in [
+        (
+            page("pending, until\nthe blocks it needs arrive in wave W2."),
+            &green,
+            "a: is green in status.toml but its tests/assignments/a/README.md says \"Status: pending\"",
+        ),
+        (
+            page("green since W2."),
+            &pending,
+            "a: is pending in status.toml but its tests/assignments/a/README.md says \"Status: green\"",
+        ),
+        (page("done."), &green, "says \"Status: done\""),
+        (page(""), &green, "says \"Status: \""),
+        (
+            "# A\n\nAn M3 acceptance assignment.\n".to_owned(),
+            &green,
+            "has no \"Status:\" sentence",
+        ),
+    ] {
+        let problem = status_line_problem(&readme, assignment).unwrap_or_default();
+        assert!(problem.contains(expected), "{readme:?}: {problem}");
     }
 }
 

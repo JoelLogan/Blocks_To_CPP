@@ -87,6 +87,8 @@ checks every assignment in `status.toml`:
 - The index above has exactly one row for each assignment in
   `status.toml`, in the same order, with its status in the last column,
   and every folder here is listed in `status.toml`.
+- Each assignment's own README says the same status: the first word after
+  "Status:" in it is `pending` or `green`, as in `status.toml`.
 
 Both tests build and run programs with the same helpers
 ([`common/run_data.rs`](../../crates/b2c-build/tests/common/run_data.rs)),
@@ -119,8 +121,10 @@ B2C_REQUIRE_GXX=1 cargo test -p b2c-build --test assignments
 3. Write the generated C++ with
    `B2C_UPDATE_GOLDEN=1 cargo test -p b2c-build --test golden`, and review
    `tests/golden/<name>/main.cpp`.
-4. Change the assignment to `"green"` in `status.toml` and in the index's
-   last column, and add the example to
+4. Change the assignment to `"green"` in `status.toml`, in the index's
+   last column and in the "Status:" sentence at the top of
+   `tests/assignments/<name>/README.md` (for example "Status: green since
+   W2."), and add the example to
    [`examples/README.md`](../../examples/README.md).
 5. Check with
    `B2C_REQUIRE_GXX=1 cargo test -p b2c-build --test assignments --test golden`,
