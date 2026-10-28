@@ -119,6 +119,19 @@ fn input_label(name: &str) -> String {
         "PROMPT" => String::from("a question"),
         "CASE" => format!("the value of case {}", index + 1),
         "PATH" => String::from("the path of a file"),
+        "TEXT" => String::from("the text"),
+        "SEPARATOR" => String::from("the separator"),
+        "DIGITS" => String::from("the number of decimal places"),
+        "MESSAGE" => String::from("a message"),
+        "START" => String::from("the start position"),
+        "LENGTH" => String::from("the length"),
+        "OLD" => String::from("the text to replace"),
+        "NEW" => String::from("the text to put in its place"),
+        "PART" => String::from("the text to look for"),
+        "OBJ" => String::from("the struct value whose field is read"),
+        "SECONDS" => String::from("the number of seconds"),
+        "DEFAULT" => String::from("a default value"),
+        "FIELD" => format!("the value of field {}", index + 1),
         _ => format!("a value for {}", quoted(name)),
     }
 }
@@ -1278,6 +1291,31 @@ mod tests {
             "A", "B", "BY", "TIMES", "FROM", "TO", "STEP", "LOW", "HIGH", "THEN", "ELSE", "CODE", "PROMPT",
         ] {
             assert!(!input_label(name).contains('`'), "{name}");
+        }
+        assert_eq!(input_label("SEPARATOR"), "the separator");
+        assert_eq!(input_label("FIELD1"), "the value of field 2");
+    }
+
+    /// Every value input of the catalog has a friendly label: a message
+    /// never names an input by its internal name ("a value for `TEXT`").
+    #[test]
+    fn every_catalog_input_has_a_label() {
+        for block in b2c_catalog::core_catalog().blocks.values() {
+            for input in &block.input {
+                let names = if input.repeat.is_some() {
+                    vec![format!("{}0", input.name), format!("{}1", input.name)]
+                } else {
+                    vec![input.name.clone()]
+                };
+                for name in names {
+                    let label = input_label(&name);
+                    assert!(
+                        !label.contains('`') && !label.starts_with("a value for"),
+                        "{}: {name} reads {label:?}",
+                        block.id
+                    );
+                }
+            }
         }
     }
 

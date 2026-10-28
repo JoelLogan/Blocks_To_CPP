@@ -493,8 +493,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - New diagnostics `B2C-E0424` to `B2C-E0428`, `B2C-W0507` (a catch part
   that never runs) and `B2C-W0508` (a switch on an enum that misses values
   and has no default part); `B2C-E0402`, `B2C-E0420` and `B2C-E0421` are
-  reported for the first time, and `B2C-E0430` names each empty menu of the
-  new blocks.
+  reported for the first time, and `B2C-E0430` names each empty menu and
+  input of the new blocks in words ("This block needs the separator.").
 - The analyser refuses programs that g++ would reject or run wrongly: a
   variable, function input, loop item, caught error, the program's arguments
   or a field named like a struct or enum is `B2C-E0210`; a path of _open

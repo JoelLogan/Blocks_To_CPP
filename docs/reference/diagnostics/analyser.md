@@ -774,7 +774,8 @@ Codes by area:
   not to its default as in C++20 (`P{.y = 5}`).
 * **Example:** an `if` block whose condition slot is empty, or a `set` block
   with no variable chosen.
-* **Message:** "This block needs a condition." / "Choose a variable in this
+* **Message:** "This block needs a condition." / "This block needs the
+  separator." / "Choose a variable in this
   block." / "Choose a collection in this block." / "`pow` is not one of the
   choices for this setting." / "`kMax` is a constant, so it needs a value: give it
   one, or choose 'variable'." / "The program's arguments need a name." /
