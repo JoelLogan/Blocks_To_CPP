@@ -10,14 +10,19 @@
  * Only data and pure functions cross this seam; the catalog is the same for every workspace, so
  * it stays provided once given.
  */
+import type { FieldValue } from '@blocks2cpp/b2c-core-wasm';
 import type { BlockDefJson } from '@blocks2cpp/blockly-ext';
 
 /** What block paths need from the block catalog. */
 export interface PathCatalog {
   /** The catalog definition of a block type, or `undefined` for a type the catalog lacks. */
   readonly block: (type: string) => BlockDefJson | undefined;
-  /** How a `type` field shows a C++ type (`std::string` reads `string`). */
-  readonly typeName: (type: string) => string;
+  /**
+   * How a `type` field shows its value, as the document stores it: a name (`std::string` reads
+   * `string`), a template's term (`{"std::vector": "int"}` reads `list of int`), and a user type
+   * (`{"ref": id}`) by its name in `names` (symbol ID to name). `null` for a value that is no type.
+   */
+  readonly typeName: (type: FieldValue, names: ReadonlyMap<string, string>) => string | null;
 }
 
 let current: PathCatalog | null = null;

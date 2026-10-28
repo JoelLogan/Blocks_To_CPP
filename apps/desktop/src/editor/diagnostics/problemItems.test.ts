@@ -1,13 +1,14 @@
 /**
  * Problems' rows: merging the live and build diagnostics, dropping and dimming build ones, module
  * names, block paths (the M2 decision "Block paths in Problems"), sorting and keys. Pure: no
- * Blockly, only the block catalog of blockly-ext.
+ * workspace, only the block catalog of blockly-ext as the diagnostics plugin provides it.
  */
 import type { BdmBlock, BdmDocument } from '@blocks2cpp/b2c-core-wasm';
-import { catalogBlock, displayTypeName } from '@blocks2cpp/blockly-ext';
 import type { Diagnostic } from '@blocks2cpp/ipc-types';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import bankMenuText from '../../../../../examples/bank_menu.b2c?raw';
+import studentRecordsText from '../../../../../examples/student_records.b2c?raw';
 import { documentFixture } from '../../app/testing/fixtures';
 import {
   blockLabel,
@@ -19,10 +20,11 @@ import {
   shorten,
 } from './blockPath';
 import { type PathCatalog, pathCatalog, providePathCatalog, subscribePathCatalog } from './catalog';
+import { BLOCKLY_EXT_PATH_CATALOG } from './plugin';
 import { buildProblemItems, MAX_PROBLEM_ITEMS } from './problemItems';
 import { guessingGame } from './testing';
 
-const CATALOG: PathCatalog = { block: catalogBlock, typeName: displayTypeName };
+const CATALOG: PathCatalog = BLOCKLY_EXT_PATH_CATALOG;
 
 afterEach(() => {
   providePathCatalog(null);
@@ -165,6 +167,33 @@ describe('block paths', () => {
       'when program starts › create string variable › … < … › missing',
     );
     expect(pathIn(doc, 't1')).toBe('when program starts › print › "Hi⟨U+000A⟩there"');
+  });
+
+  it('fill in type fields that hold a list or a user type, named by the document', () => {
+    const records = JSON.parse(studentRecordsText) as BdmDocument;
+    expect(pathIn(records, 'b023')).toBe('when program starts › create list of Student variable');
+    const bank = JSON.parse(bankMenuText) as BdmDocument;
+    expect(pathIn(bank, 'b017')).toBe('when program starts › create Action variable');
+    const names = new Map([['s_Student', 'Student']]);
+    const label = (type: string, fields: BdmBlock['fields']): string =>
+      blockLabel(
+        { id: 'x', type, v: 1, ...(fields === undefined ? {} : { fields }) },
+        names,
+        CATALOG,
+      );
+    expect(label('var.declare', { TYPE: { 'std::vector': 'int' } })).toBe(
+      'create list of int variable',
+    );
+    expect(label('var.global', { KIND: 'variable', TYPE: { ref: 's_Student' } })).toBe(
+      'global variable Student',
+    );
+    expect(label('type.new', { TYPE: { ref: 's_Student' } })).toBe('new Student with');
+    expect(label('math.convert', { TO: { 'std::vector': 'double' } })).toBe('… as list of double');
+    // A user type the document does not declare, and a value that is no type.
+    expect(label('var.declare', { TYPE: { ref: 's_gone' } })).toBe('create unknown type variable');
+    expect(label('var.declare', { TYPE: { bad: 1 } as never })).toBe('create');
+    expect(label('math.convert', { TO: { bad: 1 } as never })).toBe('… as …');
+    expect(label('math.convert', {})).toBe('… as int');
   });
 
   it('name a function definition by its name, and its parameters in references', () => {

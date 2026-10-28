@@ -43,6 +43,16 @@ describe('block names', () => {
     expect(describeBlock(block('print'))).toBe('print');
   });
 
+  it('name the list type that a type field holds', () => {
+    const { block } = open();
+    const decl = block('decl');
+    decl.setFieldValue('{"std::vector":"int"}', 'TYPE');
+    expect(decl.getFieldValue('TYPE')).toBe('{"std::vector":"int"}');
+    expect(describeBlock(decl)).toBe('create list of int variable guess');
+    decl.setFieldValue('{"std::vector":"std::string"}', 'TYPE');
+    expect(describeNode(decl)).toBe('block “create list of string variable guess”');
+  });
+
   it('show a value slot by its value', () => {
     const { block } = open();
     const slot = block('decl').getInputTargetBlock('VALUE');

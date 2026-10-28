@@ -197,27 +197,33 @@ function templateParts(template: string): TemplatePart[] {
   return parts;
 }
 
-/** The text a dropdown or type field shows for its value, or null for other kinds of argument. */
+/**
+ * The text a dropdown or type field shows for its value, or null for other kinds of argument. A
+ * type field's value is a name or, for a template or a user type, its term (`{"std::vector":
+ * {"ref": id}}` reads `list of Student`, the user type named from `names`).
+ */
 function choiceText(
   catalog: PathCatalog,
   def: BlockDefJson,
   name: string,
   value: FieldValue | undefined,
+  names: ReadonlyMap<string, string>,
 ): string | null {
   const field = def.fields.find((candidate) => candidate.name === name);
   if (field === undefined) {
     return null;
   }
   const current = value ?? field.default;
+  if (field.kind === 'type') {
+    const text = current === null ? null : catalog.typeName(current, names);
+    return text === null ? null : shown(text);
+  }
   if (typeof current !== 'string') {
     return null;
   }
   if (field.kind === 'dropdown') {
     const option = field.options.find(([, optionValue]) => optionValue === current);
     return option === undefined ? shown(current) : option[0];
-  }
-  if (field.kind === 'type') {
-    return shown(catalog.typeName(current));
   }
   return null;
 }
@@ -231,7 +237,7 @@ function fieldText(
   names: ReadonlyMap<string, string>,
 ): string {
   const value = block.fields?.[name];
-  const choice = choiceText(catalog, def, name, value);
+  const choice = choiceText(catalog, def, name, value, names);
   if (choice !== null) {
     return choice;
   }
@@ -255,7 +261,8 @@ function fieldText(
   if (field.kind === 'checkbox') {
     return '';
   }
-  return typeof field.default === 'string' ? shown(field.default) : '…';
+  // A value the label cannot show is not the default's either.
+  return value === undefined && typeof field.default === 'string' ? shown(field.default) : '…';
 }
 
 /** Collapses runs of spaces and of `…` placeholders, and trims. */
@@ -267,7 +274,12 @@ function tidy(text: string): string {
 }
 
 /** The label up to its first placeholder that is not a dropdown or a type. */
-function labelPrefix(catalog: PathCatalog, def: BlockDefJson, block: BdmBlock): string {
+function labelPrefix(
+  catalog: PathCatalog,
+  def: BlockDefJson,
+  block: BdmBlock,
+  names: ReadonlyMap<string, string>,
+): string {
   let text = '';
   for (const part of templateParts(def.label.friendly)) {
     if ('text' in part) {
@@ -277,7 +289,7 @@ function labelPrefix(catalog: PathCatalog, def: BlockDefJson, block: BdmBlock): 
     if ('repeat' in part) {
       break;
     }
-    const choice = choiceText(catalog, def, part.arg, block.fields?.[part.arg]);
+    const choice = choiceText(catalog, def, part.arg, block.fields?.[part.arg], names);
     if (choice === null) {
       break;
     }
@@ -330,7 +342,7 @@ export function blockLabel(
   if (catalog === null || def === undefined) {
     return shown(block.type, MAX_LABEL_CHARS);
   }
-  const prefix = labelPrefix(catalog, def, block);
+  const prefix = labelPrefix(catalog, def, block, names);
   const label = prefix === '' ? labelFilled(catalog, def, block, names) : prefix;
   return shorten(label === '' ? def.id : label, MAX_LABEL_CHARS);
 }
