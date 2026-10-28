@@ -2,7 +2,7 @@
  * W2's text, math and error blocks in the editor, from the generated catalog (package B,
  * docs/plans/m3-contracts/w2.md §1.3, §1.4, §1.7, §5.2): the static types of their outputs, as
  * the analyser gives them, and *try … catch* drawn by the *branches* mutator with its repeated
- * fields (add, remove, undo, a catch part's variable keeping its symbol).
+ * fields (add, remove, undo, a catch part's variable keeping its symbol); *throw the error again*.
  */
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -224,5 +224,13 @@ describe('try … catch', () => {
       'std::invalid_argument',
       'std::out_of_range',
     ]);
+  });
+
+  it('throws the caught error again with a statement of no parts', () => {
+    const rethrow = workspace.newBlock('error.rethrow');
+    expect(labelTexts(rethrow)).toEqual(['throw the error again']);
+    expect(rethrow.inputList.filter((input) => input.connection !== null)).toEqual([]);
+    expect(rethrow.previousConnection).not.toBeNull();
+    expect(rethrow.outputConnection).toBeNull();
   });
 });

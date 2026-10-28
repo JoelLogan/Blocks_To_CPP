@@ -47,7 +47,9 @@ import type { SymbolSource } from './scope';
  * once W2's structs, enums, control and file blocks (73 toolbox blocks) took their slowest to 5.4 s
  * and 3.9 s. Every category W2 fills adds blocks to the injection, so remeasure after each one:
  * with W2's package C2's (global, flip, field defaults) `toolbox/core`'s slowest took 2.8 s, so it
- * sets it too, and the slowest of all, `toolbox/reuse`, 14.1 s, still below this limit.
+ * sets it too, and the slowest of all, `toolbox/reuse`, 14.1 s, still below this limit. Package S's
+ * six (use header, check at compile time, and the file blocks open, read line, write and exists)
+ * took it to 16.2 s, and no file showing the flyout that leaves this limit unset went over 2.5 s.
  */
 export const FLYOUT_TEST_TIMEOUT_MS = 20_000;
 
