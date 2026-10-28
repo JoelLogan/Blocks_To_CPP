@@ -169,6 +169,21 @@ as the toolbox's delayed rebuild, can run between two calls. Before an undo, wai
 delivery (`waitForDelivery`), not only for the change on the live canvas: Blockly puts a change on
 its undo stack only when it delivers the change's events, after the next animation frame.
 
+Write each test so that it also passes in a small window, such as 800 × 560:
+
+- Before clicking anything on the canvas (a field, an inline ⊕ or ⊖), bring it into the visible
+  canvas with `fieldOf`, or `centerOn` and then `bringIntoView`. The toolbox's flyout stays open
+  over the canvas's left part and, at 1024 × 768, covers blocks in `main`; WebDriver's
+  `isDisplayed` does not see that.
+- `flyoutGrabPoint` finds a toolbox block below the flyout's visible part by dragging the flyout's
+  scrollbar down, at most half a view per step, until the block shows or the handle reaches the
+  bottom of its track. With many categories the handle is only a few pixels tall.
+- `panCanvas` starts its drag where the whole pan fits: blocks along the canvas's top or left can
+  leave an empty spot only by its far edge.
+- The console's header can take two lines, which leaves the terminal only a few rows. To read a
+  line that has moved into the scrollback, find its row with the hook's `consoleScreen` and turn
+  the view to it with `scrollConsoleLines` before reading the rows on screen.
+
 ## Test IDs
 
 Elements the tests find carry a `data-testid`; never rename or remove one. The stable ones are

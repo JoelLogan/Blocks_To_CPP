@@ -22,8 +22,8 @@ text to a number.
 | For | Block | Spec | In the catalog |
 | --- | --- | --- | --- |
 | The answer | *ask* (text), *repeat until* | [03 §3.7.6](../../../docs/spec/03-block-language.md#376-input--output) | M2 |
-| The conversion | *text … as number (int)* | [03 §3.7.3](../../../docs/spec/03-block-language.md#373-math-and-logic) | W2 |
-| The errors | *try … catch* (invalid argument, out of range, runtime error), *throw runtime error*, *error message of* | [03 §3.7.11](../../../docs/spec/03-block-language.md#3711-errors) | W2 |
+| The conversion | *text … as number (int)* (in the Text category) | [03 §3.7.3](../../../docs/spec/03-block-language.md#373-math-and-logic) | W2 |
+| The errors | *try … catch* (invalid argument, out of range, runtime error), *throw (runtime error) with message*, *message of* | [03 §3.7.11](../../../docs/spec/03-block-language.md#3711-errors) | W2 |
 | The message | *join* text and a number | [03 §3.7.4](../../../docs/spec/03-block-language.md#374-text) | M2 |
 
 The conversion is `std::stoi`, which reads a number at the start of the

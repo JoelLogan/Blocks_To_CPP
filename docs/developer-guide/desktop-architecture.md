@@ -369,14 +369,19 @@ injection options (`src/editor/toolbox/register.ts`); the plugin's own registrat
   (`@blockly/continuous-toolbox`), registered as the `FLYOUTS_VERTICAL_TOOLBOX`
   `b2c_continuous_flyout`; the plugin's `ContinuousMetrics` is registered as is, as the
   `METRICS_MANAGER` `b2c_continuous_metrics`.
-  - Uses: overrides `getFlyoutScale`, `position`, `dispose`, `scrollTo`, `createBlock` and the
-    plugin's protected `getRecyclableInflater`; re-implements Blockly's protected
-    `VerticalFlyout.reflowInternal_` instead of wrapping it; sets the plugin's protected
-    `scrollAnimationFraction`.
-  - Why: a fixed block scale and a width the user chooses (W3-1); no recycled blocks; the scroll
-    to a chosen category goes half a unit past its heading, so the category stays selected (W1-7;
-    report: [category selection](../plans/upstream/continuous-toolbox-category-selection.md));
-    the canvas's record of its drag targets is marked stale after each layout (report:
+  - Uses: overrides `getFlyoutScale`, `position`, `dispose`, `scrollTo`, `show`, `setVisible`,
+    `createBlock`, the protected `serializeBlock` and `getInflaterForType`, and the plugin's
+    protected `getRecyclableInflater`; re-implements Blockly's protected
+    `VerticalFlyout.reflowInternal_` and `layout_` (absolute placement, no scale) instead of
+    wrapping them; reads the protected `inflaters`, `MARGIN`, `tabWidth_` and `RTL`; sets the
+    plugin's protected `scrollAnimationFraction`.
+  - Why: a fixed block scale and a width the user chooses (W3-1); blocks and labels are kept by
+    their item from one showing to the next instead of by the plugin's recycler, which is never
+    used, so a showing builds and draws only what changed; a block taken from it gets IDs of its
+    own; the scroll to a chosen category goes half a unit past its heading, so the category stays
+    selected (W1-7; report:
+    [category selection](../plans/upstream/continuous-toolbox-category-selection.md)); the
+    canvas's record of its drag targets is marked stale after each layout (report:
     [records while hidden](../plans/upstream/blockly-flyout-setvisible-records-hidden.md)); a
     block taken from it is settled where it is dropped.
 - **`B2cToolboxCategory`** (`src/editor/toolbox/category.ts`) extends `Blockly.ToolboxCategory`,
@@ -385,8 +390,14 @@ injection options (`src/editor/toolbox/register.ts`); the plugin's own registrat
   - Why: the category's bubble with its icon, and its name below it.
 - **`B2cBlockInflater`** (`src/editor/toolbox/inflater.ts`) extends `Blockly.BlockFlyoutInflater`,
   registered as the `FLYOUT_INFLATER` `b2c_block`.
-  - Uses: overrides `load` and `getType`.
-  - Why: the toolbox's own block items (fresh symbol IDs, labels of call arguments).
+  - Uses: overrides `load`, `createBlock`, `disposeItem`, `getType` and the protected
+    `setFlyout`; reads the protected `flyout` and `removeListeners`, and `listeners` in tests.
+  - Why: the toolbox's own block items (fresh symbol IDs, labels of call arguments); a block is
+    kept from one showing of the flyout to the next when the next showing has an equal item.
+- **`B2cLabelInflater`** (`src/editor/toolbox/inflater.ts`) extends `Blockly.LabelFlyoutInflater`;
+  not registered: `B2cContinuousFlyout` chooses it for labels itself.
+  - Uses: overrides `load` and `disposeItem`.
+  - Why: the flyout's labels are kept from one showing to the next, as its blocks are.
 - **`StartValueChange`** (`src/editor/toolbox/reshape.ts`) extends `Blockly.Events.BlockBase`.
   - Uses: overrides `isNull` and `run`.
   - Why: Blockly records no event when a shadow is replaced, so without it Undo would put back a

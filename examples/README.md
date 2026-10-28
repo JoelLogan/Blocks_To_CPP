@@ -9,7 +9,8 @@ The intro-CS assignments that make up M3's exit are acceptance tests in
 [`tests/assignments/`](../tests/assignments/README.md) until their block
 projects pass. A project being built stays in its assignment's folder,
 since every file here must pass the tests that read all examples; each one
-joins this list, with its golden test, once its project passes.
+joins this list, with its golden test, once its project passes. Since M3's
+wave W2 all ten have: `guessing_game`, and the nine from `matrix_sum` on.
 
 | File | Name | What it shows |
 |------|------|---------------|

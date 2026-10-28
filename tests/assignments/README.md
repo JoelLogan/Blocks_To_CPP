@@ -5,10 +5,11 @@ with blocks, each with a golden test
 ([10 §10.1](../../docs/spec/10-roadmap.md#m3-language-breadth-i)). The owner
 chose these ten (decision M3-D1,
 [next steps §3.3](../../docs/plans/next-steps.md#33-decisions-before-m3-starts)).
-Most need blocks that arrive in wave W2, so each one is written first as an
-acceptance test: the assignment, a reference solution in plain C++, and the
-run data that its block project must reproduce later. The test turns them
-green one by one as the block projects arrive.
+Most needed blocks that arrived in wave W2, so each one was written first as
+an acceptance test: the assignment, a reference solution in plain C++, and
+the run data that its block project had to reproduce. The test turned them
+green one by one as the block projects arrived; since W2 all ten are green,
+each an example with its golden test.
 
 ## Index
 
@@ -25,8 +26,8 @@ green one by one as the block projects arrive.
 | [`matrix_sum`](matrix_sum/README.md) | list of lists (vector of vectors) | W2 | green |
 | [`input_validation`](input_validation/README.md) | exceptions, text to number | W2 | green |
 
-When g++ is on `PATH`, every run of the test prints the count, for example
-`M3 assignments: 1 of 10 green`.
+When g++ is on `PATH`, every run of the test prints the count:
+`M3 assignments: 10 of 10 green` since W2.
 
 ## The files
 

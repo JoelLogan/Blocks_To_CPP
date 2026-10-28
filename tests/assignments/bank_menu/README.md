@@ -19,9 +19,9 @@ function that returns an enum value.
 
 | For | Block | Spec | In the catalog |
 | --- | --- | --- | --- |
-| The actions | *enum* with values, *Action :: Deposit* | [03 §3.7.9](../../../docs/spec/03-block-language.md#379-types-structs-classes-enums) | W2 |
+| The actions | *enum* with values, *enum value* (`Action` `Deposit`) | [03 §3.7.9](../../../docs/spec/03-block-language.md#379-types-structs-classes-enums) | W2 |
 | The choices | *switch on … case … default* | [03 §3.7.5](../../../docs/spec/03-block-language.md#375-control-and-loops) | W2 |
-| The menu loop | *do … while* | [03 §3.7.5](../../../docs/spec/03-block-language.md#375-control-and-loops) | W2 |
+| The menu loop | *do … then repeat until* | [03 §3.7.5](../../../docs/spec/03-block-language.md#375-control-and-loops) | W2 |
 | The conversion | *define … returns* the enum type | [03 §3.7.7](../../../docs/spec/03-block-language.md#377-functions) | M2 (the enum type: W2) |
 | Choices and amounts | *ask* (whole number) | [03 §3.7.6](../../../docs/spec/03-block-language.md#376-input--output) | M2 |
 

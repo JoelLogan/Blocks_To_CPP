@@ -757,7 +757,12 @@ Codes by area:
   one, or choose 'variable'." / "The program's arguments need a name." /
   "In C++17, an empty part before a filled one sets its field to an empty
   value, so `x` would not get its default value. Fill in this part, or
-  choose C++20 in the project's settings."
+  choose C++20 in the project's settings." / "Choose a map in this block." /
+  "This 'for each' loop needs a name for its item." / "This 'open file'
+  block needs a name for its file." / "Choose a file opened for reading in
+  this block." / "Choose a text variable for the line in this block." /
+  "Choose a file opened for writing in this block." / "Choose a struct in
+  this block." / "Choose a field in this block."
 * **How to fix:** fill in the missing part, or choose the setting again.
 
 ## B2C-E0431 Blocks nested too deeply

@@ -27,6 +27,9 @@ base's on one runner ([A/B runs](#ab-runs)).
 | `webview.drag-5000.frame-p95`                     | The same frames; p95 of each pair of drags (about 120 frames), one pair per sample (gated until `frame-p95-all` replaced it)                                                                                                                                                           | no    |               |
 | `webview.drag-typed-1000.frame-p95-all`           | Frame times while a number block is dragged slowly down a column of 200 typed `create` blocks (alternating `int` and `string`) in a 1,000-block module and back, its connection passing over each value input on screen; p95 of every frame of the run's 10 drags after a warm-up drag | no    | N3: ≤ 33.3 ms |
 | `webview.keyboard-list-1000.ms`                   | The time to list the keyboard mover's places for the number block in the same module (every free value input, each typed; the span `b2c:keyboard-targets`); one listing per sample, 10 samples after a warm-up                                                                         | no    | N12: ≤ 100 ms |
+| `webview.declare-variable.toolbox-refresh`        | The guessing game: the toolbox's refresh (the span `b2c:toolbox-refresh`) after a `create int` is added at the end of `main`; the median of 10 declarations per sample                                                                                                                 | no    |               |
+| `webview.declare-variable-1000.toolbox-refresh`   | The same on the generated 1,000-block document                                                                                                                                                                                                                                         | no    |               |
+| `webview.declare-variable.max-task`               | The guessing game: the longest task after such a declaration, until the page has finished what it started; the median of 10 declarations per sample                                                                                                                                    | no    |               |
 
 Every timing of the webview benchmarks is taken inside the page with its own clock
 ([`page.ts`](page.ts)), so WebDriver's round trips are not part of any measurement. A heartbeat (a
@@ -153,6 +156,17 @@ the C++ appeared or after it, which the spans alone do not.
   gated once it has 5 baselines, as D20's pooled metric was, and the listing is read against N12's
   100 ms. An app built before the span (an A/B base) skips the listing with a note
   ([`typed-slots-metrics.ts`](typed-slots-metrics.ts) takes the metrics).
+- **Declaring a variable** ([`declare.bench.e2e.ts`](declare.bench.e2e.ts), from M3's second
+  wave, package T, which keeps the toolbox flyout's unchanged blocks between showings): a new
+  variable changes what the _Variables_ category shows, so the toolbox shows its flyout again.
+  Each declaration adds `create int <name> = 0` with a unique name at the end of `main` through
+  the test hook and times it until its C++ is in the editor's state and the page has run no long
+  task for 300 ms, which takes in the toolbox's delayed refresh; the block is then deleted with
+  the keyboard, outside the timing. The app's span `b2c:toolbox-refresh` gives the refresh's
+  time. Each sample is a round of 10 declarations, on the guessing game and on the generated
+  1,000-block document ([`declare-metrics.ts`](declare-metrics.ts) takes the metrics). All three
+  metrics are reported until they have five nightly baselines; they are then gated (M3-9 of the
+  M2 polish plan), and `bench-ab.yml` does not run them yet.
 
 The benchmarks turn off the end-to-end harness's long-task recorder (`launchApp`'s
 `recordLongTasks: false`, see [`../README.md`](../README.md)): they time the page's tasks
