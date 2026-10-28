@@ -286,6 +286,20 @@ field's value is the term's key: a name stays as it is (`int`,
 such a type, read from a file, loads as itself; the type picker that offers
 them comes later in M3.
 
+**In M3**, until wave W4's type picker, the type menus are interim (wave
+W2). After a field's own types, *create*'s and a parameter row's menus
+offer *list of int*, *list of double* and *list of string*
+(`std::vector<int>`, `std::vector<double>`, `std::vector<std::string>`).
+Every type field then lists the module's structs and enums that its class
+allows (a field of class `value`, such as *create*'s, *global*'s, a
+parameter's, a struct field's or *define*'s result: both; *new … with*'s:
+structs only), sorted by name, then a list of each where the class allows
+lists (*list of Student*). A user type is stored by its symbol and shown by
+its current name, so a rename shows at once. A menu that lists only the
+module's types shows *choose a struct first* while the module has none.
+Maps and lists of lists come from the project file and paste until the type
+picker. The block reference writes the list types in C++ syntax.
+
 ### 3.5.3 Type checking model (gradual)
 
 The analyser implements a **gradual** type system that approximates C++:
@@ -316,9 +330,10 @@ The analyser implements a **gradual** type system that approximates C++:
 
 ## 3.6 Symbols and scoping
 
-* **Declarations own symbols.** A `create variable` block, function parameter,
-  `for` loop variable, `catch` variable, field or function definition creates a
-  symbol with a stable ID (`sym_…`).
+* **Declarations own symbols.** A `create variable` block, global, function
+  parameter, `for` loop variable, *for each* item, file line or opened file,
+  `catch` variable, struct, field, enum, enum value or function definition
+  creates a symbol with a stable ID (`sym_…`).
 * **References point to IDs.** Getter blocks and expression tokens reference
   `sym_…` IDs. Renaming is safe and instant. Deleting a declaration turns its
   references into errors ("`score` no longer exists") with a quick fix to
@@ -326,52 +341,71 @@ The analyser implements a **gradual** type system that approximates C++:
   the rest of the session. A file stores only the ID, so after a reload such a
   reference shows *missing (`sym_…`)* with the analyser's badge (`B2C-E0201`,
   or `E0202`–`E0204`).
-* **Scope follows C++.** A variable is visible from its declaration to the end
-  of the enclosing statement list, including nested blocks. Symbol dropdowns
-  list **only** the symbols in scope at that block. Dragging a block out of
-  scope marks its references as errors in place; a *set* or *change* just
-  taken from the toolbox is the exception: if its variable is not visible
-  where it is dropped, it takes the first fitting variable visible there, in
-  the same Undo step (a getter keeps its variable and shows `B2C-E0203`;
-  [04 §4.2](04-user-interface.md#42-toolbox)). The dropdowns of blocks that
-  change a variable (*set*, *change* and *ask*) list only what may be
-  changed there: they leave out constants, a `for` loop's counter inside its
-  loop and read-only parameters, and *change*, whatever its operator, also
-  leaves out text and true/false variables. A reference field with a type
-  pattern ([§3.11.1](#3111-catalog-format)) lists only the symbols whose type
-  fits the pattern on its own (*add … to* lists the lists, sets, queues and
+* **Scope follows C++.** A variable is visible from its declaration to the
+  end of the enclosing statement list, including nested blocks. Symbol
+  dropdowns list **only** the symbols in scope at that block. Dragging a
+  block out of scope marks its references as errors in place; a *set* or
+  *change* just taken from the toolbox is the exception: if its variable is
+  not visible where it is dropped, it takes the first fitting variable
+  visible there, in the same Undo step (a getter keeps its variable and
+  shows `B2C-E0203`; [04 §4.2](04-user-interface.md#42-toolbox)). The
+  dropdowns of blocks that change a variable (*set*, *change*, *flip*,
+  *ask*, *set … of*, *read line*'s line and the collection blocks that
+  change their collection) list only what may be changed there: they leave
+  out constants (also a *catch* part's error and *with arguments*' list), a
+  `for` loop's counter inside its loop, a read-only *for each* item, key or
+  value, a file loop's line and read-only parameters. *change* lists only
+  variables of a number, character or text type, and takes text only with
+  *add to the end*; a true/false variable is changed with *flip*
+  ([§3.7.2](#372-variables)). A reference field with a type pattern
+  ([§3.11.1](#3111-catalog-format)) lists only the symbols whose type fits
+  the pattern on its own (*add … to* lists the lists, sets, queues and
   stacks), whatever the block's inputs hold, which are checked against the
-  reference and not the reverse. A reference already chosen stays shown.
-  Any other type mismatch is left to the analyser. The editor
-  gets these lists from the scope query of
-  [06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes).
-  A parked block's dropdowns list what is visible at the end of `main`'s
-  body (of the enabled *when program starts*, never a disabled one; the
-  module's functions when there is no `main`); a block inside a
-  disabled statement lists what is visible at that statement. A block the
-  analysis has not seen yet (just dropped or pasted) lists what its place
-  gives it: what the statement before it, or the list or input around it,
-  sees, or, on the canvas, the end of `main`'s body. A block still in the
-  toolbox has no place in the program: its dropdowns list every variable
-  (or function) of the module shown that it may take, grouped by the
-  function that declares it, like the Variables category
+  reference and not the reverse. A reference already chosen stays shown. Any
+  other type mismatch is left to the analyser. A field that names a member
+  (*… of* and *set … of*: a field of a struct; *enum value*: a value of an
+  enum) lists the members of the struct or enum its block binds, in row
+  order: the struct plugged into *… of*, the chosen variable's struct in
+  *set … of*, the enum chosen in *enum value*, whose own menu lists the
+  module's enums (never a variable of an enum type). While nothing binds it,
+  the menu shows *choose a struct first* or *choose an enum first*; a member
+  the type lacks stays shown and is `B2C-E0207`. The editor gets these lists
+  from the scope query of
+  [06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes). A parked
+  block's dropdowns list what is visible at the end of `main`'s body (of the
+  enabled *when program starts*, never a disabled one; the module's
+  functions when there is no `main`); a block inside a disabled statement
+  lists what is visible at that statement. A block the analysis has not seen
+  yet (just dropped or pasted) lists what its place gives it: what the
+  statement before it, or the list or input around it, sees, or, on the
+  canvas, the end of `main`'s body. A block still in the toolbox has no
+  place in the program: its dropdowns list every variable (or function) of
+  the module shown that it may take, grouped by the function that declares
+  it, like the Variables category
   ([04 §4.2](04-user-interface.md#42-toolbox)).
 * **Unlike Scratch, there are no implicit globals.** *Make a variable* in the
   Variables category asks for a name and a type (`int` by default) and
   inserts a declaration before the selected statement (or at the top of the
-  selected function). Globals require an explicit top-level
-  `global variable` block, and the analyser suggests `const` / `constexpr`
-  where possible. With nothing selected, *Make a variable* inserts at the top
+  selected function). Globals need an explicit *global* block, a definition
+  ([§3.7.2](#372-variables)), and a constant global is `constexpr` wherever
+  C++ allows it. With nothing selected, *Make a variable* inserts at the top
   of `main` (creating `main` if there is none). The Variables category lists
-  every variable of the module, grouped by the function that declares it,
-  and does not depend on the selection
+  every variable of the module, the globals first under *Everywhere*, then
+  grouped by the function that declares it, and does not depend on the
+  selection
   ([04 §4.2](04-user-interface.md#42-toolbox)).
 * **Default names** are the first free name in scope where the block is
-  dropped: `value`, `value2`, `value3`, … for a new variable; `i`, `j`, `k`
-  for a counted loop; and `myFunction` for a new function. A counted loop
-  that wraps statements when it is dropped ([§3.3](#33-block-shapes)) also
-  leaves out the names they declare, nested ones included: wrapped around
-  `create i` or a `for i` loop, it counts with `j`.
+  dropped: `value`, `value2`, `value3`, … for a new variable or global; `i`,
+  `j`, `k` for a counted loop; `myFunction` for a new function; `item` for
+  a *for each* item, `key` and `value` for a map's pair, `line` for a file's
+  line, `file` for an opened file, `e` for a caught error, `args` for *with
+  arguments*, and `MyStruct` and `MyEnum` for a new struct and enum. A new
+  row of a struct is a field `int field` (then `field2`, …) and a new value
+  of an enum `Value` (then `Value2`, …), named by the ⊕ that adds it among
+  its definition's rows, as is the error of a new *catch* part. A counted
+  loop that wraps statements when it is dropped ([§3.3](#33-block-shapes))
+  also leaves out the names they declare, nested ones included: wrapped
+  around `create i` or a `for i` loop, it counts with `j`.
 * **Identifiers are validated** ([08 §8.4.1](08-security.md#841-identifiers)):
   ASCII `[A-Za-z][A-Za-z0-9_]{0,63}`, not a keyword, not reserved, and not a
   standard macro name. Duplicate names in one scope are errors with a rename
@@ -379,32 +413,36 @@ The analyser implements a **gradual** type system that approximates C++:
 
 ## 3.7 Block catalog by category
 
-Each category has a colour **and** an icon (so colour is never the only cue),
-and the colours are validated for colour-blind distinguishability and contrast
-in light, dark and high-contrast themes. Categories marked *(Adv)* are hidden
-until **View → Show advanced blocks** is enabled, which keeps the beginner
-toolbox small.
+Each category has a colour **and** an icon (so colour is never the only
+cue), and the colours are validated for colour-blind distinguishability and
+contrast in light, dark and high-contrast themes. An icon uses only
+characters that the default sans fonts of Linux and Windows draw (DejaVu
+Sans, and Segoe UI or Segoe UI Symbol), so it never shows as an empty box; a
+test in `b2c-catalog` keeps the icons to an allowlist of such characters,
+and a new icon needs all three fonts before it joins. Categories marked
+*(Adv)* are hidden until **View → Show advanced blocks** is enabled, which
+keeps the beginner toolbox small.
 
 | Category | Icon | Contents |
 | ---------- | ------ | ---------- |
-| Program | ▶ | `main`, command-line arguments, exit |
-| Variables | 𝑥 | declare, set, change, getters, constants |
+| Program | ▶ | `main`, command-line arguments, exit, headers, compile-time checks |
+| Variables | x | declare, set, change, flip, getters, globals and constants |
 | Math | ∑ | arithmetic, comparison, math functions, random, conversions |
 | Logic | ◇ | and/or/not, true/false, conditional value |
 | Text | “ ” | strings, chars, formatting |
-| Control | ⑂ | if/else-if/else, switch, wait, stop |
-| Loops | ↻ | repeat, while/until, for range, for each, forever, break/continue |
+| Control | ⋔ | if/else-if/else, switch, going on into the next case, wait |
+| Loops | ↻ | repeat, while/until, do … then repeat, for range, for each, forever, break/continue |
 | Input / Output | ⌨ | print, ask, read, formatting manipulators |
 | Functions | ƒ | define, return, lambda, *Your functions*: a call block for each function you define, kept up to date (grouped under a module heading only when the project has more than one module) |
 | Collections | ☰ | list/map/set/queue/stack… polymorphic blocks |
 | Types | ◆ | struct, class, enum, alias, members, object creation |
-| Files | 🗎 | streams, line iteration, filesystem |
+| Files | ▤ | streams, line iteration, filesystem |
 | Errors | ⚠ | try/catch, throw, error message |
 | Time & Random | ⏱ | clock, stopwatch, sleep, random helpers |
 | Memory *(Adv)* | ➚ | pointers, references, smart pointers, move |
 | Concurrency *(Adv)* | ⇉ | threads, locks, atomics, async |
 | Generics *(Adv)* | ⟨T⟩ | template parameters, constraints |
-| Organisation | ▣ | namespaces, includes, `using`, `static_assert`, comments |
+| Organisation | ▣ | namespaces, `using`, comments |
 | Raw C++ *(Adv)* | `C++` | raw statement / expression / top-level |
 | Libraries | 📦 | blocks from library packs, grouped by pack |
 
@@ -426,30 +464,87 @@ can hold, such as a list of numbers (stored as a type term,
 [05 §5.4](05-project-format.md#54-block-nodes)); their menus offer M2's
 types until the type picker arrives.
 
+**In M3** (wave W2) the catalog has 86 blocks in 13 categories: the four
+new categories, Collections, Types, Files and Errors, follow Functions, and
+a category without entries is not shown in the toolbox and gets no page in
+the block reference. The blocks W2 built are those of §3.7.1 to §3.7.11 and
+§3.7.13 that the sections' *In M3* notes name; the type menus offer lists
+and the project's own types until the type picker arrives
+([§3.5.2](#352-friendly-and-c-display-modes)). What W2 left, each with its
+reason in the [W2 contract](../plans/m3-contracts/w2.md#110-not-in-w2):
+*namespace* and *use namespace* (wave W3, with modules); the ⚙ popover,
+*format … with* and the unchecked `[]` index (wave W4, with feature
+gating); *moved* parameters, the generic member block, the file blocks that
+do not open a file, a random seed, the clock, the stopwatch and *read word*
+(M4); and the structured binding (after M3). *catch anything* is not
+planned ([§3.7.11](#3711-errors)). *wait* is in Control and *random
+decimal* in Math, and *use header* and *check at compile time* in Program;
+the Time & Random and Organisation categories come with their other
+blocks. Classes, lambdas and the advanced categories are M4's
+([10 §10.1](10-roadmap.md#101-milestones)).
+
 ### 3.7.1 Program
 
 | Block | Generates |
 | ------- | ----------- |
-| `when program starts { … }` | `int main() { … return 0; }` (implicit `return 0`) |
-| `when program starts with arguments [args] { … }` | `int main(int argc, char* argv[]) { const std::vector<std::string> args(argv, argv + argc); … }` |
+| `when program starts ☐ with arguments { … }` | `int main() { … return 0; }` (implicit `return 0`) |
+| `when program starts ☑ with arguments [args] { … }` | `int main(int argc, char* argv[]) { const std::vector<std::string> args(argv, argv + argc); … }` |
 | `stop program with exit code (0)` | `return 0;` inside `main`, otherwise `std::exit(0);` |
 
 A project has exactly one `main`; a second one is an analyser error.
+
+*with arguments* is a checkbox on the one block (§3.1), whose short name
+stays *when program starts*. Ticked, it shows the name of a read-only list
+of text (`args` by default) whose first item is the program's own name;
+unticked, the name is hidden and kept. The list encloses the body as a
+function's parameters do: changing it is `B2C-E0308`, a ticked box without
+a name `B2C-E0430`, and a variable of its name created at the top of the
+body `B2C-E0210` (inside a nested block it hides the list, `B2C-W0501`).
+`argc` and `argv` take other names when the body uses those. The Program
+category also holds *use header* and *check at compile time*
+([§3.7.13](#3713-organisation)).
 
 ### 3.7.2 Variables
 
 | Block | Generates |
 | ------- | ----------- |
-| `create [int ▾] variable [score] = (0) constant ☐` | `int score = 0;` (`const int` when ticked; the ⚙ popover with `constexpr` and `static` replaces the checkbox in M3 as a compatible change). The type is any type a variable can hold; without a value, a list is created empty: `std::vector<int> scores{};` |
-| `create [auto ▾] [a], [b] ⊕ from (pairValue)` | `auto [a, b] = pairValue;` (structured binding) |
+| `create [int ▾] variable [score] = (0) constant ☐` | `int score = 0;` (`const int` when ticked; the ⚙ popover with `constexpr` and `static` replaces the checkbox in wave W4 as a compatible change). The type is any type a variable can hold; without a value, a list is created empty: `std::vector<int> scores{};` |
+| `create [auto ▾] [a], [b] ⊕ from (pairValue)` | `auto [a, b] = pairValue;` (structured binding, after M3) |
 | `set [score ▾] to (expr)` | `score = expr;` |
-| `change [score ▾] [by ▾] (1)` | `score += 1;` (`++score;` for *by* the literal 1); the menu also gives *down by* (`-=`), *times* (`*=`), *divided by* (`/=`) and *mod* (`%=`), and, with *Show advanced blocks* (M3), the bitwise forms `&=`, `\|=`, `^=`, `<<=` and `>>=`. In C++ label mode every option shows its operator. For number and character variables |
+| `change [score ▾] [by ▾] (1)` | `score += 1;` (`++score;` for *by* the literal 1); the menu also gives *down by* (`-=`), *times* (`*=`), *divided by* (`/=`) and *mod* (`%=`), *add to the end* (`+=`, text or a character added to a text variable: `s += "!";`), and, with *Show advanced blocks*, the bitwise forms *bitwise and* (`&=`), *bitwise or* (`\|=`), *bitwise xor* (`^=`), *shifted left by* (`<<=`) and *shifted right by* (`>>=`) for whole numbers. In C++ label mode every option shows its operator. For number, character and text variables |
+| `flip [done ▾]` | `done = !done;` (for true/false variables) |
 | `(score)` | `score` |
-| `global [constant ▾] [double] [kGravity] = (9.81)` *(top level)* | `constexpr double kGravity = 9.81;` |
+| `global [constant ▾] [double] [kGravity] = (9.81)` *(definition)* | `constexpr double kGravity = 9.81;`; a variable: `int count = 0;` |
 
-The toolbox does not repeat these blocks per variable: it shows one *set*
-and one *change* block whose menu chooses the variable
-([04 §4.2](04-user-interface.md#42-toolbox)).
+The toolbox does not repeat these blocks per variable: it shows one *set*,
+one *change* and one *flip* block whose menu chooses the variable
+([04 §4.2](04-user-interface.md#42-toolbox)). *change*'s menu lists the
+operators the chosen variable's type takes (the arithmetic ones for numbers
+and characters, *add to the end* for text), the bitwise forms only for an
+`int` variable and only with *Show advanced blocks*, and always the operator
+the block already has; a variable of another type is `B2C-E0302`, an amount
+of another type `B2C-E0301`. *flip* is listed while a true/false variable
+that may change exists. **In M3** (wave W2) these blocks are built as the
+table shows, but for the ⚙ popover (wave W4) and the structured binding
+(after M3, since pairs come later).
+
+**Globals.** *global* is a definition, wherever it is on the canvas: a
+*variable* or a *constant* of any type a variable can hold but `auto` (a
+global's type is printed before any value is worked out), with an optional
+value; its menu offers what *create*'s does, without `auto`. A constant
+needs a value (`B2C-E0430`) and can't be changed (`B2C-E0308`); it is
+`constexpr` when it is a `bool`, `char`, `int` or `double` with a value
+fixed when the program is built, and `const` otherwise (`const std::string
+kName = "Ann";`), and its value can be a `case` label. Globals are declared
+after the module's structs and enums and before its functions, so every
+function, default value and body of the module sees them. A global's name is
+unique among the program's globals, structs, enums and functions
+(`B2C-E0210`); a local variable, parameter or caught error with its name
+hides it (`B2C-W0501`). A global set from a function, or from a struct's
+default values, comes after every global that function or default reads,
+whatever the order on the canvas; a global whose value needs itself,
+directly or through functions and other globals, is `B2C-E0421`. Its *share
+with other modules* checkbox is hidden until wave W3.
 
 ### 3.7.3 Math and Logic
 
@@ -459,12 +554,17 @@ and one *change* block whose menu chooses the variable
 | `(a) [< ▾] (b)` | `a < b` | |
 | `<a> [and ▾] <b> ⊕` | `a && b && c` | Variadic |
 | `not <a>` | `!a` | |
-| `[sqrt ▾] of (x)` | `std::sqrt(x)` | abs, floor, ceil, round, sqrt, cbrt, pow, exp, log, log10, sin, cos, tan, asin, acos, atan, atan2, hypot, min, max, clamp |
+| `[round ▾] of (x)` | `std::round(x)` | *round down*, *round up*, *round*, *square root*, *cube root*, *e to the power*, *natural log*, *log base 10*, *sin*, *cos*, *tan*, *asin*, *acos*, *atan* → `std::floor`, `std::ceil`, `std::round`, `std::sqrt`, `std::cbrt`, `std::exp`, `std::log`, `std::log10`, `std::sin`, … (`<cmath>`); angles in radians; always a decimal number |
+| `absolute value of (x)` | `std::abs(x)` | The type of its input; `<cstdlib>` for a whole number, `<cmath>` for a decimal number |
+| `[larger ▾] of (a) and (b)` | `std::max<int>(a, b)` | *larger*, *smaller* (`std::min`). The result is the arithmetic type of the inputs, as `+` gives it (`char` and `bool` count as `int`), and is the template argument, so mixed inputs compile: `std::min<double>('a', 2.5)` |
+| `[power ▾] of (a) and (b)` | `std::pow(a, b)` | *power*, *atan2*, *hypotenuse* (`std::hypot`); always a decimal number |
+| `(v) kept between (lo) and (hi)` | `std::clamp<int>(v, lo, hi)` | The type as for *larger*. A lower limit above the higher one stops a debug build |
 | `if <c> then (a) else (b)` | `c ? a : b` | |
 | `random integer from (1) to (6)` | `b2c::random_int(1, 6)` | Support helper ([§3.9](#39-support-helpers)) |
+| `random decimal from (0.0) to (1.0)` | `b2c::random_real(0.0, 1.0)` | Support helper |
 | `(x) as [int ▾]` | `static_cast<int>(x)` | |
-| `text (s) as number [int ▾]` | `std::stoi(s)` | Throws on bad input. The tooltip explains this and the Errors category shows how to catch it. |
-| `(x) as text` | `std::to_string(x)` | |
+| `text (s) as number [int ▾]` | `std::stoi(s)` / `std::stod(s)` | In the Text category. The number at the start of the text (`12abc` gives 12); a text that does not start with one throws an *invalid argument* error, and a number too large for its type an *out-of-range* error. The tooltip explains this and the Errors category shows how to catch it. |
+| `(x) as text` | `std::to_string(n)` | In the Text category. Written as *print* writes it: `b2c::to_text(x)` for a decimal number (with the decimal places *show numbers with* chose) and an enum, `std::string(1, c)` for a character, `std::string(b ? "true" : "false")`, and text as it is. A struct, printable or not, is `B2C-E0314` ("… can't be turned into text in one go. Join its fields instead."), as in *join* |
 
 **Analyser lints in this area:** integer division assigned to a floating-point
 variable ("did you mean `7.0 / 2`?"), `==` on floating-point values, signed vs
@@ -486,13 +586,14 @@ goes straight into a whole number, which C++ leaves undefined.
 | `"hello"` | `"hello"` (escaped per [08 §8.4.2](08-security.md#842-string-and-character-literals)) |
 | `character 'a'` | `'a'` (one ASCII character; use text for anything else) |
 | `join (a) (b) ⊕` | Idiomatic per part: `std::string(a) + b`, `+ std::to_string(n)` for whole numbers and `+ b2c::to_text(x)` for decimal numbers, which writes the number exactly as `print` would, `+ std::string(1, c)`; `std::format` when the *formatting style* setting is `format` and the toolchain supports it |
-| `format ("{} scored {}") with (name) (score) ⊕` | `std::format("{} scored {}", name, score)` (C++20 with GCC 13+; otherwise an `std::ostringstream` helper) |
-| `length of (s)` | `static_cast<int>(s.size())` |
-| `letter (i) of (s)` | `s.at(static_cast<std::size_t>(i))` |
-| `part of (s) from (i) length (n)` | `s.substr(i, n)` |
-| `(s) [contains ▾] (t)` | `s.find(t) != std::string::npos` (or `s.contains(t)` under C++23); also starts with / ends with |
-| `[uppercase ▾] (s)` / `trim (s)` / `split (s) by (",")` | Support helpers |
-| `replace all (a) with (b) in (s)` | Support helper |
+| `format ("{} scored {}") with (name) (score) ⊕` | `std::format("{} scored {}", name, score)` (C++20 with GCC 13+; otherwise an `std::ostringstream` helper; wave W4) |
+| `length of (s)` | `static_cast<int>(s.size())`; a character is `B2C-E0301` ("Use a text value here.") |
+| `letter (i) of (s)` | `s.at(static_cast<std::size_t>(i))`, a character; a literal position as written (`s.at(0)`) |
+| `part of (s) from (i) length (n)` | `s.substr(static_cast<std::size_t>(i), static_cast<std::size_t>(n))`, a literal as written; fewer characters when the text ends first |
+| `(s) [contains ▾] (t)` | `s.find(t) != std::string::npos`; *starts with* and *ends with* are `s.starts_with(t)` and `s.ends_with(t)` in C++20, and the helpers `b2c::starts_with(s, t)` and `b2c::ends_with(s, t)` in C++17 |
+| `[lowercase ▾] (s)` / `trim (s)` | `b2c::to_lower(s)`, `b2c::to_upper(s)` (only the letters A to Z change), `b2c::trim(s)` (spaces and tabs at both ends): support helpers |
+| `split (s) by (",")` | `b2c::split(s, ",")`, a list of text; two separators in a row give an empty part, and an empty separator one part for each character |
+| `replace all (a) with (b) in (s)` | `b2c::replace_all(s, a, b)`; an empty first text changes nothing |
 
 In a typed expression, `+` joins text with text or a character, in either
 order, as C++ does (`"Hi " + name`, `name + '!'`). When neither side is a
@@ -500,21 +601,63 @@ order, as C++ does (`"Hi " + name`, `name + '!'`). When neither side is a
 `std::string(1, 'b') + "a"`. Text with a number needs *join*
 (`B2C-E0303`).
 
+The text these blocks give is a `std::string` object and is used as it is:
+*for each* over *lowercase* of a text is
+`for (const auto& letter : b2c::to_lower(text))`, and a *join* that starts
+with one does not wrap it in `std::string(…)`. **In M3** (wave W2) every
+block of this table is built but *format … with*, which comes with wave
+W4's feature gating (it needs GCC 13 and C++20, or a fallback); *as text*
+and *text as number* are in the Text category
+([§3.7.3](#373-math-and-logic)).
+
 ### 3.7.5 Control and Loops
 
 | Block | Generates |
 | ------- | ----------- |
 | `if <c> then { } ⊕else if ⊕else` | `if (c) { } else if (d) { } else { }`. One block: *else if* and *else* are added and removed with ⊕/⊖ on the block. |
-| `switch on (v) case [1] { } ⊕ default { }` | `switch (v) { case 1: { … break; } default: { … } }`. `break` is automatic unless *fall through ☑*. Case labels must be constants or enum values. |
+| `switch on (v) case (1) { } case (2) { } ⊕ default { }` | `switch (v) { case 1: { … break; } default: { … } }`. Each case is a `{ }` scope ending in an automatic `break;`, left out after *return*, *stop program*, *throw*, *throw the error again*, *skip to next round* or *go on into the next case*. Case values must be fixed when the program is built. |
+| `go on into the next case` | `[[fallthrough]];` The last block of a case that is not the last part: the next case's blocks run too. |
 | `repeat (10) times { }` | `for (int i = 0; i < 10; ++i) { }` (a hidden counter with a unique, readable name). A count that could change while the loop runs (it calls a function, or reads a variable the body may change) is evaluated once: `for (int i = 0, n = b2c::random_int(1, 6); i < n; ++i)`. The same applies to a `for` loop's end and step. |
 | `repeat [while ▾] <c> { }` (choose *until* in the menu) | `while (c) { }` / `while (!(c)) { }` (simplified to the inverse operator where that is exact, e.g. `!(a == b)` → `a != b`; ordering comparisons on decimal numbers are not inverted, because `!(x < y)` and `x >= y` differ when a value is NaN) |
-| `do { } while <c>` | `do { } while (c);` |
+| `do { } then repeat [while ▾] <c>` | `do { } while (c);`; *until* inverts the condition as *repeat until* does. The condition sees only what is visible before the block, not the variables its blocks create. |
 | `for [i] from (1) [to ▾] (10) [step (1)]` | `to` → `i < 10`, `through` → `i <= 10`, `down to` → `i >= 10` with `i -= step`. The direction is explicit, so a runtime step sign is never needed. `step` is hidden until expanded. |
-| `for each [item] in (list) [read-only ▾]` | `for (const auto& item : list)`; *copy* → `auto item`, *editable* → `auto& item` |
-| `for each [key], [value] in (map)` | `for (const auto& [key, value] : map)` |
+| `for each [item] in (list) [read-only ▾]` | `for (const auto& item : list)`; *copy* → `auto item`, *editable* → `auto& item`. Over a list, deque, set or text, in order |
+| `for each key [key] value [value] in [map ▾]` | `for (const auto& [key, value] : map)`, smallest key first; neither can be changed |
 | `forever { }` | `while (true) { }` (info lint if no `break`, `return` or exit inside) |
-| `break` / `continue` / `return (x)` | Validated by the analyser: only inside loops, and the `return` type is checked |
-| `wait (0.5) seconds` | `std::this_thread::sleep_for(std::chrono::duration<double>(0.5));` |
+| `break` / `continue` / `return (x)` | *leave loop*, *skip to next round*, *return*. Validated by the analyser: only inside loops, and the `return` type is checked |
+| `wait (0.5) seconds` | `std::this_thread::sleep_for(std::chrono::duration<double>(0.5));` (`<chrono>`, `<thread>`), in the Control category |
+
+**switch.** The value switched on is a whole number, a character or a value
+of an enum (another type is `B2C-E0301`). Case values are value inputs typed
+by it, starting empty; ⊕ adds a case (each copy joined by the word *case*,
+as *else if* joins the *if* block's), and the default part comes and goes
+with ⊕/⊖. A case value must be fixed when the program is built: a literal, a
+constant with a fixed value, an enum value or a calculation of them
+(`B2C-E0424` otherwise), and no two may be equal (`B2C-E0425`, `'A'` and
+`65` too). On an enum, the case values are the enum's values, printed in
+full (`case Action::Deposit: {`); a whole number or another enum's value is
+`B2C-E0301`. A switch on an enum without a default part that misses some of
+its values warns `B2C-W0508`, naming them, and gets `default: { break; }` so
+that g++'s `-Wswitch` stays quiet; one with a case for every value gets no
+default part. There is no *fall through ☑* checkbox: falling through is the
+block *go on into the next case*, which must be the last block of a case and
+not in the last part (`B2C-E0427`). *leave loop* whose nearest loop or
+switch is a switch is `B2C-E0401`, since in C++ it would leave only the
+switch. A switch ends every path (for `B2C-E0410`) only with a default part
+whose parts all end it: on an enum with a returning case for every value,
+the value may still be none of them.
+
+**for each.** Its collection is a value input: a list, deque or set, or
+text (one character at a time). A map is `B2C-E0301` ("Use 'for each key,
+value' for a map."), and *list of* there has no type (`B2C-E0315`). A
+read-only item is `B2C-E0308` when changed; *editable* needs a variable
+that may change (`B2C-E0308`) holding a list or a deque whose items are not
+true/false values (`B2C-E0301`: g++ cannot bind `auto&` to the items of a
+`std::vector<bool>`). The item is `[[maybe_unused]]` when the body
+never mentions it, and a pair's key and value when the body mentions
+neither. **In M3** (wave W2) every block of this table is built, *wait* and
+*go on into the next case* in Control and *do … then repeat* after *repeat
+while* in Loops.
 
 ### 3.7.6 Input / Output
 
@@ -523,24 +666,59 @@ order, as C++ does (`"Hi " + name`, `name + '!'`). When neither side is a
 | `print (a) (b) ⊕ [no separator ▾] new line ☑ to [the console ▾]` | `std::cout << a << b << '\n';` | `bool` prints as `true`/`false` (via `(b ? "true" : "false")`); 8-bit integers print as numbers (unary `+`); separators can be spaces or commas; *the error stream* writes to `std::cerr` |
 | `ask ("Name? ") and save answer in [name ▾]` | *keep asking until valid* (default): `name = b2c::ask_line("Name? ");` reads one line; an empty line asks again | Leading spaces are dropped. `simple` mode emits `std::cout << "Name? "; std::getline(std::cin >> std::ws, name);`, where `std::ws` avoids the classic "getline after `>>`" bug |
 | (same, numeric target) `[keep asking until valid ▾]` | `age = b2c::ask<int>("Age? ");` | The helper asks again after invalid input, with a short message such as *"Please enter a whole number."* An answer is valid only when the whole line, apart from spaces, is one value of the variable's type: `3.5` or `12abc` for a whole number asks again with *Please enter a whole number.* At end of input (e.g. stdin from a file) it prints *"Input ended"* and exits with code 1 instead of looping forever. `simple` mode emits `std::cin >> age;` followed by `std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');`, which drops the rest of the line, so a later `ask` in either mode reads the next line. Both helpers first recover from a failed `simple` read (for example a word typed for a number): they clear the stream and drop that line. |
-| `read [word ▾] into [w]` | `std::cin >> w;` / `std::getline(std::cin, w);` | |
-| `show numbers with (2) decimal places` | `std::cout << std::fixed << std::setprecision(2);` | |
+| `read [word ▾] into [w]` | `std::cin >> w;` / `std::getline(std::cin, w);` | M4 |
+| `show numbers with (2) decimal places` | `std::cout << std::fixed << std::setprecision(2);` | From there on, every decimal number is printed with that many decimal places, also by *join* and *as text* (`b2c::to_text` copies the console's format); whole numbers do not change, and neither do files |
+
+**In M3** (wave W2) *show numbers with* is built. *read word*, with the
+other console stream blocks, and the clock and the stopwatch of the Time &
+Random category wait for M4: *ask* reads every input the M3 assignments
+have, and the clock and the stopwatch need time points and a `Stopwatch`
+helper that no M3 type can hold.
 
 ### 3.7.7 Functions
 
 | Block | Generates |
 | ------- | ----------- |
-| `define [greet] with ([string] name [read-only ▾]) ([int] times = (1)) ⊕ returns [nothing ▾] { }` | `void greet(const std::string& name, int times = 1) { }`. Parameter pass modes: *copy*, *editable* (`&`), *read-only* (`const&`; a number, character, `bool` or enum by value), *moved* (`&&`). A parameter takes every type a variable can hold. |
+| `define [greet] with ([string] name [read-only ▾]) ([int] times = (1)) ⊕ returns [nothing ▾] { }` | `void greet(const std::string& name, int times = 1) { }`. Parameter pass modes: *copy*, *editable* (`&`), *read-only* (`const&`; a number, character, `bool` or enum by value), *moved* (`&&`, M4). A parameter, and the result, take every type a variable can hold. |
 | *(auto-generated, under Your functions)* `greet (name: "Ada") (times: 3)` | `greet("Ada", 3);` A statement block when the result is `void`, a reporter otherwise. A reporter can be used as a statement via *ignore result*. |
 | `return (value)` | `return value;` |
 | `function ([auto] x) ⊕ capturing [nothing ▾] returns [auto] { }` | `[](auto x) { … }`. Capture options: nothing, everything by reference `[&]`, everything by copy `[=]`, or chosen variables. |
 | `function of ([auto] x) giving (x * 2)` | `[](auto x) { return x * 2; }` (single-expression form) |
 
-Recursion is supported. Overloads (same name, different parameters) and
-default arguments come in M3 ([10 §10.1](10-roadmap.md#101-milestones)); until
-then a second function with the same name is `E0211`. **Definition order on
-the canvas never matters**: the generator emits forward declarations
-automatically ([06 §6.7](06-compiler-pipeline.md#67-ordering-and-declarations)).
+Recursion is supported. **Definition order on the canvas never matters**:
+the generator emits forward declarations automatically
+([06 §6.7](06-compiler-pipeline.md#67-ordering-and-declarations)).
+
+**Default values.** A parameter row may end with a default value, `= (…)`,
+typed by the row's own parameter. It is printed in the function's
+declaration only (`void greet(const std::string& name, int times = 1);`),
+and a call may then leave out the last arguments that have one: the call's
+⊖ goes down to the required ones. Once a row has a default, every later row
+needs one (`B2C-E0426`). A default sees the module's definitions (its
+globals, functions, structs and enums), not the parameters (`B2C-E0203`);
+it can't name a global or call a function that has the name of its own
+input or an earlier input of the same function (`B2C-E0205`: from an input
+on, C++ finds the input), nor call its own function (`B2C-E0421`). An
+*editable* parameter's default must be a variable of its type that may
+change (`B2C-E0307`), as its argument must.
+
+**Overloads.** Two functions of one module may share a name when a call can
+tell them apart by its argument types, counting the arguments a default
+value lets a call leave out and ignoring pass modes; otherwise the second
+is `B2C-E0211`. A call names its function by symbol ID, never by name. On a
+call to a function whose name another function of the module shares, the
+generator casts each argument to its parameter's type, writes quoted text
+as `std::string("…")` and a *list of* with its type
+(`show(std::vector<int>{1})`), so g++ picks the same function; calls to
+other functions print their arguments as before. *Your functions* labels
+each function that shares its name with its parameter types (*area (int,
+int)*). Functions of different modules still need different names until
+wave W3, since every module is compiled on its own
+([§3.8](#38-organisation-features-editor)).
+
+**In M3** (wave W2) default values, overloads and results of any type are
+built; *moved* parameters wait for M4, where they are useful with *move
+(x)*, and lambdas for M4 too.
 
 ### 3.7.8 Collections
 
@@ -554,22 +732,43 @@ type supports.
 | `item (i) of [c]` | `c.at(static_cast<std::size_t>(i))` | — | `c.at(k)` | — |
 | `next item of [c]` | — | — | — | `c.front()` / `c.top()` |
 | `set item (i) of [c] to (x)` | `c.at(static_cast<std::size_t>(i)) = x` | — | `c[k] = x` | — |
-| `remove item at (i) from [c]` | `c.erase(c.begin() + i)` | — | — | — |
+| `remove item at (i) from [c]` | `b2c::remove_at(c, i)` (out of range: `std::out_of_range`, as `.at()`) | — | — | — |
 | `remove (x) from [c]` | — | `c.erase(x)` | `c.erase(k)` | — |
 | `remove next from [c]` | — | — | — | `c.pop()` |
 | `length of [c]` | `static_cast<int>(c.size())` | ← | ← | ← |
-| `[c] contains (x)` | `std::ranges::find(c, x) != c.end()` (C++20) | `c.contains(x)` (C++20) | `c.contains(k)` | — |
+| `[c] contains (x)` | `std::ranges::find(c, x) != c.end()` (C++20), `std::find(c.begin(), c.end(), x) != c.end()` (C++17) | `c.contains(x)` (C++20), `c.count(x) != 0` (C++17) | `c.contains(k)`, `c.count(k) != 0` | — |
 | `[c] is empty` | `c.empty()` | ← | ← | ← |
-| `clear [c]` | `c.clear()` | ← | ← | (helper) |
-| `sort [c] [ascending ▾] ⊕ by (lambda)` | `std::ranges::sort(c)` / `std::ranges::sort(c, std::greater{})` / with comparator | — | — | — |
-| `list of (a) (b) (c) ⊕` | `{a, b, c}` initialiser (type from context) | ← | — | — |
+| `clear [c]` | `c.clear()` | ← | ← | `c = {};` |
+| `sort [c] [smallest first ▾] ⊕ by (lambda)` | `std::ranges::sort(c)` / `std::ranges::sort(c, std::greater{})` (C++20), `std::sort(c.begin(), c.end())` / with `std::greater<>{}` (C++17) / with comparator | — | — | — |
+| `list of (a) (b) (c) ⊕` | `{a, b, c}` initialiser (type from its place) | ← | — | — |
 
 A map is filled with *set item … of*, and its pairs are visited with *for
 each key, value* ([§3.7.5](#375-control-and-loops)); a map form of *list of*
 waits until pairs exist (after M3).
 
+The collection field lists only the variables whose type the block takes
+(*add … to*: lists, deques, sets, queues, stacks and priority queues), and a
+block that changes its collection lists only those that may be changed
+there ([§3.6](#36-symbols-and-scoping)). *add* and *set item* start their
+value with the item type's start value once the collection is chosen, and
+*item* and *set item* their position with `0` for a list. A
+value must be the item's type (*contains* on a list looks for an item, on a
+set or a map for a key), the items of a list searched by *contains* must be
+comparable (`B2C-E0313`), and *sort* takes a list or deque of comparable
+items, smallest or largest first. *list of* takes its type from its place,
+such as the value of a *create* whose type is chosen or an input that
+expects a list (`B2C-E0315` where the place gives none); it holds 0 to 32
+items, 2 when it is taken from the toolbox, each cast as a value converted
+to the item type is (`{static_cast<double>(i), 2.5}`; a literal that fits
+stays as written), and is printed with its type where C++ cannot tell it,
+such as the list *contains* looks for (`std::vector<int>{1, 2}`). **In M3**
+(wave W2) every row of this table is built but the lambda comparator of
+*sort* (M4, with lambdas), and the generic member block below waits for
+M4's `std` pack, whose metadata it lists.
+
 Indexing is bounds-checked (`.at()`) by default. A block context-menu option,
-*fast unchecked access*, switches to `[]`. Indexing is always zero-based, as
+*fast unchecked access*, switches to `[]` (wave W4; until then every index
+is checked). Indexing is always zero-based, as
 in C++, and tooltips say so. Sizes and indexes are `int`, as M3 has no
 unsigned types, so the generated code casts them
 (`static_cast<int>(c.size())`, `c.at(static_cast<std::size_t>(i))`; a
@@ -587,18 +786,59 @@ dedicated block for each method.
 
 | Block | Generates |
 | ------- | ----------- |
-| `struct [Point] fields: [double] x = (0) ⊕ ☐ printable ☐ comparable` | `struct Point { double x = 0; … };` *printable* auto-generates `operator<<`; *comparable* adds `auto operator<=>(const Point&) const = default;` (C++20) |
-| `new [Point] with x: (1) y: (2)` | `Point{.x = 1, .y = 2}` (C++20 designated initialisers), or `Point{1, 2}` in C++17 mode. Slots are generated from the fields, in declaration order. |
+| `struct [Point] has [double] x = (0) ⊕ ☐ comparable ☐ printable` | `struct Point { double x = 0; … };`, and `T name{};` for a field without a default value. *comparable* adds `auto operator<=>(const Point&) const = default;` (C++20) or the six comparison operators as hidden friends built on `std::tie` (C++17); *printable* adds a hidden-friend `operator<<` that prints `Point{x: 1, y: 2.5}` |
+| `new [Point] with x: (1) y: (2)` | `Point{.x = 1, .y = 2}` (C++20 designated initialisers, an empty part left out), or `Point{1, 2}` in C++17 mode (`{}` for an empty part before a filled one). Parts are generated from the fields, in declaration order, and labelled by them. |
 | `class [Player] inherits [public ▾] [Entity] ⊕ { members }` | `class Player : public Entity { … };` |
 | ↳ `field [private ▾] [int] [health] = (100) ⚙` | Member variable. Members are grouped into `public:` / `protected:` / `private:` sections, keeping their order within each section. |
 | ↳ `method [public ▾] [takeDamage] ([int] amount) ⊕ returns [nothing ▾] ⚙ { }` | `⚙`: `const`, `static`, `virtual`, `override`, `final`, `= 0` (abstract), `noexcept`, `[[nodiscard]]` |
 | ↳ `when created with ([string] name) ⊕ ⚙ set [health ▾] to (100) ⊕ { }` | Constructor with a member-initialiser list (`⚙`: `explicit`, `= default`, `= delete`) |
 | ↳ `when destroyed { }` | Destructor |
 | ↳ `operator [+ ▾] ([const Player&] other) returns [Player] { }` | `Player operator+(const Player& other) const { … }` |
-| `this object` / `[obj ▾] . [field ▾]` | `this` / `obj.field` (or `obj->field` automatically) |
-| `enum [Color] values: [Red] [Green] [Blue] ⊕` | `enum class Color { Red, Green, Blue };` plus an auto-generated `to_string(Color)` / `operator<<` when the enum is printed |
-| `[Color ▾] :: [Red ▾]` | `Color::Red` |
+| `this object` | `this` |
+| `[field ▾] of (obj)` / `set [field ▾] of [obj ▾] to (value)` | `obj.field` / `obj.field = value;` (or `obj->field` automatically, M4) |
+| `enum [Color] values [Red] [Green] [Blue] ⊕` | `enum class Color { Red, Green, Blue };` plus a generated `operator<<` when the enum is printed, written to a file or a field of a printable struct, and `b2c::to_text(Color)` when it is joined or turned into text |
+| `[Color ▾] [Red ▾]` | `Color::Red` |
 | `type alias [Grid] = [list of list of int ▾]` | `using Grid = std::vector<std::vector<int>>;` |
+
+**Structs and enums in M3** (wave W2). The struct, *new … with*, *… of*,
+*set … of*, enum and enum value blocks are built, in the Types category;
+classes, type aliases, `this` and `->` come in M4. A struct's fields and an
+enum's values are rows added with ⊕ and removed with ⊖, at most 64: a new
+field is `int field` (then `field2`, …), a new value `Value` (then `Value2`,
+…). A field takes any type a variable can hold (its menu offers M2's five
+types and the project's structs and enums, and lists of them), and may end
+with a default value, `= (…)`, typed by its own field; a default sees the
+module's globals and functions, not the other fields, and can't name a
+global or call a function called like a field of the same struct
+(`B2C-E0205`: inside a struct, C++ finds the field). A field or value named
+twice, a field named like its struct, and a struct or enum named like
+another definition or a function are `B2C-E0210`; structs that hold each
+other by value are `B2C-E0420`, and any other cycle between definitions
+`B2C-E0421`. *comparable* and *printable* need fields that are themselves
+comparable or printable (`B2C-E0313`, `B2C-E0314` at the tick, naming the
+field). Types are printed in the order their definitions need, whatever the
+order on the canvas: enums and structs before the functions, a struct after
+the types it holds, and `struct B;` first when a struct holds a later one
+inside a list.
+
+*new … with* follows its struct as a call follows its function: ⊕ is offered
+until it has a part for each field, each part's start value comes from its
+field, and a count of parts other than the struct's fields is `B2C-E0306`
+("`Student` has 2 fields, but this block has 1 part. …"). Each part is cast
+as a value converted to its field's type is. In C++17 an empty part before a
+filled one whose field has a default value is `B2C-E0430`, since `{}` would
+skip the default (C++20 leaves the field out and keeps it). The struct menu
+of *new … with* lists the module's structs (*choose a struct first* while
+there is none). *… of* takes its struct as a value input, so it reads a
+field of any struct value (an item of a list, a call's result); its field
+menu lists the fields of the struct plugged in ([§3.6](#36-symbols-and-scoping)),
+and a field the struct lacks is `B2C-E0207`. *enum value*'s first menu lists
+the module's enums, its second their values. *join* and *as text* refuse a
+struct, printable or not (`B2C-E0314`: join its fields instead), and an enum
+joined or turned into text uses `b2c::to_text`, an inline function in
+`namespace b2c` right after the enum, so a user function `to_string(Color)`
+compiles beside it. A struct's and an enum's *share with other modules*
+checkbox is hidden until wave W3.
 
 **Safety defaults:** a class with any `virtual` method automatically gets
 `virtual ~Class() = default;` unless it declares its own destructor (shown in
@@ -609,20 +849,63 @@ the C++ view and in the class block's `⚙`). Copy/move special members can be
 
 | Block | Generates |
 | ------- | ----------- |
-| `open file ("scores.txt") for [reading ▾] as [file]` | `std::ifstream file("scores.txt");` (`writing` → `std::ofstream`; `appending` → `std::ofstream file(path, std::ios::app)`), plus an *if it failed* mouth: `if (!file) { … }` |
-| `read line from [file] into [line]` | `std::getline(file, line)` (a predicate, usable in `repeat while`) |
-| `for each line [line] in file ("data.txt") { } ⊕ if it can't be opened { }` | `std::ifstream` + `while (std::getline(...))` |
-| `write (a) (b) ⊕ to [file] ☑ new line` | `file << a << b << '\n';` |
-| `file ("x") exists` / `delete file` / `create folder` / `for each file in folder` | `std::filesystem::exists(...)` etc. |
+| `open file ("scores.txt") for [reading ▾] as [file] ⊕ if it can't be opened { }` | `std::ifstream file("scores.txt");` (*writing* → `std::ofstream`; *adding to the end* → `std::ofstream file("scores.txt", std::ios::app);`), plus, with the part, `if (!file) { … }` |
+| `read line from [file ▾] into [line ▾]` | `std::getline(file, line)`: a predicate, true when a line was read, false at the end of the file |
+| `for each line [line] in file ("data.txt") { } ⊕ if it can't be opened { }` | `{ std::ifstream b2c_file("data.txt"); if (!b2c_file) { … } std::string line{}; while (std::getline(b2c_file, line)) { … } }` |
+| `write (a) (b) ⊕ to [file ▾] new line ☑` | `file << a << b << '\n';` |
+| `file ("x") exists` / `delete file` / `create folder` / `for each file in folder` | `std::filesystem::exists("x")` (a file or a folder); the other three in M4 |
+
+A path that is not a full path is looked for in the folder the program runs
+in: the project folder, or its sandbox folder when the run settings choose
+it or the project is not saved yet. A program reads and writes only the
+files its blocks name, as the user (decision M3-D3), and no block deletes a
+file. **In M3** (wave W2) the first five blocks are built, in the Files
+category; *delete file*, *create folder* and *for each file in folder* act
+on files no block opened, so they wait for M4's filesystem pack and its
+threat review.
+
+* **for each line** reads a text file line by line, without the line
+  breaks. Its line is read-only and visible in the body only; the stream has
+  a hidden name (`b2c_file`, then `b2c_file2` for a loop inside it), and the
+  whole loop is a block of its own, so the file closes after it. Without
+  the *if it can't be opened* part, nothing runs when the file can't be
+  opened; the toolbox's block has the part.
+* **open file** declares a stream: `std::ifstream` for *reading*,
+  `std::ofstream` otherwise. It is visible in its *if it can't be opened*
+  part and after the block in its list, and closes at the end of that list.
+* **read line** is the bare `std::getline(file, line)` where it is a
+  condition of its own (*if*, *else if*, *repeat while*, *do … then
+  repeat while*), and `static_cast<bool>(std::getline(file, line))`
+  elsewhere (negated by *until*, in a calculation, printed). Its line must
+  be a text variable that may change (`B2C-E0308`).
+* **write** writes its values as *print* shows them in the console (`true`
+  and `false` for true/false values), and refuses what can't be printed
+  (`B2C-E0314`); untick *new line* to go on writing on the same line.
+* A file part takes only a stream of its kind: *read line* one opened for
+  reading, *write* one opened for writing or adding (`B2C-E0301`: "This is an
+  output file, but this block needs an input file here, …").
 
 ### 3.7.11 Errors
 
 | Block | Generates |
 | ------- | ----------- |
-| `try { } catch [any error ▾] as [e] { } ⊕` | `try { } catch (const std::exception& e) { }`. The dropdown lists standard exception types, user exception classes and `...` (*anything*). |
-| `throw [runtime error ▾] ("message")` | `throw std::runtime_error("message");` |
-| `error message of [e]` | `e.what()` |
-| `rethrow` | `throw;` (only valid inside a catch) |
+| `try { } catch [any error ▾] as [e] { } ⊕` | `try { } catch (const std::exception& e) { }`. The dropdown lists the standard errors (*any error*, *invalid argument*, *out of range*, *runtime error*: `std::exception`, `std::invalid_argument`, `std::out_of_range`, `std::runtime_error`), and the user exception classes in M4. |
+| `throw [runtime error ▾] with message ("message")` | `throw std::runtime_error("message");` (also invalid argument and out of range) |
+| `message of [e ▾]` | `e.what()`, used as text |
+| `throw the error again` | `throw;` (only valid inside a catch part: `B2C-E0402`) |
+
+A *try* has 1 to 8 catch parts, added with ⊕ (each copy joined by the word
+*catch*) and removed with ⊖; a new part's error is named `e` (then `e2`, …).
+The parts are tried in order, and *any error* catches every standard error.
+Each part's error is visible in its own part only, and can't be changed
+(`B2C-E0308`). A part that never runs, because an earlier part catches the
+same error or *any error*, warns `B2C-W0507` (g++'s `-Wexceptions` warns
+too). *throw* and *throw the error again* end their path, as *return* does
+(`B2C-W0502` for the blocks after them, and no `B2C-E0410`). There is no
+*catch anything* (`catch (...)`): *any error* catches every standard error
+and has a message, which `...` has not. **In M3** (wave W2) the four blocks
+are built, in the Errors category; user exception classes come with classes
+in M4.
 
 ### 3.7.12 Memory, Concurrency, Generics *(Advanced)*
 
@@ -644,10 +927,21 @@ the C++ view and in the class block's `⚙`). Copy/move special members can be
 | Block | Generates |
 | ------- | ----------- |
 | `namespace [geometry] { definitions }` | `namespace geometry { … }` |
-| `use header [<cmath> ▾]` | `#include <cmath>`. Usually unnecessary, because includes are computed automatically. The dropdown offers standard headers, library-pack headers and project modules only. |
+| `use header [<cmath> ▾]` | `#include <cmath>`. Usually unnecessary, because includes are computed automatically. The dropdown offers standard headers, library-pack headers and project modules only. A definition, wherever it is on the canvas; its header joins the module's `#include` lines once, merged with the headers the blocks bring. |
 | `use namespace [std ▾] in this file` (module top level) · `use namespace [std ▾] here` (inside a function) | `using namespace std;` for this module's `.cpp`, or from this point to the end of the statement list. The dropdown offers `std`, the standard sub-namespaces of the project's standard (`std::chrono`, `std::this_thread`, `std::filesystem`; `std::numbers`, `std::ranges`, `std::views` from C++20) and the module's top-level namespaces. Never in a header or a class or namespace block (enforced). The project setting *Textbook style* does the same for every `.cpp`. How names are then spelled, and the few that must be renamed: [06 §6.14](06-compiler-pipeline.md#614-standard-names-and-using-namespace). |
-| `check at compile time <cond> ("message")` | `static_assert(cond, "message");` |
+| `check at compile time <cond> message [check failed]` | `static_assert(cond, "check failed");` A statement; the message is a text field, escaped as quoted text is. |
 | Block comment (Blockly comment bubble) | `// comment` lines above the statement (sanitised, [08 §8.4.3](08-security.md#843-comments)) |
+
+**In M3** (wave W2) *use header* and *check at compile time* are built, in
+the Program category after *stop program*; *namespace* and *use namespace*
+come with modules in wave W3, with the textbook-style setting. *use header*
+offers the standard headers of the header table (another header is
+`B2C-E0607`). *check at compile time* checks its condition as *if* does (a
+number there warns `B2C-W0519`); a condition that is not fixed when the
+program is built, because it reads a variable or calls a function, is
+`B2C-E0424`, and one that is always false `B2C-E0428`. Its message must be
+one a string literal can hold (`B2C-E0312` otherwise: a NUL character, or
+over 64 KiB).
 
 ## 3.8 Organisation features (editor)
 
@@ -661,7 +955,10 @@ Clear organisation is a core requirement, not polish:
    than one module).
    **In M2** every module is compiled on its own: functions cannot be called
    across modules (`E0206`), their names are unique in the program
-   (`E0211`), and helpers are inline in each file.
+   (`E0211`), and helpers are inline in each file. Since wave W2 of M3, two
+   functions of one module may share a name as overloads
+   ([§3.7.7](#377-functions)); functions of different modules still may not
+   until wave W3.
 2. **Order-independent definitions.** Top-level definition blocks can sit
    anywhere on the canvas. The generator sorts them by dependency and adds
    forward declarations.
@@ -694,14 +991,28 @@ helpers in the `b2c` namespace: `random_int`, `random_real`, `ask<T>`,
 `to_text`, `trim`, `split`, `to_upper`, `replace_all`, `Stopwatch` and
 similar.
 
+**In M3** (wave W2) the helpers are `random_int`, `ask<T>` and `ask_line`
+(M2), `to_text` for decimal numbers (written as `std::cout` would write
+them now), and `split`, `to_lower`, `to_upper`, `trim`, `replace_all`,
+`starts_with` and `ends_with` (C++17 only; C++20 has the members),
+`random_real` and `remove_at`. `split` keeps empty parts and gives one part
+for each character for an empty separator; `to_lower` and `to_upper` change
+the letters A to Z only; `trim` drops spaces and tabs; `replace_all` with an
+empty old text changes nothing; `remove_at` throws `std::out_of_range` for a
+position the list does not have, as `.at()` does. Each is compiled and run
+under C++17 and C++20 at the strict warning level. An enum's `to_text` is
+generated with the enum, not a helper ([§3.7.9](#379-types-structs-classes-enums)),
+and `Stopwatch` comes with the stopwatch in M4.
+
 * Helpers are plain C++ with Doxygen comments, versioned with the catalog, and
   emitted **only if used**.
 * **Placement.** Single-module projects get the helpers inline in a clearly
   delimited section at the top of `main.cpp`, so a student can submit one
   file. Multi-module projects get them in `b2c_support.hpp`. **In M2** every
   module is compiled on its own: functions cannot be called across modules
-  (`E0206`), their names are unique in the program (`E0211`), and helpers
-  are inline in each file.
+  (`E0206`), their names are unique in the program (`E0211`; since wave W2
+  of M3, overloads of one module excepted), and helpers are inline in each
+  file.
 * A project setting, **Prefer plain standard C++**, swaps helpers for inline
   standard code wherever a reasonable inline form exists (e.g. `std::cin >>
   x;` for `ask`).
@@ -817,33 +1128,47 @@ type  = "T"                            # converts to T
   declares fields (`dropdown`, `checkbox`, `text`, `number`, `type`,
   `symbol_decl`, `symbol_ref`, `header`), with a `type` pattern on `type`,
   `symbol_ref` and `symbol_decl` fields, `members` on a `symbol_ref`, and
-  per-option `headers` on a dropdown; `[[block.input]]` value inputs (a
+  per-option `headers` on a dropdown, and `repeat` on a `dropdown`,
+  `checkbox`, `type` or `symbol_decl` field (parts `ERROR0`, `ERROR1`, …,
+  each with the field's default); `[[block.input]]` value inputs (a
   `check` type class, `optional`, `repeat`, `default` tokens, a `type`
   pattern and `assign`); `[[block.statement]]` statement inputs (`repeat`,
   and `when` for an input present only while an `extra` flag is set); and
-  `[[block.extra]]` the mutator state (`count`, `flag` or `params`; a
-  `params` row takes its `types` and its `type_class`). Unknown keys are
-  errors.
+  `[[block.extra]]` the mutator state (`count`, `flag`, or the row kinds
+  `params`, `fields` and `values`: a `params` or `fields` row `{sym, name,
+  type}` takes its `types` and its `type_class`, a `values` row is `{sym,
+  name}`, each row declares its symbol, and an extra of a row kind has that
+  kind as its name). A `repeat` counts an `extra` count, or the rows of a
+  row extra (`repeat = { count = "params" }`: one part per row). A type
+  field whose class no listed type fits may list none (`types = []`): its
+  menu then holds only the module's own types, it has no default, and it
+  may be absent from a block (the analyser reports the missing choice,
+  `B2C-E0430`). Unknown keys are errors.
 * **Signatures** ([ADR-0017](../adr/0017-open-type-representation.md),
   [ADR-0018](../adr/0018-slot-typing.md)). `where` names each type variable
   (a capital letter and an optional digit: `T`, `K`, `C`, `T2`) and its
-  class. A pattern is `any` or `number` (M2's meanings), a variable, a
-  type in C++ syntax (`int`, `std::string`, `std::vector<T>`), a type
-  function of a pattern (`elem(C)`, what one item is; `index(C)`, what
-  *item* takes; `key(C)`, what *contains* looks for), `field:NAME` (the type
-  chosen in that field), `symbol` or `symbol:NAME` (the type of the chosen
-  symbol), `param:NAME` (a call's argument: the matching parameter of the
-  function in that field), `member:NAME` (the matching field of the struct in
-  that field) or `result` (what a `return` gives back where it is); at most
-  128 bytes and 8 levels. A block is typed in one pass: each variable is
-  bound by the first part, in catalog order (a repeated input part by
-  part), whose type is known; `auto`, an empty part and a value typed from
-  its place bind nothing, and an unknown or wrong part binds the variable to
-  an error, so nothing that depends on it is checked. A block whose output
-  is a variable that no part binds takes its type from its **place**: the
-  type its input expects (`B2C-E0315` where the place gives none). Each part
-  is then checked against its resolved pattern: an input by the conversion
-  rule (with `assign = true`, by assignment, so a `char` also fits a
+  class. A pattern is `any` or `number` (M2's meanings), a variable, a type
+  in C++ syntax (`int`, `std::string`, `std::vector<T>`), a type function of
+  a pattern (`elem(C)`, what one item is; `index(C)`, what *item* takes;
+  `key(C)`, what *contains* looks for), `field:NAME` (the type chosen in
+  that field), `symbol` or `symbol:NAME` (the type of the chosen symbol),
+  `param:NAME` (a call's argument: the matching parameter of the function in
+  that field), `member:NAME` (the matching field of the struct in that
+  field) or `result` (what a `return` gives back where it is); at most 128
+  bytes and 8 levels. A block is typed in one pass: each variable is bound
+  by the first part, in catalog order (a repeated input part by part), whose
+  type is known. `param:` and `member:` may name the block's own declaration
+  field on an input repeated by its `params` or `fields` rows (a default
+  value): part *i* takes the type of row *i*. A repeated `symbol_decl` field
+  may have the pattern `field:F`, `F` a repeated type field with the same
+  count, and its part *i* takes the type chosen in `F`'s part *i* (*try*'s
+  error variables). `auto`, an empty part and a value typed from its place
+  bind nothing, and an unknown or wrong part binds the variable to an error,
+  so nothing that depends on it is checked. A block whose output is a
+  variable that no part binds takes its type from its **place**: the type
+  its input expects (`B2C-E0315` where the place gives none). Each part is
+  then checked against its resolved pattern: an input by the conversion rule
+  (with `assign = true`, by assignment, so a `char` also fits a
   `std::string`, as `s = 'a'` does in C++) and by its `check` class, a
   reference by its exact type, a type field by its class; a pattern that
   does not resolve accepts what its class accepts. A type field takes the
@@ -878,12 +1203,20 @@ type  = "T"                            # converts to T
 * **Label templates.** In both labels, `%NAME` marks where the field or input
   `NAME` goes, and a bare `…` marks where a repeated group continues: the
   repeated inputs (`ITEM0`, `ITEM1`, …) or the repeated parts of a block such
-  as the *else if* branches of `control.if`. Statement inputs that the label
-  does not mention are placed after it, in catalog order. The blocks with a
-  variable number of parts (`control.if`, `io.print`, `text.join`,
-  `logic.operation`, `func.define`, `func.call`, `func.call_stmt`) get ⊕/⊖
-  mutators from `blockly-ext`, keyed by block ID; their text still comes from
-  the catalog label.
+  as the *else if* branches of `control.if`. The words between a group's
+  last repeated part and `…` are shown before each later copy, as *else if*
+  is (*switch*'s *case*, *try*'s *catch*); the words before the group are
+  shown once. Statement inputs that the label does not mention are placed
+  after it, in catalog order. The blocks with a variable number of parts get
+  ⊕/⊖ mutators from `blockly-ext`, keyed by block ID: *items* (`io.print`,
+  `text.join`, `logic.operation`, `coll.list_of`, `file.write`), *branches*
+  (`control.if`, `control.switch`, `error.try`, and with a flag and no
+  repeated group `file.for_each_line` and `file.open`), *call arguments*
+  (`func.call`, `func.call_stmt`, and `type.new`, whose parts its struct's
+  fields name) and *rows* (`func.define`'s parameters, `type.struct`'s
+  fields, `type.enum`'s values); their text still comes from the catalog
+  label. The editor hides a field named `SHARED`, and the label's words
+  before it, until wave W3 shows it in projects with several modules.
 * **Messages.** Catalog messages use a block's short name: its friendly
   label up to the first field or input (*print*, *repeat*, *when program
   starts*). A message about a block whose label starts with a field or input
@@ -909,7 +1242,9 @@ type  = "T"                            # converts to T
   ([09 §9.2](09-quality-and-delivery.md#92-testing-strategy)).
 * **Toolbox.** `catalog/toolbox.toml` lists the toolbox categories in the
   order of §3.7 (in M2: Program, Variables, Math, Logic, Text, Control, Loops,
-  Input / Output and Functions). Each category has a name, an icon, a colour
+  Input / Output and Functions; in M3 also Collections, Types, Files and
+  Errors). A category without entries is valid, and the editor does not show
+  it. Each category has a name, an icon, a colour
   token (its ID; the colour values live in the editor theme) and, for
   *Variables* and *Functions*, a dynamic kind whose entries the editor fills
   in ([04 §4.2](04-user-interface.md#42-toolbox)). Its ordered entries name a
@@ -920,7 +1255,7 @@ type  = "T"                            # converts to T
   entry names an existing block, no block has two entries, no entry label
   equals a category name (the editor's tests check the same for its dynamic
   headings), every catalog block is reachable through an entry or a dynamic
-  category (`var.get`, `var.set` and `var.change` through Variables;
+  category (`var.get`, `var.set`, `var.change` and `var.flip` through Variables;
   `func.call` and `func.call_stmt` through Functions), and every
   preset value fits its field, `extra` or input. It also checks each block's
   friendly label: every field and non-repeated value input appears in it,
@@ -1153,6 +1488,14 @@ int main() {
     return 0;
 }
 ```
+
+**In M3** this example cannot be built yet: *sort* has no comparator until
+lambdas arrive in M4, so W2's *sort* takes a list of comparable items,
+smallest or largest first. The `student_records` example
+([`examples/student_records.b2c`](../../examples/student_records.b2c))
+sorts its students by mark with a function of its own instead, with a
+*struct* whose fields start empty (`int mark{};`), *new … with*, *… of* and
+*for each*.
 
 ### 3.13.3 Classes, inheritance, polymorphism
 
