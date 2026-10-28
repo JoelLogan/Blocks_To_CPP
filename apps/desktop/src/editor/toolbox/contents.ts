@@ -720,8 +720,10 @@ function symbolKey(symbol: SymbolInfo): unknown[] {
 /**
  * What the dynamic categories show depends on, as one string: the module shown and the project's
  * modules, where the program starts, the module's variables (with their kinds, types and the
- * functions declaring them) and its functions (with their parameters and results). Equal keys give
- * equal contents, so the toolbox rebuilds its flyout only when the key changes (04 §4.2).
+ * functions declaring them), its functions (with their parameters and results) and the names of
+ * the project's structs and enums, which the labels above overloaded calls show for a parameter
+ * typed by its symbol ({@link overloadLabel}). Equal keys give equal contents, so the toolbox
+ * rebuilds its flyout only when the key changes (04 §4.2).
  *
  * The toolbox computes it whenever a block is added, deleted or changed, and twice in the
  * preview's task (when the edit is stored and when its analysis is), so it must stay linear in the
@@ -734,11 +736,24 @@ export function dynamicContentsKey(context: ContentsContext): string {
     group.owner.kind === 'function' ? [group.owner.blockId, group.owner.name] : group.owner.kind,
     group.symbols.map(symbolKey),
   ]);
-  const functions = context.symbols
-    .allSymbols()
-    .filter((symbol) => symbol.kind === 'function' && symbol.module === active)
-    .map(symbolKey);
-  return JSON.stringify([active, context.modules(), context.programModuleId(), groups, functions]);
+  const functions: unknown[] = [];
+  // Any module's: a parameter may name a struct shared from another module.
+  const userTypes: [string, string][] = [];
+  for (const symbol of context.symbols.allSymbols()) {
+    if (symbol.kind === 'function' && symbol.module === active) {
+      functions.push(symbolKey(symbol));
+    } else if (symbol.kind === 'struct' || symbol.kind === 'enum') {
+      userTypes.push([symbol.id, symbol.name]);
+    }
+  }
+  return JSON.stringify([
+    active,
+    context.modules(),
+    context.programModuleId(),
+    groups,
+    functions,
+    userTypes,
+  ]);
 }
 
 /** The key a category definition carries so its toolbox item can find its icon. */

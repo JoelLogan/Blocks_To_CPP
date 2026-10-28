@@ -922,6 +922,38 @@ describe('the key of what the dynamic categories show', () => {
     }
   });
 
+  it('changes when a struct or enum that an overload label names is renamed', () => {
+    // area(Shape) beside area(int): the labels name the struct, which the parameter's type
+    // gives only by its symbol.
+    const shape = symbolFixture('s_shape', 'Shape', {
+      kind: 'struct',
+      fields: [],
+      comparable: false,
+      printable: false,
+    });
+    const s = symbolFixture('s_s', 's', {
+      kind: 'parameter',
+      mode: 'copy',
+      type: { ref: 's_shape' },
+    });
+    const n = symbolFixture('s_n', 'n', { kind: 'parameter', mode: 'copy', type: 'int' });
+    const area = (id: string, params: string[]) =>
+      symbolFixture(id, 'area', { kind: 'function', params, returns: 'void', type: 'void' });
+    const project = (struct: typeof shape) => ({
+      ...base,
+      all: [guess, struct, s, n, area('s_a1', ['s_s']), area('s_a2', ['s_n'])],
+    });
+    const renamed = { ...shape, name: 'Figure' };
+    expect(labelsOf(functionsContents(context(project(shape))))).toContain('area (Shape)');
+    expect(labelsOf(functionsContents(context(project(renamed))))).toContain('area (Figure)');
+    expect(keyOf(project(renamed))).not.toBe(keyOf(project(shape)));
+    // An enum's name too.
+    const level = symbolFixture('s_level', 'Level', { kind: 'enum', values: [] });
+    expect(keyOf({ ...base, all: [guess, { ...level, name: 'Grade' }] })).not.toBe(
+      keyOf({ ...base, all: [guess, level] }),
+    );
+  });
+
   it('follows each parent link of the canvas at most once, however far down main declares', () => {
     // A statement's parent is the statement before it: the k-th `create` in main is k links
     // below main. Asking each declaration for its root block followed about n²/2 links for n
