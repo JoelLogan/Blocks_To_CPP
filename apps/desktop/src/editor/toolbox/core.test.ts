@@ -26,6 +26,7 @@ import type { MakeVariableResult } from './makeVariable';
 import { analysisSymbolSource, createToolboxPlugin } from './plugin';
 import { B2C_BLOCK_KIND, type B2cBlockInfo } from './presets';
 import {
+  FLYOUT_TEST_TIMEOUT_MS,
   analyse,
   disposeTestWorkspaces,
   editorContext,
@@ -35,6 +36,10 @@ import {
   realCoreOrSkip,
   setUpToolboxBlocks,
 } from './testing';
+
+// Each test here shows the flyout of every catalog block (FLYOUT_TEST_TIMEOUT_MS): with W2's
+// package C2's blocks its slowest took 2.8 s in the suite under coverage with two workers.
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 const core: CoreWasm | null = await realCoreOrSkip();
 
