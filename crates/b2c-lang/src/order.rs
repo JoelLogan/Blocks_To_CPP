@@ -140,38 +140,65 @@ impl Graph {
                 cycle_of[node] = index;
             }
         }
-        let mut placed = vec![false; count];
-        let mut out = Vec::with_capacity(count);
-        // Whether every need of `node` is met: its complete ones, its forward
-        // ones too with `soft`, all but those inside its own cycle with
-        // `cycle`.
-        let ready = |placed: &[bool], node: usize, soft: bool, cycle: bool| {
-            self.deps[node].iter().all(|dep| {
-                dep.on == node
-                    || placed[dep.on]
-                    || (!soft && dep.need == Need::Forward)
-                    || (cycle && cycle_of[node] != usize::MAX && cycle_of[dep.on] == cycle_of[node])
-            })
+        // A node is ready in tier 0 when every need is met, in tier 1 when
+        // every need but its forward ones is, in tier 2 when every need but
+        // its forward ones and those inside its own cycle is; any node is
+        // ready in tier 3. Each step places the node first in key order of
+        // the first tier that has one. Instead of rescanning every node for
+        // each step, each node counts its needs not met yet for tiers 0 to 2
+        // (one per need, a need of itself not counted), and each tier keeps
+        // its ready nodes in key order.
+        let in_cycle =
+            |node: usize, on: usize| cycle_of[node] != usize::MAX && cycle_of[on] == cycle_of[node];
+        let counted = |node: usize, dep: &Dep| {
+            [
+                true,
+                dep.need != Need::Forward,
+                dep.need != Need::Forward && !in_cycle(node, dep.on),
+            ]
         };
-        while out.len() < count {
-            let first = |soft: bool, cycle: bool| {
-                (0..count)
-                    .filter(|node| !placed[*node] && ready(&placed, *node, soft, cycle))
-                    .min_by(|a, b| self.key(*a).cmp(&self.key(*b)))
-            };
-            let Some(next) = first(true, false)
-                .or_else(|| first(false, false))
-                .or_else(|| first(false, true))
-                .or_else(|| {
-                    (0..count)
-                        .filter(|node| !placed[*node])
-                        .min_by(|a, b| self.key(*a).cmp(&self.key(*b)))
-                })
-            else {
-                break;
-            };
-            placed[next] = true;
+        let mut unmet = vec![[0usize; 3]; count];
+        let mut needed_by: Vec<Vec<(usize, [bool; 3])>> = vec![Vec::new(); count];
+        for (node, deps) in self.deps.iter().enumerate() {
+            for dep in deps {
+                if dep.on == node {
+                    continue;
+                }
+                let tiers = counted(node, dep);
+                for (tier, &counts) in tiers.iter().enumerate() {
+                    if counts {
+                        unmet[node][tier] += 1;
+                    }
+                }
+                needed_by[dep.on].push((node, tiers));
+            }
+        }
+        let key = |node: usize| (self.key(node), node);
+        let mut ready: [BTreeSet<_>; 4] = Default::default();
+        for (node, counts) in unmet.iter().enumerate() {
+            for (tier, &left) in counts.iter().enumerate() {
+                if left == 0 {
+                    ready[tier].insert(key(node));
+                }
+            }
+            ready[3].insert(key(node));
+        }
+        let mut out = Vec::with_capacity(count);
+        while let Some(&(_, next)) = ready.iter().find_map(BTreeSet::first) {
+            for set in &mut ready {
+                set.remove(&key(next));
+            }
             out.push(next);
+            for &(node, tiers) in &needed_by[next] {
+                for (tier, &counts) in tiers.iter().enumerate() {
+                    if counts {
+                        unmet[node][tier] -= 1;
+                        if unmet[node][tier] == 0 && ready[3].contains(&key(node)) {
+                            ready[tier].insert(key(node));
+                        }
+                    }
+                }
+            }
         }
         out
     }
@@ -995,5 +1022,108 @@ mod tests {
         let mut diags = Diags::default();
         graph.report_cycles(&mut diags);
         assert_eq!(diags.list.len(), count);
+    }
+
+    /// The order as it was first written: each step rescans every node
+    /// for the first one in key order of the first tier that has one.
+    fn rescanning_order(graph: &Graph) -> Vec<usize> {
+        let count = graph.nodes.len();
+        let mut cycle_of = vec![usize::MAX; count];
+        for (index, cycle) in graph.cycles().iter().enumerate() {
+            for &node in cycle {
+                cycle_of[node] = index;
+            }
+        }
+        let mut placed = vec![false; count];
+        let mut out = Vec::new();
+        let ready = |placed: &[bool], node: usize, soft: bool, cycle: bool| {
+            graph.deps[node].iter().all(|dep| {
+                dep.on == node
+                    || placed[dep.on]
+                    || (!soft && dep.need == Need::Forward)
+                    || (cycle && cycle_of[node] != usize::MAX && cycle_of[dep.on] == cycle_of[node])
+            })
+        };
+        while out.len() < count {
+            let first = |soft: bool, cycle: bool| {
+                (0..count)
+                    .filter(|node| !placed[*node] && ready(&placed, *node, soft, cycle))
+                    .min_by(|a, b| graph.key(*a).cmp(&graph.key(*b)))
+            };
+            let next = first(true, false)
+                .or_else(|| first(false, false))
+                .or_else(|| first(false, true))
+                .or_else(|| {
+                    (0..count)
+                        .filter(|node| !placed[*node])
+                        .min_by(|a, b| graph.key(*a).cmp(&graph.key(*b)))
+                })
+                .expect("a node left");
+            placed[next] = true;
+            out.push(next);
+        }
+        out
+    }
+
+    proptest::proptest! {
+        /// Counting the needs not met gives the order rescanning gives, on
+        /// graphs with forward needs, cycles, needs of a node itself and
+        /// equal names.
+        #[test]
+        fn counting_needs_orders_as_rescanning_does(
+            kinds in proptest::collection::vec(0u8..4, 1..24),
+            edges in proptest::collection::vec((0usize..24, 0usize..24, proptest::bool::ANY), 0..60),
+        ) {
+            let mut graph = Graph::default();
+            for (index, kind) in kinds.iter().enumerate() {
+                let kind = match kind {
+                    0 => NodeKind::Constant,
+                    1 => NodeKind::Struct,
+                    2 => NodeKind::Function,
+                    _ => NodeKind::Other,
+                };
+                // Few names, so that keys tie on the name and the block.
+                let mut added = node(kind, &format!("n{}", index % 5));
+                added.block = BlockId::new(&format!("b{}", index % 7)).expect("id");
+                graph.add(added);
+            }
+            let count = kinds.len();
+            for (from, on, forward) in edges {
+                let need = if forward { Need::Forward } else { Need::Complete };
+                need_of(&mut graph, from % count, on % count, need);
+            }
+            proptest::prop_assert_eq!(graph.order(), rescanning_order(&graph));
+        }
+    }
+
+    fn need_of(graph: &mut Graph, from: usize, on: usize, need: Need) {
+        graph.deps[from].push(Dep {
+            on,
+            need,
+            via: None,
+            field: false,
+        });
+    }
+
+    /// Ordering 40,000 declarations, a chain of them needing the next one,
+    /// takes about linear time; rescanning every node for each one took
+    /// minutes.
+    #[test]
+    fn many_declarations_are_ordered_in_about_linear_time() {
+        let mut graph = Graph::default();
+        let count = 40_000;
+        for index in 0..count {
+            graph.add(node(NodeKind::Other, &format!("g{index:05}")));
+        }
+        for index in 0..count - 1 {
+            if index % 2 == 0 {
+                need_of(&mut graph, index, index + 1, Need::Complete);
+            }
+        }
+        let started = std::time::Instant::now();
+        let order = graph.order();
+        let took = started.elapsed();
+        assert_eq!(order.len(), count);
+        assert!(took < std::time::Duration::from_secs(10), "{took:?}");
     }
 }
