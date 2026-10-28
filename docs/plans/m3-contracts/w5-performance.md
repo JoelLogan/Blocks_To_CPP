@@ -650,6 +650,43 @@ benchmarks' README (this branch's, updated here).
 
 ## 13. Measurements
 
-Filled in as the work lands; every performance change gives before and after
-numbers from the repository's benchmarks. The A/B job to dispatch on this
-branch against its base is listed in the Status.
+Every performance change gives before and after numbers from the
+repository's benchmarks. Local numbers are from this container (4 cores, a
+slower CPU than CI's runners), the E2E debug build the benchmarks use, under
+xvfb with WebKitGTK 2.52.6, 5 samples per metric (`B2C_BENCH_SAMPLES=5`);
+they compare builds on the same machine within an hour, not with the
+nightly's. The A/B job to dispatch on this branch against its base is listed
+in the Status.
+
+### 13.1 The worker on by default (§2.4)
+
+Base: `8a3d8ec` (the main thread). Worker: this branch's scope index commit
+built with the worker on. The preview, guessing-game and declare
+benchmarks, one run each:
+
+| Metric | Main thread | Worker | Change |
+| --- | --- | --- | --- |
+| `webview.preview-1000.p95` (the first long task after which the C++ is there, panel folded) | 103 ms | 21 ms | −80 % |
+| `webview.edit-1000.p95-all` (an edit until the page settles, panel shown) | 1,418 ms | 1,350 ms | −5 % |
+| `webview.guessing-game.edit.max-task` | 39 ms | 34 ms | −13 % |
+| `webview.guessing-game.select.max-task` | 21 ms | 17 ms | −19 % |
+| `webview.declare-variable.toolbox-refresh` | 59 ms | 55.5 ms | −6 % |
+| `webview.declare-variable-1000.toolbox-refresh` | 54.5 ms | 52.5 ms | −4 % |
+| `webview.declare-variable.max-task` (guessing game) | 83 ms | 78.5 ms | −5 % |
+
+Spans per edit at 1,000 blocks, panel folded (medians): main thread
+`b2c:preview` 61 ms of which `update` 47 ms on the page; worker
+`b2c:preview` 76 ms of which `wait` 60.5 ms with the page free, `update`
+51 ms in the worker, `read` 8 ms, `commit` and `publish` 3 ms each. So the
+page's own share of a 1,000-block preview falls from about 61 ms to about
+15 ms (read, commit, publish, receive), and the preview's latency grows by
+about 15 ms, as the spike measured (w5-worker.md §2.2).
+
+**What the worker does not change:** the longest task of a 1,000-block edit
+with the panel shown, 875 ms in both builds. It is not the preview (whose
+spans add up to under 70 ms): it is Blockly re-rendering the edited stack
+(U11's "whole statement lists re-render", M3-2's render patch, moved after
+M3), and it dominates `webview.edit-1000.p95-all` in this debug build.
+
+The worker flow and the M2 exit flow pass with the worker on (the exit flow
+failed before the scope index, w5-worker.md §4).

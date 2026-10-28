@@ -8,9 +8,9 @@
  * failed starts, or a webview that cannot post a `Module`) is logged once, with no banner; the
  * preview then works as in M2.
  *
- * The editor uses this service only in builds made with `B2C_PREVIEW_WORKER=1`
- * ({@link previewWorkerEnabled}), until the integration step after W2 makes it the default
- * (docs/plans/m3-contracts/w5-worker.md §4).
+ * The editor uses this service in every build but one made with `B2C_PREVIEW_WORKER=0`
+ * ({@link previewWorkerEnabled}), the off switch kept for measuring the main-thread path
+ * (docs/plans/m3-contracts/w5-performance.md §2.4).
  */
 import { CoreError, CoreTrap, ScopeIndex, type UpdateResult } from '@blocks2cpp/b2c-core-wasm';
 import type { CoreWorkerClient } from '@blocks2cpp/b2c-core-wasm/worker';
@@ -24,9 +24,12 @@ import {
   type PreviewThread,
 } from './service';
 
-/** Whether this build previews in the worker: `B2C_PREVIEW_WORKER=1` at build time (vite.config.ts). */
+/**
+ * Whether this build previews in the worker: always, unless it was made with
+ * `B2C_PREVIEW_WORKER=0` (vite.config.ts), which keeps the preview on the main thread.
+ */
 export function previewWorkerEnabled(): boolean {
-  return import.meta.env['B2C_PREVIEW_WORKER'] === '1';
+  return import.meta.env['B2C_PREVIEW_WORKER'] !== '0';
 }
 
 /**

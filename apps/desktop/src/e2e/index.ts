@@ -65,7 +65,7 @@ export interface E2eHookDeps {
   readonly spawnUnwrappedWorker: () => WorkerLike;
   /** The worker probe's request to the IPC endpoint, made from the page. */
   readonly pageRequest: () => Promise<WorkerProbe['request']>;
-  /** Whether this build previews in the worker (`B2C_PREVIEW_WORKER=1`). */
+  /** Whether this build previews in the worker (unless built with `B2C_PREVIEW_WORKER=0`). */
   readonly previewWorkerEnabled: () => boolean;
   /** The open editor's worker preview service, or `null`. */
   readonly previewService: () => {

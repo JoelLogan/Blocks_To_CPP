@@ -194,9 +194,9 @@ export interface E2eHookContract {
   /** The result of the latest {@link startWorkerCheck}, or `null` while it runs or before one. */
   workerCheck(): E2eWorkerCheck | null;
   /**
-   * Where the editor's next preview runs: `worker` or `main` in a build made with
-   * `B2C_PREVIEW_WORKER=1` (the main thread until the worker has started, and after it has
-   * failed), `off` in a build without it, and `null` when no editor is open.
+   * Where the editor's next preview runs: `worker` or `main` (the main thread until the worker
+   * has started, and after it has failed), `off` in a build made with `B2C_PREVIEW_WORKER=0`,
+   * and `null` when no editor is open.
    */
   previewThread(): 'worker' | 'main' | 'off' | null;
   /**
