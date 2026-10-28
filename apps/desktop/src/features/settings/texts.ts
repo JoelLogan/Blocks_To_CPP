@@ -17,8 +17,9 @@ export const MAX_SHOWN_NOTICES = 20;
 const KEY_LABELS: Readonly<Record<string, string>> = {
   codeStyle: 'Code style',
   'codeStyle.indentWidth': 'Code style: indent width',
-  run: 'Run on errors',
+  run: 'Run on errors and where programs run',
   'run.onErrors': 'Run on errors',
+  'run.externalTerminal': 'Where programs run',
   console: 'Console',
   'console.scrollbackLines': 'Console: scrollback lines',
   toolchain: 'Toolchain',

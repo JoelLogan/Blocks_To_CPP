@@ -699,9 +699,28 @@ describe('texts', () => {
     expect(formatLines(100_000)).toBe('100,000');
   });
 
+  it('names every section and key of the settings file', () => {
+    // A full `Settings` (the type makes every section and key of the schema required), so a key
+    // added to the store and to the IPC type without a label here fails.
+    const unnamed: string[] = [];
+    for (const [section, value] of Object.entries(settingsFixture())) {
+      if (section === 'formatVersion') {
+        continue;
+      }
+      const keys = [section, ...Object.keys(value as object).map((key) => `${section}.${key}`)];
+      unnamed.push(...keys.filter((key) => settingLabel(key).startsWith('The setting “')));
+    }
+    expect(unnamed).toEqual([]);
+  });
+
   it('names settings keys and explains notices', () => {
     expect(settingLabel('toolchain.selectedId')).toBe('Toolchain: the default compiler');
-    expect(settingLabel('run')).toBe('Run on errors');
+    expect(settingLabel('run')).toBe('Run on errors and where programs run');
+    expect(settingLabel('run.onErrors')).toBe('Run on errors');
+    expect(settingLabel('run.externalTerminal')).toBe('Where programs run');
+    expect(noticeText({ key: 'run.externalTerminal', reason: 'invalidValue' })).toBe(
+      'Where programs run had a value that is not allowed and was reset to its default.',
+    );
     expect(settingLabel('ui.layout.rightDockWidth')).toBe("Layout: the C++ panel's width");
     expect(settingLabel('appearance.theme')).toBe('Appearance: colours');
     expect(settingLabel('editor.blockLabels')).toBe('Blocks: block labels');
