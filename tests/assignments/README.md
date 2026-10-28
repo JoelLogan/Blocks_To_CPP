@@ -18,7 +18,7 @@ green one by one as the block projects arrive.
 | [`grade_average`](grade_average/README.md) | list (vector), average and maximum | W2 | green |
 | [`word_count`](word_count/README.md) | files, strings | W2 | green |
 | [`student_records`](student_records/README.md) | struct, list of structs, sorting | W2 | green |
-| [`bank_menu`](bank_menu/README.md) | `switch`, enum, `do … while` | W2 | pending |
+| [`bank_menu`](bank_menu/README.md) | `switch`, enum, `do … while` | W2 | green |
 | [`palindrome`](palindrome/README.md) | strings, reversal | W2 | green |
 | [`dice_statistics`](dice_statistics/README.md) | random numbers, map | W2 | green |
 | [`guessing_game`](guessing_game/README.md) | random numbers, input, loops | M2 | green |

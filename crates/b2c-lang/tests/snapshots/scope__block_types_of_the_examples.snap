@@ -4,6 +4,24 @@ expression: text
 ---
 average.b2c:
   (no value blocks)
+bank_menu.b2c:
+  b004: {"ref":"s_Action"}
+  b006: {"ref":"s_Action"}
+  b008: {"ref":"s_Action"}
+  b010: {"ref":"s_Action"}
+  b012: {"ref":"s_Action"}
+  b016: {"ref":"s_Action"}
+  b026: {"ref":"s_Action"}
+  b029: {"ref":"s_Action"}
+  b033: "bool"
+  b037: {"ref":"s_Action"}
+  b041: "bool"
+  b043: "bool"
+  b047: {"ref":"s_Action"}
+  b049: {"ref":"s_Action"}
+  b051: {"ref":"s_Action"}
+  b053: {"ref":"s_Action"}
+  b054: "bool"
 countdown.b2c:
   (no value blocks)
 dice_statistics.b2c:
