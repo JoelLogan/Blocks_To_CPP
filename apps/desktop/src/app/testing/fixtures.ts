@@ -2,7 +2,12 @@
  * Test helpers for the shell and the features: a scriptable fake of the IPC client and small
  * fixtures of the backend's types. Only tests import this module; it is never part of the app.
  */
-import type { BdmBuildConfiguration, BdmDocument, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
+import type {
+  BdmBuildConfiguration,
+  BdmDocument,
+  BdmProjectOptions,
+  PreviewResult,
+} from '@blocks2cpp/b2c-core-wasm';
 import {
   type AppEvent,
   type AppInfo,
@@ -111,8 +116,14 @@ export function previewFixture(diagnostics: Diagnostic[] = []): PreviewResult {
   };
 }
 
-/** A small loaded document. */
-export function documentFixture(name = 'Guessing Game'): BdmDocument {
+/**
+ * A small loaded document. `options` overrides its project options; *Textbook style*
+ * (`usingNamespaceStd: true`) makes it a format 2 document, as the core saves it.
+ */
+export function documentFixture(
+  name = 'Guessing Game',
+  options: Partial<BdmProjectOptions> = {},
+): BdmDocument {
   const configuration: BdmBuildConfiguration = {
     optimization: 'none',
     debugInfo: true,
@@ -122,7 +133,7 @@ export function documentFixture(name = 'Guessing Game'): BdmDocument {
   };
   return {
     format: 'blocks2cpp/project',
-    formatVersion: 1,
+    formatVersion: options.usingNamespaceStd === true ? 2 : 1,
     generator: { app: '0.1.0', catalog: '1.3.0' },
     project: {
       id: 'prj_fixture',
@@ -134,6 +145,7 @@ export function documentFixture(name = 'Guessing Game'): BdmDocument {
         preferPlainStd: false,
         formattingStyle: 'stream',
         checkedIndexing: true,
+        ...options,
       },
       build: { configurations: { debug: configuration, release: configuration } },
       run: { workingDirectory: 'project' },

@@ -82,6 +82,8 @@ export interface BdmProjectOptions {
   preferPlainStd: boolean;
   formattingStyle: 'stream' | 'format';
   checkedIndexing: boolean;
+  /** *Textbook style*: `using namespace std;` in generated files; written only when true (format 2). */
+  usingNamespaceStd?: boolean;
 }
 
 export interface BdmBuildSettings {

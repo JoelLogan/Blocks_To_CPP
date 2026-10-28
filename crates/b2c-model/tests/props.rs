@@ -408,7 +408,7 @@ fn project() -> impl Strategy<Value = Project> {
             any::<bool>(),
         ),
         (
-            any::<[bool; 4]>(),
+            any::<[bool; 5]>(),
             prop::sample::select(vec![FormattingStyle::Stream, FormattingStyle::Format]),
         ),
         (
@@ -444,6 +444,7 @@ fn project() -> impl Strategy<Value = Project> {
                     prefer_plain_std: flags[2],
                     formatting_style,
                     checked_indexing: flags[3],
+                    using_namespace_std: flags[4],
                 },
                 build: BuildSettings {
                     configurations: Configurations { debug, release },

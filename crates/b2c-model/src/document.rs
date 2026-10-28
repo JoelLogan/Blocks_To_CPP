@@ -115,6 +115,11 @@ pub struct ProjectOptions {
     /// Bounds-checked indexing (`.at()`) by default.
     #[serde(default = "default_true")]
     pub checked_indexing: bool,
+    /// *Textbook style*: write `using namespace std;` in every `.cpp` that
+    /// includes a standard header (06 §6.14.12). A format version 2 key
+    /// (ADR-0013), written only when `true`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub using_namespace_std: bool,
 }
 
 impl Default for ProjectOptions {
@@ -125,6 +130,7 @@ impl Default for ProjectOptions {
             prefer_plain_std: false,
             formatting_style: FormattingStyle::Stream,
             checked_indexing: true,
+            using_namespace_std: false,
         }
     }
 }

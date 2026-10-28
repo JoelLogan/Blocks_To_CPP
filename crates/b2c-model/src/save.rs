@@ -345,6 +345,11 @@ impl Writer {
         self.field_display("preferPlainStd", options.prefer_plain_std);
         self.field_variant("formattingStyle", &options.formatting_style);
         self.field_display("checkedIndexing", options.checked_indexing);
+        // Textbook style, a format version 2 key: written only when on, so
+        // that a project without it stays version 1 (ADR-0013).
+        if options.using_namespace_std {
+            self.field_display("usingNamespaceStd", true);
+        }
         self.end('}');
         self.key("build");
         self.build(&project.build);

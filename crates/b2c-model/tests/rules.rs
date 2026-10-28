@@ -144,7 +144,7 @@ fn e0108_unknown_keys_in_a_file_from_a_newer_app() {
     let mut document = base();
     document["generator"]["app"] = json!("9.0.0");
     document["project"]["lints"] = json!({"W0505": "error"});
-    document["project"]["options"] = json!({"usingNamespaceStd": true});
+    document["project"]["options"] = json!({"wrapLongLines": true});
     print_block(&mut document)["breakpoint"] = json!(true);
     let diagnostics = failure(&bytes(&document));
     let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
@@ -154,7 +154,7 @@ fn e0108_unknown_keys_in_a_file_from_a_newer_app() {
         messages,
         [
             format!("\"project\" has the key \"lints\", {newer}"),
-            format!("\"project.options\" has the key \"usingNamespaceStd\", {newer}"),
+            format!("\"project.options\" has the key \"wrapLongLines\", {newer}"),
             format!("This block has the key \"breakpoint\", {newer}"),
         ]
     );

@@ -42,18 +42,22 @@ const _: () = assert!(OLDEST_UNMIGRATED_VERSION <= MAX_FORMAT_VERSION);
 /// The format version that added template type terms.
 const TEMPLATE_TERMS: u32 = 2;
 
+/// The format version that added `options.usingNamespaceStd`.
+const TEXTBOOK_STYLE: u32 = 2;
+
 /// The lowest format version whose keys cover the document (ADR-0013): 2
 /// when it holds a template type term, in a field or in the `type` of a row
 /// of `extra` (`params`, `fields`), at any depth, in any module; else 1. A user type
-/// (`{"ref": id}`) and a name are version 1 values.
-///
-/// `options.usingNamespaceStd` (*Textbook style*) is a version 2 key too,
-/// but no document has it yet: [`crate::ProjectOptions`] gains it with
-/// Textbook style, and this function with it.
+/// (`{"ref": id}`) and a name are version 1 values. *Textbook style*
+/// (`options.usingNamespaceStd`, written only when on) is a version 2 key,
+/// so a document with it on is version 2 too.
 ///
 /// The canonical writer writes this, not [`Document::format_version`], so a
 /// file that stops using templates goes back to version 1.
 pub fn required_format_version(document: &Document) -> u32 {
+    if document.project.options.using_namespace_std {
+        return TEXTBOOK_STYLE;
+    }
     let mut template = false;
     walk::document(document, |block| {
         template = template || terms::has_template(block);

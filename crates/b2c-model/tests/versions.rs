@@ -17,6 +17,7 @@ use std::path::PathBuf;
 
 use b2c_ir::types::TypeTerm;
 use b2c_ir::{BlockId, SymbolId};
+use b2c_model::content_hash;
 use b2c_model::{
     Clipboard, ClipboardRef, Document, FieldValue, MAX_CLIPBOARD_FORMAT_VERSION, MAX_FORMAT_VERSION,
     OLDEST_CLIPBOARD_FORMAT_VERSION, OLDEST_UNMIGRATED_VERSION, RefKind, SeededIds, load, load_clipboard,
@@ -238,13 +239,48 @@ fn versions_1_and_2_load_without_migration_and_newer_ones_are_refused() {
 }
 
 #[test]
-fn textbook_style_is_not_a_key_yet() {
-    // `options.usingNamespaceStd` is a version 2 key (ADR-0013), but no
-    // document holds it until Textbook style arrives: it stays unknown.
+fn textbook_style_round_trips() {
+    // Off: not written, and the project stays version 1.
+    let off = loads(&base());
+    assert!(!off.project.options.using_namespace_std);
+    assert_eq!(required_format_version(&off), 1);
+    let off_text = to_canonical_json(&off);
+    assert!(!off_text.contains("usingNamespaceStd"), "{off_text}");
+    assert_eq!(saved_version(&off_text), 1);
+    // Written as false, it reads as off and is not written back.
     let mut document = base();
-    document["formatVersion"] = json!(2);
-    document["project"]["options"] = json!({"usingNamespaceStd": true});
-    assert_eq!(codes(&document), ["B2C-E0110"]);
+    document["project"]["options"] = json!({"usingNamespaceStd": false});
+    assert_eq!(to_canonical_json(&loads(&document)), off_text);
+    // On: written, and the project is version 2, in a file that said
+    // version 1 too (as for templates, the writer counts the keys).
+    for version in [1, 2] {
+        let mut document = base();
+        document["formatVersion"] = json!(version);
+        document["project"]["options"] = json!({"usingNamespaceStd": true});
+        let on = loads(&document);
+        assert!(on.project.options.using_namespace_std);
+        assert_eq!(required_format_version(&on), 2);
+        let text = to_canonical_json(&on);
+        assert_eq!(saved_version(&text), 2);
+        assert!(text.contains("\"usingNamespaceStd\": true"), "{text}");
+        assert_eq!(to_canonical_json(&load(text.as_bytes()).unwrap()), text);
+        // The content hash counts it.
+        let mut toggled = on.clone();
+        toggled.project.options.using_namespace_std = false;
+        assert_ne!(content_hash(&on), content_hash(&toggled));
+        // Turned off again, the file goes back to version 1.
+        assert_eq!(saved_version(&to_canonical_json(&toggled)), 1);
+        // A reader whose newest format is older than the one saved (an M2
+        // app reads version 1 only) refuses the file as newer, `E0108`:
+        // here, the version after this reader's newest.
+        let mut newer: Value = serde_json::from_str(&text).unwrap();
+        newer["formatVersion"] = json!(MAX_FORMAT_VERSION + 1);
+        assert_eq!(codes(&newer), ["B2C-E0108"]);
+    }
+    // Not a boolean: the usual type error.
+    let mut document = base();
+    document["project"]["options"] = json!({"usingNamespaceStd": "yes"});
+    assert_eq!(codes(&document).len(), 1);
 }
 
 // ---------------------------------------------------------------------------

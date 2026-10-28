@@ -164,6 +164,7 @@ impl<'a> Decoder<'a> {
                 "preferPlainStd",
                 "formattingStyle",
                 "checkedIndexing",
+                "usingNamespaceStd",
             ],
         )?;
         let defaults = ProjectOptions::default();
@@ -187,12 +188,19 @@ impl<'a> Decoder<'a> {
             || defaults.checked_indexing,
             Self::bool,
         );
+        let using_namespace_std = self.or_default(
+            entries,
+            "usingNamespaceStd",
+            || defaults.using_namespace_std,
+            Self::bool,
+        );
         Some(ProjectOptions {
             show_advanced: show_advanced?,
             manual_memory: manual_memory?,
             prefer_plain_std: prefer_plain_std?,
             formatting_style: formatting_style?,
             checked_indexing: checked_indexing?,
+            using_namespace_std: using_namespace_std?,
         })
     }
 

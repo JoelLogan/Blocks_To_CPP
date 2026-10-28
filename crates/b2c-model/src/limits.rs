@@ -21,8 +21,18 @@ pub const MAX_RAW_CPP_BYTES: usize = 256 * 1024;
 pub const MAX_IDENT_LEN: usize = 64;
 /// Maximum length, in characters, of a qualified name such as `geo::area`
 /// in a clipboard payload's `refs` (spec §5.12). A name of
-/// [`MAX_IDENT_LEN`] characters inside 14 namespaces of that length fits.
+/// [`MAX_IDENT_LEN`] characters inside [`MAX_NAMESPACE_DEPTH`] namespaces of
+/// that length fits (checked below).
 pub const MAX_QUALIFIED_NAME_LEN: usize = 1024;
+/// Maximum nesting of *namespace* blocks (`B2C-E0219`,
+/// w3-modules.md §2.10).
+pub const MAX_NAMESPACE_DEPTH: usize = 14;
+
+// The longest qualified name: `MAX_NAMESPACE_DEPTH` namespaces and the
+// name, each `MAX_IDENT_LEN` characters, joined by `::`.
+const _: () = assert!(
+    (MAX_NAMESPACE_DEPTH + 1) * MAX_IDENT_LEN + MAX_NAMESPACE_DEPTH * "::".len() <= MAX_QUALIFIED_NAME_LEN
+);
 /// Maximum number of parts in a variadic (`⊕`) block.
 pub const MAX_VARIADIC_PARTS: usize = 64;
 /// Maximum absolute canvas coordinate.
@@ -34,3 +44,20 @@ pub const MAX_COORDINATE: i32 = 10_000_000;
 /// one would change on its way through the editor, and with it the program
 /// or the security hash.
 pub const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_deepest_qualified_name_fits() {
+        assert_eq!(MAX_NAMESPACE_DEPTH, 14);
+        let name = "n".repeat(MAX_IDENT_LEN);
+        let deepest = vec![name; MAX_NAMESPACE_DEPTH + 1].join("::");
+        assert!(
+            deepest.chars().count() <= MAX_QUALIFIED_NAME_LEN,
+            "{}",
+            deepest.len()
+        );
+    }
+}
