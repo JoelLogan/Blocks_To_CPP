@@ -307,24 +307,28 @@ impl Lowerer<'_> {
 
     /// A struct or an enum definition (`type.struct`, `type.enum`): its item,
     /// when the pre-pass declared it. Its rows and ticks are in the symbol
-    /// table; the struct has no default values before C2 (w2.md §1.9).
+    /// table; a struct's default values (W2's package C2, w2.md §1.9) are in
+    /// its item.
     pub(super) fn type_definition(&mut self, block: &Block) -> Option<Item> {
         let symbol = access::decl_field(block, "NAME").ok()?.sym.clone();
         let declared = self.symbols.get(&symbol)?;
         if declared.origin.block != block.id {
             return None;
         }
-        let kind = match declared.kind {
-            SymbolKind::Struct { .. } => ItemKind::Struct(StructDef {
-                symbol,
-                defaults: BTreeMap::new(),
-            }),
-            SymbolKind::Enum { .. } => ItemKind::Enum(EnumDef { symbol }),
+        let is_struct = match declared.kind {
+            SymbolKind::Struct { .. } => true,
+            SymbolKind::Enum { .. } => false,
             _ => return None,
         };
         self.begin_item(ItemCtx::Main);
         self.record_block(&block.id);
         self.add_headers(block, true);
+        let kind = if is_struct {
+            let defaults = self.struct_defaults(block, &symbol);
+            ItemKind::Struct(StructDef { symbol, defaults })
+        } else {
+            ItemKind::Enum(EnumDef { symbol })
+        };
         Some(Item {
             kind,
             origin: self.origin(&block.id, Part::Whole),
@@ -332,6 +336,61 @@ impl Lowerer<'_> {
             headers: std::mem::take(&mut self.headers),
             shared: false,
         })
+    }
+
+    /// The default values of a struct's fields (`int mark = 0;`), one
+    /// optional part per row (`DEFAULT<i>`), each typed by its own row's
+    /// field (`member:NAME`). A default sees the module's definitions, as a
+    /// parameter's default does; a field without one starts empty.
+    fn struct_defaults(&mut self, block: &Block, owner: &SymbolId) -> BTreeMap<SymbolId, Expr> {
+        let rows: Vec<Option<SymbolId>> = access::rows(block, "fields")
+            .into_iter()
+            .map(|row| row.ok().map(|row| row.sym))
+            .collect();
+        let mut defaults = BTreeMap::new();
+        if !(0..rows.len()).any(|i| access::input(block, &format!("DEFAULT{i}")).is_some()) {
+            return defaults;
+        }
+        // A row whose field is not the struct's (damaged, or a name taken
+        // twice) types its default as an error, which is not reported again.
+        let member = |sym: &Option<SymbolId>| {
+            sym.as_ref().and_then(|sym| {
+                self.symbols.get(sym).and_then(|symbol| match &symbol.kind {
+                    SymbolKind::Field { owner: of } if of == owner => Some((sym.clone(), symbol.ty.clone())),
+                    _ => None,
+                })
+            })
+        };
+        let members: Vec<Option<(SymbolId, Type)>> = rows.iter().map(member).collect();
+        let mut typed = self.typed(self.block_sig(&block.block_type));
+        typed.field("NAME", PartType::Known(Type::Named(owner.clone())));
+        typed.rows(
+            "NAME",
+            members
+                .iter()
+                .map(|member| member.as_ref().map_or(Type::Error, |(_, ty)| ty.clone()))
+                .collect(),
+        );
+        typed.count("DEFAULT", rows.len());
+        for i in 0..rows.len() {
+            let part = format!("DEFAULT{i}");
+            self.record_input(&block.id, &part);
+            self.typed_input(block, &mut typed, &part, false);
+        }
+        let typing = self.type_parts(block, &mut typed, None);
+        for (i, member) in members.into_iter().enumerate() {
+            let part = format!("DEFAULT{i}");
+            let Some(value) = typed.take(&part) else {
+                continue;
+            };
+            let Some((sym, _)) = member else {
+                continue;
+            };
+            let subject = phrase(format!("The default value of {}", self.member_name(&sym)));
+            self.report_fit(&typed, &typing, &part, &value, &subject);
+            defaults.insert(sym, value);
+        }
+        defaults
     }
 
     // --- Blocks -----------------------------------------------------------------

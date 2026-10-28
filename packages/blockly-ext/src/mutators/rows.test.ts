@@ -87,7 +87,16 @@ describe('a struct’s fields rows', () => {
     block.b2cSetExtra({ fields: student });
     expect(block.b2cGetExtra()).toEqual({ fields: student });
     expect(block.getField('B2C_FIELD0_TYPE')?.getText()).toBe('string');
-    expect(labelTexts(block, 'B2C_FIELD0')).toContain('has');
+    // Each row is its default value's input (holding the row's fields, then `=`, W2's package C2)
+    // and ⊖.
+    expect(inputNames(block).filter((name) => /^(DEFAULT|B2C_FIELD)\d/.test(name))).toEqual([
+      'DEFAULT0',
+      'B2C_FIELD0',
+      'DEFAULT1',
+      'B2C_FIELD1',
+    ]);
+    expect(labelTexts(block, 'DEFAULT0')).toEqual(['has', '=']);
+    expect(labelTexts(block, 'DEFAULT1')).toEqual(['=']);
     expect(buttons(block).map(buttonKey)).toEqual([
       'field:0:remove',
       'field:1:remove',

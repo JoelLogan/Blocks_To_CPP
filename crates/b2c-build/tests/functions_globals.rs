@@ -749,3 +749,67 @@ fn change_flip_and_the_programs_arguments_run() {
         assert!(cpp.contains(expected), "{expected}\n{cpp}");
     }
 }
+
+#[test]
+fn struct_defaults_run_when_a_value_is_made_and_follow_the_globals_they_read() {
+    let b = Blocks::default();
+    let rows = json!([
+        { "sym": "s_Config_limit", "name": "limit", "type": "int" },
+        { "sym": "s_Config_label", "name": "label", "type": "std::string" },
+        { "sym": "s_Config_ready", "name": "ready", "type": "bool" },
+    ]);
+    let config = b.block(
+        "type.struct",
+        &json!({ "x": 440, "y": 400, "fields": { "NAME": { "sym": "s_Config", "name": "Config" } },
+                 "extra": { "fields": rows },
+                 "inputs": { "DEFAULT0": b.call("next_id", vec![]), "DEFAULT1": text("box") } }),
+    );
+    let mut built = b.global("variable", "int", "config", None);
+    built["fields"]["TYPE"] = json!({ "ref": "s_Config" });
+    let top = vec![
+        // `config` is built with `limit = next_id()`, and `next_id` reads
+        // `start`: `start` is printed first, though `config` comes first
+        // by name.
+        built,
+        config,
+        b.global("variable", "int", "start", Some(number("41"))),
+        b.define(
+            "next_id",
+            "int",
+            &[],
+            vec![],
+            vec![b.ret(tokens(&["start", "+", "1"]))],
+        ),
+    ];
+    let field = |object: &str, member: &str| {
+        json!({ "block": b.block(
+            "type.field",
+            &json!({ "fields": { "MEMBER": { "ref": format!("s_Config_{member}") } },
+                     "inputs": { "OBJ": tokens(&[object]) } }),
+        ) })
+    };
+    let body = vec![
+        b.print(vec![field("config", "limit")]),
+        b.print(vec![field("config", "label")]),
+        b.block(
+            "var.declare",
+            &json!({ "fields": { "TYPE": { "ref": "s_Config" }, "NAME": { "sym": "s_local", "name": "local" } } }),
+        ),
+        b.print(vec![field("local", "ready")]),
+    ];
+    let cpp = builds_and_runs(
+        "struct_defaults",
+        &top,
+        body,
+        &[],
+        &[],
+        &printed("42\nbox\nfalse\n"),
+    );
+    assert!(
+        cpp.contains("    int limit = next_id();\n    std::string label = \"box\";\n    bool ready{};\n"),
+        "{cpp}"
+    );
+    let at = |text: &str| cpp.find(text).unwrap();
+    assert!(at("int next_id();") < at("struct Config"), "{cpp}");
+    assert!(at("int start = 41;") < at("Config config{};"), "{cpp}");
+}

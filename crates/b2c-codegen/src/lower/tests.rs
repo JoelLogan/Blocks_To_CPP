@@ -5,7 +5,7 @@
 //! every `/usr/bin/g++-N`, under C++17 and C++20 with the *strict* warnings,
 //! and run.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -342,7 +342,7 @@ fn point(standard: CppStandard, comparable: bool, printable: bool) -> (String, I
     let program = sast.program(standard, Vec::new());
     let mut lowerer = Lowerer::new(&program);
     lowerer.start_item();
-    let def = lowerer.struct_def(&point).unwrap();
+    let def = lowerer.struct_def(&point, &BTreeMap::new()).unwrap();
     (
         emit::type_def_text(&CTypeDef::Struct(def)),
         std::mem::take(&mut lowerer.item_headers),
@@ -403,7 +403,7 @@ fn printable_structs_get_a_hidden_friend_operator() {
     let program = sast.program(CppStandard::Cpp20, Vec::new());
     let mut lowerer = Lowerer::new(&program);
     lowerer.start_item();
-    let def = lowerer.struct_def(&student).unwrap();
+    let def = lowerer.struct_def(&student, &BTreeMap::new()).unwrap();
     assert_eq!(
         emit::type_def_text(&CTypeDef::Struct(def)),
         "struct Student {
@@ -439,7 +439,7 @@ fn generated_parameters_avoid_every_name_in_the_program() {
     sast.var("lhs2", Type::Int);
     let program = sast.program(CppStandard::Cpp17, Vec::new());
     let mut lowerer = Lowerer::new(&program);
-    let def = lowerer.struct_def(&clash).unwrap();
+    let def = lowerer.struct_def(&clash, &BTreeMap::new()).unwrap();
     let text = emit::type_def_text(&CTypeDef::Struct(def));
     assert!(
         text.contains("friend bool operator==(const Clash& lhs3, const Clash& rhs2)"),
@@ -462,7 +462,7 @@ fn structs_without_fields_leave_parameters_unnamed() {
     let program = sast.program(CppStandard::Cpp17, Vec::new());
     let mut lowerer = Lowerer::new(&program);
     lowerer.start_item();
-    let def = lowerer.struct_def(&empty).unwrap();
+    let def = lowerer.struct_def(&empty, &BTreeMap::new()).unwrap();
     let text = emit::type_def_text(&CTypeDef::Struct(def));
     assert!(
         text.starts_with(
@@ -577,9 +577,9 @@ fn only_structs_and_enums_have_definitions() {
     let missing = SymbolId::new("sym_missing").unwrap();
     let program = sast.program(CppStandard::Cpp20, Vec::new());
     let mut lowerer = Lowerer::new(&program);
-    assert!(lowerer.struct_def(&color).is_none());
-    assert!(lowerer.struct_def(&n).is_none());
-    assert!(lowerer.struct_def(&missing).is_none());
+    assert!(lowerer.struct_def(&color, &BTreeMap::new()).is_none());
+    assert!(lowerer.struct_def(&n, &BTreeMap::new()).is_none());
+    assert!(lowerer.struct_def(&missing, &BTreeMap::new()).is_none());
     assert!(lowerer.enum_def(&point, true, true).is_none());
     assert!(lowerer.enum_def(&missing, true, true).is_none());
 }
@@ -838,7 +838,9 @@ fn forms_program(standard: CppStandard) -> String {
     lowerer.start_item();
     types.push(CTypeDef::Enum(lowerer.enum_def(&color, true, true).unwrap()));
     for def in [&point, &student, &empty] {
-        types.push(CTypeDef::Struct(lowerer.struct_def(def).unwrap()));
+        types.push(CTypeDef::Struct(
+            lowerer.struct_def(def, &BTreeMap::new()).unwrap(),
+        ));
     }
     lowerer.finish_item(&ItemHeaders::default());
 

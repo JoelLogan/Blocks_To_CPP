@@ -3523,7 +3523,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       { arg: 'SHARED' },
     ],
     statementsNotInLabel: [],
-    help: 'Defines a struct: a new type whose values hold one value of each of its fields. Add fields with ⊕ and remove them with ⊖; each starts empty (0, false or empty text). Tick comparable to compare and sort its values, and printable to print them.',
+    help: 'Defines a struct: a new type whose values hold one value of each of its fields. Add fields with ⊕ and remove them with ⊖; each starts with its default value, or empty (0, false or empty text) without one. Tick comparable to compare and sort its values, and printable to print them.',
     output: null,
     fields: [
       {
@@ -3563,7 +3563,17 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         repeat: null,
       },
     ],
-    inputs: [],
+    inputs: [
+      {
+        name: 'DEFAULT',
+        check: 'any',
+        optional: true,
+        repeat: { count: 'fields', plus: 0 },
+        default: [],
+        type: { kind: 'member', field: 'NAME' },
+        assign: false,
+      },
+    ],
     statements: [],
     extra: [
       {
@@ -3577,7 +3587,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       },
     ],
     typeVars: {},
-    order: [],
+    order: [{ input: 'DEFAULT' }],
     placeVar: null,
     members: {},
     headers: [],

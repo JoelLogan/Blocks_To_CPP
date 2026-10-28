@@ -643,10 +643,17 @@ impl<'p> Reach<'p> {
     /// initialisers of each struct it builds, directly or as a field. The
     /// walk is conservative: a function that reads a symbol on any path
     /// counts. Each function and struct is walked once.
-    fn reads(&self, start: &Uses<'p>, symbols: &SymbolTable) -> BTreeSet<&'p SymbolId> {
+    /// `built` names more types built with the value (a global's own type,
+    /// whose default member initialisers run when it is set).
+    fn reads(&self, start: &Uses<'p>, built: &[&SymbolId], symbols: &SymbolTable) -> BTreeSet<&'p SymbolId> {
         let mut read: BTreeSet<&SymbolId> = start.symbols.iter().copied().collect();
         let mut seen: BTreeSet<&SymbolId> = BTreeSet::new();
         let mut queue: Vec<&SymbolId> = start.calls.iter().chain(&start.types).copied().collect();
+        queue.extend(
+            built
+                .iter()
+                .filter_map(|id| self.structs.get_key_value(*id).map(|(key, _)| *key)),
+        );
         while let Some(id) = queue.pop() {
             if !seen.insert(id) {
                 continue;
@@ -692,7 +699,7 @@ fn global_needs(
     if let Some(symbol) = symbols.get(&def.symbol) {
         user_types_in(&symbol.ty, &mut named);
     }
-    let read = reach.reads(&uses, symbols);
+    let read = reach.reads(&uses, &named, symbols);
     let globals = read.into_iter().filter(|id| {
         matches!(
             symbols.get(id).map(|symbol| &symbol.kind),

@@ -1,7 +1,8 @@
 /**
  * Package C2's default values on the canvas (docs/plans/m3-contracts/w2.md §2.8): a parameter row's
  * `DEFAULT<i>` takes its own parameter's type (`param:NAME` on the function's declaration), read
- * from the row's type field, so it needs no analysis.
+ * from the row's type field, so it needs no analysis; a struct row's takes its own field's type
+ * (`member:NAME`) the same way.
  */
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -178,5 +179,40 @@ describe('a default value', () => {
     field.setValue({ ref: 'v_n' });
     expect(canDrop(get, f, 'DEFAULT0')).toBe(true);
     expect(canDrop(get, f, 'DEFAULT1')).toBe(false);
+  });
+});
+
+/** `struct Student { std::string name; int mark; }`. */
+function student(): Blockly.BlockSvg {
+  const created = block('type.struct');
+  if (!isB2cMutatorBlock(created)) {
+    throw new Error('no mutator');
+  }
+  created.b2cSetExtra({
+    fields: [
+      { sym: 'f_name', name: 'name', type: 'std::string' },
+      { sym: 'f_mark', name: 'mark', type: 'int' },
+    ],
+  });
+  created.render();
+  return created;
+}
+
+describe('a field’s default value', () => {
+  it('takes its own row’s type (`member:NAME` on the struct’s declaration)', () => {
+    const s = student();
+    const number = block('math.number');
+    const text = block('text.literal');
+    expect(canDrop(text, s, 'DEFAULT0')).toBe(true);
+    expect(canDrop(number, s, 'DEFAULT0')).toBe(false);
+    expect(canDrop(number, s, 'DEFAULT1')).toBe(true);
+    expect(canDrop(text, s, 'DEFAULT1')).toBe(false);
+  });
+
+  it('follows its row’s type when it changes', () => {
+    const s = student();
+    s.setFieldValue('double', 'B2C_FIELD0_TYPE');
+    expect(canDrop(block('math.number'), s, 'DEFAULT0')).toBe(true);
+    expect(canDrop(block('text.literal'), s, 'DEFAULT0')).toBe(false);
   });
 });

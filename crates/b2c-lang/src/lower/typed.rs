@@ -58,6 +58,9 @@ pub(super) struct Typed<'s> {
     counts: BTreeMap<String, usize>,
     /// The parameter types of the function chosen in a field, for `param:`.
     params: Option<(String, Vec<Type>)>,
+    /// The field types of the block's own struct rows, by row, for
+    /// `member:` on the declaration field.
+    rows: Option<(String, Vec<Type>)>,
     /// The symbol chosen in each `members` field.
     members: BTreeMap<String, SymbolId>,
     /// What a `return` gives back where the block is.
@@ -78,6 +81,13 @@ impl Typed<'_> {
     /// Records the parameter types of the function chosen in `field`.
     pub(super) fn params(&mut self, field: &str, params: Vec<Type>) {
         self.params = Some((field.to_owned(), params));
+    }
+
+    /// Records the field types of the rows of the struct the block itself
+    /// declares in `field`, by row, for `member:` (a damaged row is
+    /// `Type::Error`, so later rows keep their own types).
+    pub(super) fn rows(&mut self, field: &str, rows: Vec<Type>) {
+        self.rows = Some((field.to_owned(), rows));
     }
 
     /// Takes a lowered input part; `None` when it is absent, empty or
@@ -124,6 +134,14 @@ impl BlockParts for View<'_, '_> {
     }
 
     fn member(&self, field: &str, index: usize) -> PartType {
+        // The block's own rows (a struct's default values).
+        if let Some((name, rows)) = &self.typed.rows
+            && name == field
+        {
+            return rows
+                .get(index)
+                .map_or(PartType::Empty, |ty| PartType::Known(ty.clone()));
+        }
         // The struct chosen in a type or reference field: its fields in order.
         let Some(PartType::Known(Type::Named(owner))) = self.typed.fields.get(field) else {
             return PartType::Unknown;
@@ -224,6 +242,7 @@ impl<'d> Lowerer<'d> {
             values: BTreeMap::new(),
             counts: BTreeMap::new(),
             params: None,
+            rows: None,
             members: BTreeMap::new(),
             result,
         }

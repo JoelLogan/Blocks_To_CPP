@@ -3813,7 +3813,7 @@
       },
       "lowering": "builtin",
       "headers": [],
-      "help": "Defines a struct: a new type whose values hold one value of each of its fields. Add fields with ⊕ and remove them with ⊖; each starts empty (0, false or empty text). Tick comparable to compare and sort its values, and printable to print them.",
+      "help": "Defines a struct: a new type whose values hold one value of each of its fields. Add fields with ⊕ and remove them with ⊖; each starts with its default value, or empty (0, false or empty text) without one. Tick comparable to compare and sort its values, and printable to print them.",
       "field": [
         {
           "name": "NAME",
@@ -3844,7 +3844,22 @@
           "default": false
         }
       ],
-      "input": [],
+      "input": [
+        {
+          "name": "DEFAULT",
+          "check": "any",
+          "optional": true,
+          "repeat": {
+            "count": "fields",
+            "plus": 0
+          },
+          "default": [],
+          "type": {
+            "field": "NAME",
+            "kind": "member"
+          }
+        }
+      ],
       "statement": [],
       "extra": [
         {
@@ -3861,6 +3876,11 @@
             "std::string"
           ],
           "typeClass": "value"
+        }
+      ],
+      "order": [
+        {
+          "input": "DEFAULT"
         }
       ]
     },

@@ -839,3 +839,117 @@ fn the_program_reads_its_arguments_but_never_changes_them() {
         ["error B2C-E0430 at main field ARGV: The program's arguments need a name."]
     );
 }
+
+// --- Struct field defaults (w2.md §1.9) ---------------------------------------------------
+
+/// *struct* `name` with these `(field, type, default)` rows; a field's
+/// symbol is `sym("<name>_<field>")`.
+fn struct_with_defaults(name: &str, rows: &[(&str, &str, Option<Value>)]) -> Value {
+    let fields: Vec<Value> = rows
+        .iter()
+        .map(|(field, ty, _)| serde_json::json!({"sym": sym(&format!("{name}_{field}")), "name": field, "type": ty}))
+        .collect();
+    let inputs: serde_json::Map<String, Value> = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (_, _, value))| value.clone().map(|value| (format!("DEFAULT{i}"), value)))
+        .collect();
+    serde_json::json!({
+        "id": format!("st_{name}"), "type": "type.struct", "v": 1,
+        "fields": {"NAME": {"sym": sym(name), "name": name}},
+        "extra": {"fields": fields},
+        "inputs": inputs
+    })
+}
+
+/// The default values of the struct item `name`, by field symbol.
+fn struct_defaults_json(a: &b2c_lang::Analysis, name: &str) -> Value {
+    let program = serde_json::to_value(&a.program).unwrap();
+    program["modules"][0]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|item| {
+            let def = item["kind"].get("struct")?;
+            (def["symbol"] == sym(name)).then(|| def.get("defaults").cloned().unwrap_or(Value::Null))
+        })
+        .unwrap_or_else(|| panic!("no struct {name}"))
+}
+
+#[test]
+fn a_fields_default_takes_its_own_rows_type() {
+    let student = struct_with_defaults(
+        "Student",
+        &[
+            ("name", "std::string", Some(text("Ann"))),
+            ("mark", "int", Some(e("0"))),
+            ("passed", "bool", None),
+        ],
+    );
+    let a = analyze(&doc(vec![student, main(vec![])]));
+    assert_clean(&a);
+    let defaults = struct_defaults_json(&a, "Student");
+    let fields: Vec<&String> = defaults.as_object().unwrap().keys().collect();
+    assert_eq!(fields, [&sym("Student_mark"), &sym("Student_name")]);
+    assert_eq!(defaults[sym("Student_mark")]["ty"], "int");
+
+    // A default of another type is reported against its own field.
+    let student = struct_with_defaults(
+        "Student",
+        &[
+            ("name", "std::string", Some(e("1"))),
+            ("mark", "int", Some(text("high"))),
+        ],
+    );
+    let a = analyze(&doc(vec![student, main(vec![])]));
+    let lines = reported(&a);
+    assert_eq!(lines.len(), 2, "{lines:#?}");
+    assert!(
+        lines.iter().all(|line| line.starts_with("error B2C-E0301")),
+        "{lines:#?}"
+    );
+    assert!(lines[0].contains("The default value of `name`"), "{lines:#?}");
+    assert!(lines[1].contains("The default value of `mark`"), "{lines:#?}");
+}
+
+#[test]
+fn a_fields_default_sees_the_modules_globals_and_functions() {
+    let config = struct_with_defaults(
+        "Config",
+        &[
+            ("limit", "int", Some(e("kMax"))),
+            ("start", "int", Some(e("first()"))),
+        ],
+    );
+    let a = analyze(&doc(vec![
+        config,
+        global("constant", "int", "kMax", Some(e("10"))),
+        func("first", "int", &[], vec![ret(Some(e("1")))]),
+        main(vec![]),
+    ]));
+    assert_clean(&a);
+    // A name the module does not define is reported as anywhere else.
+    let config = struct_with_defaults("Config", &[("limit", "int", Some(e("missing")))]);
+    let a = analyze(&doc(vec![config, main(vec![])]));
+    assert_codes(&a, &["B2C-E0201"]);
+}
+
+#[test]
+fn a_global_built_with_a_structs_defaults_follows_the_globals_they_read() {
+    // `Config a{};` runs `int limit = next();`, and `next` reads `z`: `z`
+    // is printed before `a`, though `a` comes first by name (modules.md
+    // §4.1, *initialised*, through a default member initialiser of the type
+    // the global builds).
+    let config = struct_with_defaults("Config", &[("limit", "int", Some(e("next()")))]);
+    let mut a_global = global("variable", "int", "a", None);
+    a_global["fields"]["TYPE"] = serde_json::json!({"ref": sym("Config")});
+    let a = analyze(&doc(vec![
+        a_global,
+        config,
+        func("next", "int", &[], vec![ret(Some(e("z + 1")))]),
+        global("variable", "int", "z", Some(e("5"))),
+        main(vec![]),
+    ]));
+    assert_clean(&a);
+    assert_eq!(declaration_order(&a), ["next", "Config", "z", "a"]);
+}

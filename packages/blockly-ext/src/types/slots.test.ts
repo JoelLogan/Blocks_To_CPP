@@ -237,6 +237,8 @@ describe('the slot fixture', () => {
       'type.field',
       'type.new',
       'type.set_field',
+      // W2's package C2: a struct's field defaults (w2.md §1.9).
+      'type.struct',
       'var.declare',
       // W2's flip and globals (w2.md §1.9, §2.7).
       'var.flip',

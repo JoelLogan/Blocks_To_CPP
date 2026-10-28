@@ -218,6 +218,31 @@ fn struct_variants(b: &Blocks) -> Vec<Case> {
         ),
         Case::variant(
             "type.struct",
+            "defaults",
+            "a struct Point with an int x that starts at 7 and a double y without a default; main creates \
+             the Point p without a value and prints its x",
+            vec![
+                b.main(&[
+                    {
+                        // Without the toolbox's starting value.
+                        let mut create = b.block(
+                            "var.declare",
+                            &json!({ "fields": { "TYPE": user(POINT), "NAME": declaration(P, "p") } }),
+                        );
+                        create["inputs"] = json!({});
+                        create
+                    },
+                    b.print(&nested(&field_of_p(b, "x"))),
+                ]),
+                {
+                    let mut point = point(b, &[], false, false);
+                    point["inputs"] = json!({ "DEFAULT0": num("7") });
+                    point
+                },
+            ],
+        ),
+        Case::variant(
+            "type.struct",
             "nested",
             "a struct Point with an int x, a double y, a Colour colour and a list of Point near, and the \
              enum Colour (Red, Green); main makes a Point p from 1 and 2.5, its other parts empty, and \

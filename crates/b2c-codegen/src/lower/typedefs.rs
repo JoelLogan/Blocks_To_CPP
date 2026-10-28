@@ -14,7 +14,7 @@
 //! only in the lists of one printed before it gets a forward declaration
 //! there.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::ids::SymbolId;
 use b2c_ir::sast::{CppStandard, Expr, ExprKind, Item, ItemKind, StmtKind, SymbolKind};
@@ -107,7 +107,7 @@ impl Lowerer<'_> {
                         }
                     }
                 }
-                if let Some(mut lowered) = self.struct_def(&def.symbol) {
+                if let Some(mut lowered) = self.struct_def(&def.symbol, &def.defaults) {
                     lowered.comment.clone_from(&item.comment);
                     defs.push(CTypeDef::Struct(lowered));
                 }
@@ -230,7 +230,15 @@ impl Lowerer<'_> {
     /// `operator<<` (`<ostream>`). Hidden friends are defined in the class,
     /// so they are inline and may sit in a header that several files
     /// include. `None` when `id` is not a struct.
-    pub(super) fn struct_def(&mut self, id: &SymbolId) -> Option<CStruct> {
+    ///
+    /// The default member initialisers of the struct's rows (`int mark =
+    /// 0;`, W2's package C2) are in `defaults`; a field without one is
+    /// value-initialised (`int mark{};`).
+    pub(super) fn struct_def(
+        &mut self,
+        id: &SymbolId,
+        defaults: &BTreeMap<SymbolId, Expr>,
+    ) -> Option<CStruct> {
         let symbol = self.symbol(id)?;
         let SymbolKind::Struct {
             fields,
@@ -242,13 +250,20 @@ impl Lowerer<'_> {
         };
         let symbols = self.symbols;
         let mut lowered = Vec::with_capacity(fields.len());
-        for field in fields.iter().filter_map(|field| symbols.get(field)) {
+        for (sym, field) in fields
+            .iter()
+            .filter_map(|sym| symbols.get(sym).map(|field| (sym, field)))
+        {
             let ty = self.ctype(&field.ty);
             self.note_type(&ty);
+            let init = match defaults.get(sym) {
+                Some(value) => Init::Value(self.expr(value)),
+                None => Init::Braces,
+            };
             lowered.push(CField {
                 ty,
                 name: field.name.clone(),
-                init: Init::Braces,
+                init,
                 origin: field.origin.clone(),
             });
         }

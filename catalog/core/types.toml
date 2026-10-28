@@ -9,7 +9,7 @@ category = "types"
 shape = "definition"
 label = { friendly = "struct %NAME has … comparable %COMPARABLE printable %PRINTABLE share with other modules %SHARED", cpp = "struct %NAME { … };" }
 lowering = "builtin"
-help = "Defines a struct: a new type whose values hold one value of each of its fields. Add fields with ⊕ and remove them with ⊖; each starts empty (0, false or empty text). Tick comparable to compare and sort its values, and printable to print them."
+help = "Defines a struct: a new type whose values hold one value of each of its fields. Add fields with ⊕ and remove them with ⊖; each starts with its default value, or empty (0, false or empty text) without one. Tick comparable to compare and sort its values, and printable to print them."
 
 [[block.field]]
 name = "NAME"
@@ -23,6 +23,16 @@ kind = "fields"
 max = 64
 types = ["int", "double", "bool", "char", "std::string"]
 type_class = "value"
+
+# A field row may end with a default value (`int mark = 0;`), typed by its
+# own field (W2's package C2, catalog 1.3.0, w2.md §1.9): a field without one
+# starts empty.
+[[block.input]]
+name = "DEFAULT"
+check = "any"
+optional = true
+repeat = { count = "fields" }
+type = "member:NAME"
 
 [[block.field]]
 name = "COMPARABLE"
