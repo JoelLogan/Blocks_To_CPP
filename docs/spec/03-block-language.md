@@ -418,10 +418,12 @@ cue), and the colours are validated for colour-blind distinguishability and
 contrast in light, dark and high-contrast themes. An icon uses only
 characters that the default sans fonts of Linux and Windows draw (DejaVu
 Sans, and Segoe UI or Segoe UI Symbol), so it never shows as an empty box; a
-test in `b2c-catalog` keeps the icons to an allowlist of such characters,
-and a new icon needs all three fonts before it joins. Categories marked
-*(Adv)* are hidden until **View → Show advanced blocks** is enabled, which
-keeps the beginner toolbox small.
+test in `b2c-catalog` keeps the icons to an allowlist of such characters.
+A new icon joins only after three checks: its DejaVu Sans glyph is checked
+with fontTools, it falls in a Unicode block that Microsoft documents for
+Segoe UI or Segoe UI Symbol, and it is seen drawn in the Windows visual-diff
+candidates. Categories marked *(Adv)* are hidden until **View → Show
+advanced blocks** is enabled, which keeps the beginner toolbox small.
 
 | Category | Icon | Contents |
 | ---------- | ------ | ---------- |

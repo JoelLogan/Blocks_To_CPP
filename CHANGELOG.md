@@ -870,7 +870,7 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `StaticType`.
 - The toolbox's categories Control, Files and Variables have the icons ⋔,
   ▤ and x, which the default fonts of Linux and Windows draw; an icon is a
-  character that DejaVu Sans, Segoe UI and Segoe UI Symbol all have. A
+  character that DejaVu Sans, and Segoe UI or Segoe UI Symbol, draw. A
   category without entries is not shown in the toolbox and gets no page in
   the block reference.
 - _change_'s variable menu lists variables of a number, character or text
