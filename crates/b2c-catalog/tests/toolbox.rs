@@ -119,15 +119,20 @@ fn categories_follow_the_spec_order_with_names_and_icons() {
     );
 }
 
-/// The characters a category icon may use: each has a glyph in `DejaVu Sans`
-/// 2.37 (regular and bold; the default sans font of Ubuntu 24.04, CI's Linux
-/// runner, checked with fontTools' cmap and glyf tables) and in Windows'
-/// Segoe UI (Latin) or Segoe UI Symbol (arrows, mathematical operators,
-/// miscellaneous technical, geometric shapes, miscellaneous symbols), which
-/// `WebView2` falls back to. A character outside these fonts draws as an empty
-/// box where no other font has it (⑂ and 🗎 did on CI's Linux runner), and
-/// the icon is what keeps colour from being the only cue (spec §3.7), so a
-/// new icon is checked the same way before it joins this list.
+/// The characters a category icon may use. Each has a glyph in `DejaVu Sans`
+/// 2.37, regular and bold (the default sans font of Ubuntu 24.04, CI's Linux
+/// runner): that was checked against the font files with fontTools' cmap and
+/// glyf tables. On Windows, each falls in a Unicode block that Microsoft
+/// documents as covered by Segoe UI (Latin) or Segoe UI Symbol (arrows,
+/// mathematical operators, miscellaneous technical, geometric shapes,
+/// miscellaneous symbols), which `WebView2` falls back to; that half was not
+/// checked against the font files, and the Windows visual-diff candidates are
+/// what confirm it. A character outside these fonts draws as an empty box
+/// where no other font has it (⑂ and 🗎 did on CI's Linux runner), and the
+/// icon is what keeps colour from being the only cue (spec §3.7), so a new
+/// icon joins this list only once it is checked in `DejaVu Sans` with
+/// fontTools, falls in one of those documented Segoe UI ranges, and is seen
+/// drawn in the Windows visual-diff candidates.
 const COVERED_ICON_CHARS: &[char] = &[
     ' ', // between the quotes of Text
     'x', // U+0078 Latin small letter x (Variables)
