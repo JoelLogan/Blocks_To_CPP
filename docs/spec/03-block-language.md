@@ -745,7 +745,7 @@ type supports.
 | `[c] contains (x)` | `std::ranges::find(c, x) != c.end()` (C++20), `std::find(c.begin(), c.end(), x) != c.end()` (C++17) | `c.contains(x)` (C++20), `c.count(x) != 0` (C++17) | `c.contains(k)`, `c.count(k) != 0` | — |
 | `[c] is empty` | `c.empty()` | ← | ← | ← |
 | `clear [c]` | `c.clear()` | ← | ← | `c = {};` |
-| `sort [c] [smallest first ▾] ⊕ by (lambda)` | `std::ranges::sort(c)` / `std::ranges::sort(c, std::greater{})` (C++20), `std::sort(c.begin(), c.end())` / with `std::greater<>{}` (C++17) / with comparator | — | — | — |
+| `sort [c] [smallest first ▾] ⊕ by (lambda)` | `std::ranges::sort(c)` / `std::ranges::sort(c, std::greater{})` (C++20), `std::sort(c.begin(), c.end())` / with `std::greater<>{}` (C++17, and a list of true/false values in C++20, whose iterators `std::ranges::sort` refuses) / with comparator | — | — | — |
 | `list of (a) (b) (c) ⊕` | `{a, b, c}` initialiser (type from its place) | ← | — | — |
 
 A map is filled with *set item … of*, and its pairs are visited with *for

@@ -503,7 +503,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   collection a _for each_ loop goes through, inside that loop, are
   `B2C-E0308`.
 - Generated C++ fixes from the W2 review: a _copy_ item of a list of
-  true/false values is a `bool` of its own (`auto` changed the list).
+  true/false values is a `bool` of its own (`auto` changed the list); and
+  _sort_ on such a list compiles under C++20 (`std::sort` with iterators).
 - C++ support helpers for text, random decimals and removing items
   (`split`, `to_lower`, `to_upper`, `trim`, `replace_all`, `starts_with`,
   `ends_with`, `random_real`, `remove_at`), each compiled and run under

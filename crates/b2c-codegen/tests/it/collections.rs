@@ -360,6 +360,36 @@ fn a_copy_of_a_true_false_item_is_a_bool_of_its_own() {
     builds_and_prints(&program, "for (bool flag : flags)", "true true\n");
 }
 
+#[test]
+fn a_list_of_true_false_values_sorts_under_both_standards() {
+    // `std::ranges::sort` refuses a `std::vector<bool>` before C++23: its
+    // iterators are not `std::sortable`.
+    let b = Builder::new();
+    let flags = b.var("flags", list(Type::Bool));
+    let items = vec![b.boolean(true), b.boolean(false), b.boolean(true)];
+    let all = |b: &Builder| {
+        b.line(vec![
+            b.item(&flags, b.int("0")),
+            b.item(&flags, b.int("1")),
+            b.item(&flags, b.int("2")),
+        ])
+    };
+    let body = vec![
+        b.declare(&flags, Some(b.list_of(&list(Type::Bool), items))),
+        b.op(&flags, CollectionChange::Sort { descending: false }),
+        all(&b),
+        b.op(&flags, CollectionChange::Sort { descending: true }),
+        all(&b),
+    ];
+    let main = b.main(body);
+    let program = b.program(vec![main]);
+    builds_and_prints(
+        &program,
+        "std::sort(flags.begin(), flags.end());",
+        "false true true\ntrue true false\n",
+    );
+}
+
 /// Every case of slots.md §3.1: each element type (`int`, `double`,
 /// `char`, `bool`) from literals that fit as written, literals that do not,
 /// and variables of each type, in a list, a deque and a set.

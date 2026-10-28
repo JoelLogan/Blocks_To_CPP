@@ -204,7 +204,7 @@ impl Lowerer<'_> {
                 call("erase", vec![value])
             }
             CollectionChange::RemoveNext => call("pop", Vec::new()),
-            CollectionChange::Sort { descending } => self.sort(object, *descending),
+            CollectionChange::Sort { descending } => self.sort(object, *descending, is_bool_list(&ty)),
         }
     }
 
@@ -223,18 +223,20 @@ impl Lowerer<'_> {
     }
 
     /// `std::ranges::sort(c);` (C++20 and later) or `std::sort(c.begin(), c.end());`
-    /// (C++17), largest first with `std::greater`.
-    fn sort(&mut self, object: CExpr, descending: bool) -> CStmtKind {
+    /// (C++17, and a list of true/false values, whose iterators are not
+    /// `std::sortable` before C++23), largest first with `std::greater`.
+    fn sort(&mut self, object: CExpr, descending: bool, bool_list: bool) -> CStmtKind {
         self.include("<algorithm>");
+        let ranges = self.standard >= CppStandard::Cpp20 && !bool_list;
         let greater = descending.then(|| {
             self.include("<functional>");
-            CExpr::fixed(if self.standard >= CppStandard::Cpp20 {
+            CExpr::fixed(if ranges {
                 "std::greater{}"
             } else {
                 "std::greater<>{}"
             })
         });
-        let call = if self.standard >= CppStandard::Cpp20 {
+        let call = if ranges {
             let mut args = vec![object];
             args.extend(greater);
             CExpr::call_fixed("std::ranges::sort", args)
