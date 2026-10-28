@@ -15,14 +15,16 @@
  * it shows {@link NO_TYPE_LABEL} and holds no value (the empty text, which a project file never
  * stores).
  */
-import type * as Blockly from 'blockly/core';
+import * as Blockly from 'blockly/core';
 
+import { blockLabelMode } from '../blocks/labelMode';
 import { blockDef } from '../checker/catalog';
 import type { TypeClass } from '../generated/catalog';
 import { getEditorServices, nameOf, symbolsAt, type SymbolInfo } from '../services';
 import { NO_FACTS, termKey, type TypeFactsTs, type UserTypeTs } from '../types/static-type';
 import { visibleInvisibles } from '../text';
 import { B2cOptionsFieldBase, type OptionPair } from './options-base';
+import { createTypePicker, type PickerContext, type TypePicker } from './type-picker';
 import { displayTypeName } from './values';
 
 /** Options of a type field. */
@@ -219,6 +221,70 @@ export class B2cTypeField extends B2cOptionsFieldBase {
     ]);
     this.lastOptions = options;
     return options;
+  }
+
+  /**
+   * What the type picker offers for this field (./type-picker/model.ts): its catalog types, the
+   * module's structs and enums ({@link userTypes}, the symbol service's list) and the collections
+   * of its class.
+   */
+  pickerContext(): PickerContext {
+    return {
+      typeClass: this.typeClass(),
+      fixed: this.listsTypes ? this.fixed.map(([, value]) => value) : [],
+      userTypes: this.userTypes().map((symbol) => ({
+        id: symbol.id,
+        name: nameOf(symbol.id) ?? symbol.name,
+        kind: symbol.kind === 'enum' ? ('enum' as const) : ('struct' as const),
+        module: symbol.module,
+      })),
+      facts: namingFacts(),
+      mode: blockLabelMode(),
+    };
+  }
+
+  /** The open picker, while there is one (tests). */
+  picker: TypePicker | null = null;
+
+  /**
+   * Opens the type picker (docs/plans/m3-contracts/w4-editor-tools.md §2.2) in Blockly's drop-down
+   * instead of a flat menu. A choice sets the value (one change, so one undo step); Escape or Tab
+   * close it without a change, and the focus goes back to the field.
+   */
+  protected override showEditor_(): void {
+    const block = this.getSourceBlock();
+    if (block === null) {
+      return;
+    }
+    // Blockly's drop-down takes any field; this one's value type is text.
+    const field = this as Blockly.FieldDropdown;
+    const close = (): void => {
+      Blockly.DropDownDiv.hideIfOwner(field, true);
+    };
+    const picker = createTypePicker({
+      context: this.pickerContext(),
+      current: this.getValue(),
+      label: this.menuLabel,
+      document: block instanceof Blockly.BlockSvg ? block.getSvgRoot().ownerDocument : document,
+      onChoose: (key) => {
+        close();
+        if (key !== this.getValue()) {
+          this.setValue(key);
+        }
+      },
+      onCancel: close,
+    });
+    this.picker = picker;
+    Blockly.DropDownDiv.clearContent();
+    Blockly.DropDownDiv.getContentDiv().append(picker.element);
+    Blockly.DropDownDiv.setColour(
+      'var(--b2c-surface-raised, #ffffff)',
+      'var(--b2c-border, #c4c4c4)',
+    );
+    Blockly.DropDownDiv.showPositionedByField(field, () => {
+      this.picker = null;
+    });
+    picker.focus();
   }
 
   /** A user type (a term key) by its current name; any other value as the base field shows it. */
