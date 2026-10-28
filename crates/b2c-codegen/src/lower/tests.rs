@@ -964,9 +964,16 @@ pub(super) fn command(program: &Path) -> std::process::Command {
     std::process::Command::new(program)
 }
 
+/// The oldest GCC Blocks2Cpp supports: `b2c_toolchain::probe::MIN_GCC_MAJOR`,
+/// which this crate cannot depend on (02 §2.3). C++20 forms such as
+/// `operator<=>` need it: g++ 10 refuses some of them, and CI's GCC 11
+/// container has a `g++-10` beside its `g++-11`.
+const MIN_GCC_MAJOR: u32 = 11;
+
 /// The compilers to check with: the `g++` on `PATH` first, then every
-/// `/usr/bin/g++-N` (side-by-side GCC versions, 07 §7.2). Without a `g++` on
-/// `PATH` the check is skipped, unless `B2C_REQUIRE_GXX` is set.
+/// `/usr/bin/g++-N` from [`MIN_GCC_MAJOR`] on (side-by-side GCC versions,
+/// 07 §7.2). Without a `g++` on `PATH` the check is skipped, unless
+/// `B2C_REQUIRE_GXX` is set.
 pub(super) fn compilers() -> Vec<PathBuf> {
     let path_gxx = PathBuf::from("g++");
     let works = |gxx: &Path| {
@@ -983,7 +990,7 @@ pub(super) fn compilers() -> Vec<PathBuf> {
         return Vec::new();
     }
     let mut found = vec![path_gxx];
-    for major in 9..=20 {
+    for major in MIN_GCC_MAJOR..=20 {
         let versioned = PathBuf::from(format!("/usr/bin/g++-{major}"));
         if versioned.exists() && works(&versioned) {
             found.push(versioned);
@@ -1040,5 +1047,186 @@ fn the_forms_program_compiles_clean_and_runs_on_every_gxx() {
         assert!(run.status.success());
         let stdout = String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n");
         assert_eq!(stdout, FORMS_OUTPUT, "{flag}");
+    }
+    // Every block of the catalog, W2's among them, from a project file
+    // (w2.md §5.3), built and run with each compiler.
+    every_block_program_compiles_clean_and_runs(&compilers, dir.path());
+}
+
+// ---- every block of the catalog, from a project file ----------------------------------
+
+/// The project of [`every_block_program`]: one module that uses every block
+/// of the core catalog, W2's among them (w2.md §5.3): collections, text,
+/// input and output, math, errors, structs and enums, control (a switch on
+/// an int with *go on into the next case*, on a character and on an enum;
+/// *do … then repeat*), files, functions with default values and overloads,
+/// globals and constants, *add to the end*, *flip* and the bitwise changes,
+/// *with arguments*, *use header* and *check at compile time*. It is a C++20
+/// project; the C++17 program is the same project with its standard changed.
+const EVERY_BLOCK_PROJECT: &str = "tests/fixtures/every_block.b2c";
+
+/// What the every-block program prints, given [`EVERY_BLOCK_INPUT`].
+const EVERY_BLOCK_OUTPUT: &str = "arguments: true
+Age: Name: age 7, name Ann Lee
+3 10 4.00 1024.00 3 42 7.00
+random true
+HELLO WORLD! 12 H World HeLLo WorLd!
+true true false 42 41 2.50
+joined-text
+piece a
+piece b
+piece c
+done yes
+number 90
+number 20
+number 10
+90 3 true false
+Ann is 30
+ids 1
+next 5
+then 6
+Point{x: 1, y: 2, label: A, color: Green} 3 true
+seven
+seven or eight
+starts with A
+green
+odd 1
+odd 3
+k 5 counter 2
+bits 2
+6 12 6.75
+caught boom
+inner bad
+outer bad
+exists true
+log: added
+read: first 1
+";
+
+/// What the every-block program reads: an age, then a name.
+const EVERY_BLOCK_INPUT: &str = "7\nAnn Lee\n";
+
+/// Every block type of a block and the blocks in it.
+fn block_types(block: &b2c_model::Block, found: &mut BTreeSet<String>) {
+    found.insert(block.block_type.clone());
+    for input in block.inputs.values() {
+        if let b2c_model::Input::Block(nested) = input {
+            block_types(&nested.block, found);
+        }
+    }
+    for child in block.statements.values().flatten().chain(&block.stack) {
+        block_types(child, found);
+    }
+}
+
+/// The C++ of [`EVERY_BLOCK_PROJECT`] for `standard`, through the stages a
+/// build runs (load, resolve, analyse, generate), none of which may report
+/// anything.
+fn every_block_program(standard: CppStandard) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(EVERY_BLOCK_PROJECT);
+    let mut document = b2c_model::load(&std::fs::read(&path).unwrap()).unwrap();
+    document.project.language.standard = standard;
+    let catalog = b2c_catalog::core_catalog();
+    let resolved = b2c_catalog::resolve_report(&document, catalog);
+    assert!(resolved.diagnostics.is_empty(), "{:#?}", resolved.diagnostics);
+    let analysis = b2c_lang::analyze_checked_with(
+        &resolved.document,
+        &resolved.diagnostics,
+        &resolved.unchecked,
+        catalog.sigs(),
+    );
+    assert!(analysis.diagnostics.is_empty(), "{:#?}", analysis.diagnostics);
+    let options = CodegenOptions {
+        project_name: String::from("Every Block"),
+        app_version: String::from("1.0.0"),
+        ..CodegenOptions::default()
+    };
+    let generation = crate::generate_with_report(&analysis.program, &options);
+    assert_eq!(generation.placeholders, 0);
+    let [file] = generation.project.files.as_slice() else {
+        panic!(
+            "{:?}",
+            generation
+                .project
+                .files
+                .iter()
+                .map(|f| &f.path)
+                .collect::<Vec<_>>()
+        );
+    };
+    file.contents.clone()
+}
+
+#[test]
+fn the_every_block_project_uses_every_block_of_the_catalog() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(EVERY_BLOCK_PROJECT);
+    let document = b2c_model::load(&std::fs::read(&path).unwrap()).unwrap();
+    let mut used = BTreeSet::new();
+    for block in document
+        .modules
+        .iter()
+        .flat_map(|module| &module.workspace.blocks)
+    {
+        block_types(block, &mut used);
+    }
+    let missing: Vec<&String> = b2c_catalog::core_catalog()
+        .blocks
+        .keys()
+        .filter(|id| !used.contains(*id))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{EVERY_BLOCK_PROJECT} does not use {missing:?}"
+    );
+}
+
+/// The every-block program compiles at the strict level with `-Werror`
+/// under C++17 and C++20 with each of `compilers`, and each build runs (in a
+/// folder of its own under `dir`, for the files it writes) and prints
+/// [`EVERY_BLOCK_OUTPUT`].
+fn every_block_program_compiles_clean_and_runs(compilers: &[PathBuf], dir: &Path) {
+    use std::io::Write as _;
+    for (standard, flag) in [
+        (CppStandard::Cpp17, "-std=c++17"),
+        (CppStandard::Cpp20, "-std=c++20"),
+    ] {
+        let source = every_block_program(standard);
+        let path = dir.join(format!("every_block{}.cpp", &flag[5..]));
+        std::fs::write(&path, &source).unwrap();
+        for (index, gxx) in compilers.iter().enumerate() {
+            let folder = dir.join(format!("{}-{index}", &flag[5..]));
+            std::fs::create_dir(&folder).unwrap();
+            let program = folder.join("every_block");
+            let output = command(gxx)
+                .arg(flag)
+                .args(STRICT)
+                .arg(&path)
+                .arg("-o")
+                .arg(&program)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{} {flag} rejected the program:\n{}\n--- source ---\n{source}",
+                gxx.display(),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let mut run = command(&program)
+                .arg("an argument")
+                .current_dir(&folder)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            run.stdin
+                .take()
+                .unwrap()
+                .write_all(EVERY_BLOCK_INPUT.as_bytes())
+                .unwrap();
+            let run = run.wait_with_output().unwrap();
+            assert!(run.status.success(), "{} {flag}: {:?}", gxx.display(), run.status);
+            let stdout = String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n");
+            assert_eq!(stdout, EVERY_BLOCK_OUTPUT, "{} {flag}", gxx.display());
+        }
     }
 }

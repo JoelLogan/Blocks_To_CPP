@@ -256,7 +256,10 @@ dependencies = [
 name = "b2c-codegen"
 version = "0.1.0"
 dependencies = [
+ "b2c-catalog",
  "b2c-ir",
+ "b2c-lang",
+ "b2c-model",
  "insta",
  "proptest",
  "serde",

@@ -57,6 +57,12 @@ ALLOWED_DEV_DEPS = {
     # The backend's generation-parity test compares the editor preview's files
     # with the build's generated files.
     ("b2c-app", "b2c-core-wasm"),
+    # The code generator's every-g++ test builds a project that uses every
+    # catalog block (tests/fixtures/every_block.b2c) through the stages a
+    # build runs before it generates, compiles and runs it (w2.md §5.3).
+    ("b2c-codegen", "b2c-model"),
+    ("b2c-codegen", "b2c-catalog"),
+    ("b2c-codegen", "b2c-lang"),
 }
 
 # The pure compiler crates and the external crates they may use. Anything

@@ -16,6 +16,11 @@ serde.workspace = true
 proptest.workspace = true
 insta.workspace = true
 tempfile.workspace = true
+# The every-block program (src/lower/tests.rs): its project file is loaded,
+# resolved and analysed as a build does, then generated, compiled and run.
+b2c-model.workspace = true
+b2c-catalog.workspace = true
+b2c-lang.workspace = true
 
 [lints]
 workspace = true
