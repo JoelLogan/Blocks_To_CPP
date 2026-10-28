@@ -17,7 +17,9 @@
  * one such input per row, `DEFAULT<i>`, which holds the row's fields and draws `= (…)` at the end
  * of the row. The block in it stays with its row: when a row before it is added or removed, the
  * block moves to the row's new input; when its own row is removed, it is unplugged and kept on the
- * canvas, as the other mutators keep a user's block. Those moves belong to the same undo step.
+ * canvas, as the other mutators keep a user's block. Those moves belong to the same undo step. Its
+ * shadow (a default the file holds as tokens) is kept by the controller and comes back with the row
+ * when the removal is undone.
  */
 import * as Blockly from 'blockly/core';
 
@@ -147,6 +149,12 @@ export class ParamsController implements MutatorController {
   /** The rows as last applied; the fields hold later edits. */
   private rows: RowState[] = [];
   private fields: RowFields[] = [];
+  /**
+   * The shadows of removed rows' value inputs, by row symbol and input (`sym/DEFAULT`), so that a
+   * row that comes back (undo) has its default value again, as the variadic mutator keeps a
+   * removed part's shadow.
+   */
+  private readonly shadows = new Map<string, Blockly.serialization.blocks.State>();
 
   constructor(block: Blockly.Block, spec: RowsSpec) {
     this.block = block;
@@ -217,9 +225,17 @@ export class ParamsController implements MutatorController {
         if (user !== null) {
           user.unplug(false);
         }
+        const key = `${row.sym}/${def.name}`;
         if (staying.has(row.sym)) {
-          kept.set(`${row.sym}/${def.name}`, { block: user, shadow });
-        } else if (user instanceof Blockly.BlockSvg && !user.isInFlyout) {
+          kept.set(key, { block: user, shadow });
+          continue;
+        }
+        if (shadow === null) {
+          this.shadows.delete(key);
+        } else {
+          this.shadows.set(key, shadow);
+        }
+        if (user instanceof Blockly.BlockSvg && !user.isInFlyout) {
           const offset = Blockly.config.snapRadius;
           user.moveBy(user.RTL ? -offset : offset, offset, ['bump']);
         }
@@ -228,11 +244,18 @@ export class ParamsController implements MutatorController {
     return kept;
   }
 
-  /** Puts the parts `takeRowParts` kept back into the rows' new inputs. */
+  /**
+   * Puts the parts `takeRowParts` kept back into the rows' new inputs, and a removed row's shadow
+   * into the row when it comes back.
+   */
   private restoreRowParts(kept: ReadonlyMap<string, RowPart>): void {
     for (const [index, row] of this.rows.entries()) {
       for (const def of this.spec.rowInputs) {
-        const part = kept.get(`${row.sym}/${def.name}`);
+        const key = `${row.sym}/${def.name}`;
+        const removed = this.shadows.get(key);
+        this.shadows.delete(key);
+        const part =
+          kept.get(key) ?? (removed === undefined ? undefined : { block: null, shadow: removed });
         const connection = this.block.getInput(`${def.name}${String(index)}`)?.connection ?? null;
         if (part === undefined || connection === null) {
           continue;

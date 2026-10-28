@@ -13,6 +13,7 @@ import {
   flushEvents,
   inputNames,
   labelTexts,
+  TEST_SHADOW,
   TEST_UNKNOWN_REPORTER,
 } from './test-fixtures';
 import type { B2cMutatorBlock, ParamRow } from './types';
@@ -284,6 +285,51 @@ describe('func.define default values (w2.md §2.8)', () => {
     expect(holder(first)).toBe('DEFAULT0');
     expect(holder(last)).toBe('DEFAULT2');
   });
+
+  /** The state of the shadow in `input`, or `null`. */
+  function shadowIn(
+    block: Blockly.Block,
+    input: string,
+  ): Blockly.serialization.blocks.State | null {
+    const target = block.getInput(input)?.connection?.targetBlock() ?? null;
+    return target?.isShadow() === true
+      ? (Blockly.serialization.blocks.save(target, { addCoordinates: false }) ?? null)
+      : null;
+  }
+
+  for (const [type, removeKey] of [
+    ['func.define', 'param:1:remove'],
+    ['type.struct', 'field:1:remove'],
+  ] as const) {
+    it(`bring back a removed row’s shadow default with its row on undo (${type})`, async () => {
+      const block = workspace.newBlock(type) as B2cMutatorBlock;
+      const shadowRows = three.map(({ sym, name, type: rowType, mode }) =>
+        type === 'type.struct' ? { sym, name, type: rowType } : { sym, name, type: rowType, mode },
+      );
+      block.b2cSetExtra({ [type === 'type.struct' ? 'fields' : 'params']: shadowRows });
+      const state = { type: TEST_SHADOW, fields: { TEXT: '42' } };
+      block.getInput('DEFAULT1')?.connection?.setShadowState(state);
+      block.getInput('DEFAULT2')?.connection?.setShadowState({ ...state, fields: { TEXT: '7' } });
+      const before = shadowIn(block, 'DEFAULT1');
+      expect(before?.fields).toEqual({ TEXT: '42' });
+      await flushEvents();
+      workspace.clearUndo();
+      press(block, removeKey);
+      expect(shadowIn(block, 'DEFAULT1')?.fields).toEqual({ TEXT: '7' });
+      await flushEvents();
+      workspace.undo(false);
+      await flushEvents();
+      expect(shadowIn(block, 'DEFAULT1')).toEqual(before);
+      expect(shadowIn(block, 'DEFAULT2')?.fields).toEqual({ TEXT: '7' });
+      // Redo removes it again, and a second undo brings it back again.
+      workspace.undo(true);
+      await flushEvents();
+      expect(shadowIn(block, 'DEFAULT1')?.fields).toEqual({ TEXT: '7' });
+      workspace.undo(false);
+      await flushEvents();
+      expect(shadowIn(block, 'DEFAULT1')).toEqual(before);
+    });
+  }
 
   it('give a new row an empty default', () => {
     const block = define();
