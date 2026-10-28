@@ -324,12 +324,16 @@ At the read a run notes the project's `document`; its answer (and the
 commit of an update that failed) applies only when the project's document
 is still that one, and is dropped otherwise, with a new run scheduled when
 the dropped run was the latest. worker.md §6 also allows "the document the
-pipeline's own last commit wrote"; with only the latest run committing, a
-run reads its base after every older run has been overtaken, so that case
-cannot arise until older answers may apply (the second half), and this
-branch leaves it out. On the main thread this never drops anything (the read, `update()`
-and the commit are one task, as in M2); with the worker it keeps an answer
-from undoing a rename or a save adopted while the update ran.
+pipeline's own last commit wrote"; this branch keeps the check per run
+instead: a run is checked only before its own commit, and a run that fails
+after committing (a hook or a store subscriber that throws while the
+preview is published) does not commit again, which would otherwise trip
+the check on its own write and read the canvas every 50 ms. Another run's
+commit cannot come between a run's read and its commit while only the
+latest run commits; that changes with the second half. On the main thread
+this never drops anything (the read, `update()` and the commit are one
+task, as in M2); with the worker it keeps an answer from undoing a rename
+or a save adopted while the update ran.
 
 ## 6. Security and accessibility
 
@@ -557,6 +561,21 @@ container, as it did once before, and passes run on its own, twice);
 the isolation tests; the four `tools/check-*.py`; `cargo fmt`; the
 `preview-worker` E2E flow on Linux (3 of 3). No Rust changed in this
 round.
+
+**The coordinator's second review** (one finding, from the advice of
+finding 2): with the `written` clause gone, a run whose commit succeeded
+and whose publish then threw (`onPreviewed`, `onCommitted`, a store
+subscriber) fell into the commit without a preview, whose base check saw
+the run's own write and scheduled another run: a re-preview every 50 ms,
+for ever, also with the flag off. Confirmed (11 updates in 500 ms in the
+new test). Fixed in `pipeline.ts`: the commit without a preview runs only
+for a run that has not committed (`this.committed !== seq`), and `commit()`
+records the run before the store update whose subscribers may throw. Three
+tests, each failing without the fix: a throwing `onPreviewed` and
+`onCommitted`, and a store subscriber throwing at the commit and at the
+publish; each makes one update in 500 ms and leaves the pipeline idle. The
+outside-write test of finding 2 still passes. §5.4 says how the check is
+scoped now.
 
 The OSV-Scanner failure is GHSA-qwgh-2vcv-g2f7 (block-buffer 0.10.4 via
 Tauri's sha2), excepted on the coordinating branch in `c22ae1c`; this

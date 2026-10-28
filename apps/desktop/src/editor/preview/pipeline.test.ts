@@ -16,7 +16,7 @@ import {
 } from '@blocks2cpp/b2c-core-wasm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { resetAppStore, useAppStore } from '../../app/store';
+import { type AppState, resetAppStore, useAppStore } from '../../app/store';
 import {
   diagnosticFixture,
   documentFixture,
@@ -378,6 +378,96 @@ describe('the preview pipeline', () => {
     expect(useAppStore.getState().project?.document.project.name).toBe('Renamed');
     expect(pipeline.pending).toBe(true);
     pipeline.dispose();
+  });
+
+  it('does not preview again and again when a hook throws after the commit', async () => {
+    const throwing: {
+      name: string;
+      options: { onPreviewed?: () => void; onCommitted?: () => void };
+    }[] = [
+      {
+        name: 'onPreviewed',
+        options: {
+          onPreviewed: () => {
+            throw new Error('the relabelling failed');
+          },
+        },
+      },
+      {
+        name: 'onCommitted',
+        options: {
+          onCommitted: () => {
+            throw new Error('the names failed');
+          },
+        },
+      },
+    ];
+    for (const { name, options } of throwing) {
+      resetAppStore();
+      openProject();
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const stub = stubCore();
+      const update = vi.fn((json: string, previewOptions: PreviewOptions) =>
+        stub.update(json, previewOptions),
+      );
+      const pipeline = new PreviewPipeline({
+        store: useAppStore,
+        host: hostOf({ ...stub, update }),
+        read: readDocument,
+        ...options,
+      });
+      docVersion = 1;
+      await pipeline.runNow();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(update, name).toHaveBeenCalledTimes(1);
+      expect(pipeline.pending, name).toBe(false);
+      expect(pipeline.isIdle(), name).toBe(true);
+      expect(useAppStore.getState().project?.document.project.name, name).toBe('Edit 1');
+      expect(errors, name).toHaveBeenCalledWith('The live preview failed', expect.any(Error));
+      pipeline.dispose();
+      errors.mockRestore();
+    }
+  });
+
+  it.each([
+    [
+      'at the commit',
+      (state: AppState, previous: AppState) =>
+        state.project?.document !== previous.project?.document,
+    ],
+    [
+      'at the publish',
+      (state: AppState, previous: AppState) => state.analysis.preview !== previous.analysis.preview,
+    ],
+  ])('does not preview again and again when a store subscriber throws %s', async (_when, fires) => {
+    openProject();
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const stub = stubCore();
+    const update = vi.fn((json: string, previewOptions: PreviewOptions) =>
+      stub.update(json, previewOptions),
+    );
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf({ ...stub, update }),
+      read: readDocument,
+    });
+    const unsubscribe = useAppStore.subscribe((state, previous) => {
+      if (fires(state, previous)) {
+        throw new Error('a subscriber failed');
+      }
+    });
+    try {
+      docVersion = 1;
+      await pipeline.runNow();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(pipeline.pending).toBe(false);
+      expect(pipeline.isIdle()).toBe(true);
+    } finally {
+      unsubscribe();
+      pipeline.dispose();
+      errors.mockRestore();
+    }
   });
 
   it('stops quietly when the service answers null (a newer request replaced this one)', async () => {

@@ -272,7 +272,10 @@ export class PreviewPipeline {
       } else {
         console.error('The live preview failed', error);
       }
-      if (read !== null) {
+      // A run that failed after its commit (`onCommitted`, or a hook or a store subscriber that
+      // throws while the preview is published) has its document committed already: committing it
+      // again would trip the base check on its own write and read the canvas forever.
+      if (read !== null && this.committed !== seq) {
         await this.commitWithoutPreview(seq, read, check);
       }
     }
@@ -338,6 +341,8 @@ export class PreviewPipeline {
     if (project === null) {
       return;
     }
+    // Before the store update, whose subscribers may throw after the document is written.
+    this.committed = seq;
     actions.updateProjectAndAnalysis(
       {
         document: doc,
@@ -347,7 +352,6 @@ export class PreviewPipeline {
       },
       analysis.notice === 'syncFailed' ? { seq, notice: null } : { seq },
     );
-    this.committed = seq;
     this.options.onCommitted?.(doc);
   }
 
@@ -355,8 +359,8 @@ export class PreviewPipeline {
    * Drops a run's answer (throws {@link Abandoned}) when the project's document is no longer the
    * one the run read against: something else (a rename, an adopted save) wrote it since, and
    * committing the run's document would undo that. When the run is the latest, the canvas is read
-   * again. (The pipeline's own commits never trip it: a run reads its base after every older run
-   * has been overtaken, and only the latest run commits.)
+   * again. A run's own commit would trip it too, so it is checked only before that commit: a run
+   * that fails after committing does not commit again (see the end of `run`).
    */
   private checkBase(seq: number, read: ReadDocument): void {
     const current = this.options.store.getState().project?.document ?? null;
