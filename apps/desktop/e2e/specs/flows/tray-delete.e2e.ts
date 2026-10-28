@@ -332,6 +332,9 @@ describe('Dropping a block on the toolbox', () => {
 
     // A first gesture on the canvas, so the drops below find what the toolbox's rebuilds left.
     await app.hook.insertBlocks(mainId, 'BODY', [print(ids, 'first')]);
+    // Blockly draws the inserted block in the next animation frame: the pan looks for an empty
+    // spot after it.
+    await waitForDelivery(app.driver);
     await panCanvas(app.driver, { x: 0, y: 40 });
 
     // The tint of a toolbox drop; the drops over the toolbox come first.
@@ -345,6 +348,8 @@ describe('Dropping a block on the toolbox', () => {
         declareInt(ids, sym, `v${String(index)}`, index),
         block,
       ]);
+      // Blockly draws the inserted blocks in the next animation frame: measure them after it.
+      await waitForDelivery(app.driver);
       await centerOn(app, block.id);
       await bringIntoView(app.driver, () => blockCorner(app, block.id));
       await waitFor(() => app.hook.flyoutBlockId('var.get', { VAR: sym }), {

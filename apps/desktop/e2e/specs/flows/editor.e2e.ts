@@ -19,7 +19,13 @@ import {
   type ProjectDocument,
   statementsOf,
 } from '../../support/bdm';
-import { currentDocument, dragFromToolbox, fieldOf, foldCodePanel } from '../../support/editor';
+import {
+  currentDocument,
+  dragFromToolbox,
+  fieldOf,
+  foldCodePanel,
+  waitForDelivery,
+} from '../../support/editor';
 import {
   clickMiddle,
   clickTestId,
@@ -169,6 +175,8 @@ describe('Block editor', () => {
     await foldCodePanel(app);
     const loop = repeat(new NodeIds('check'), { expr: [{ num: '10' }] }, []);
     await app.hook.insertBlocks(mainId, 'BODY', [loop]);
+    // Blockly draws the inserted blocks in the next animation frame: measure them after it.
+    await waitForDelivery(app.driver);
 
     // A text value dropped on TIMES does not connect: the loop keeps its 10.
     await dragValueFromToolbox(app, { category: 'Text', type: 'text.literal' }, loop.id, 'TIMES');

@@ -189,6 +189,8 @@ describe('Typed slots', () => {
     const n = declare(ids, { sym: 's_typed_n', name: 'n', type: 'int', value: num(0) });
     const s = declare(ids, { sym: 's_typed_s', name: 's', type: 'std::string', value: str('') });
     await app.hook.insertBlocks(mainId, 'BODY', [n, s]);
+    // Blockly draws the inserted blocks in the next animation frame: measure them after it.
+    await waitForDelivery(app.driver);
 
     // Text towards create [int]'s value: refused, so n keeps its 0 and the text lies loose.
     await dragValueFromToolbox(app, TEXT, n.id, 'VALUE');

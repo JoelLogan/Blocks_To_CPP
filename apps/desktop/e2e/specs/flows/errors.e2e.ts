@@ -132,6 +132,8 @@ describe('Errors', () => {
     };
     await app.hook.insertBlocks(mainId, 'BODY', [tryBlock]);
     await waitForParts(app, tryBlock.id, 2);
+    // Blockly draws the inserted blocks in the next animation frame: measure them after it.
+    await waitForDelivery(app.driver);
 
     // Each part's message block offers its own error, not the other part's.
     const firstMenu = await errorMenu(app, inFirst.message.id);

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type BlockNode, declaredSymbol, NodeIds, print } from '../../support/bdm';
-import { foldCodePanel } from '../../support/editor';
+import { foldCodePanel, waitForDelivery } from '../../support/editor';
 import { waitFor } from '../../support/wait';
 import { clickBlock } from './lib/editor';
 import { type FlowApp, startFlow } from './lib/launch';
@@ -52,6 +52,8 @@ describe('Clipboard', () => {
     });
     const original = print(ids, TEXT);
     await app.hook.insertBlocks(mainId, 'BODY', [decl, original]);
+    // Blockly draws the inserted blocks in the next animation frame: measure them after it.
+    await waitForDelivery(app.driver);
 
     // (1) Copy the print and paste: the copy goes after it, with a new ID and the same text.
     await clickBlock(app, original.id);

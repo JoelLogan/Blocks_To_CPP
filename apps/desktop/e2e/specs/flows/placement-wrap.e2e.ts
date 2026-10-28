@@ -275,6 +275,8 @@ describe('Wrapping statements in an empty C-block', () => {
     const ids = new NodeIds('wrap');
     const [a, b, c] = [print(ids, 'a'), print(ids, 'b'), print(ids, 'c')];
     await app.hook.insertBlocks(mainId, 'BODY', [a, b, c]);
+    // Blockly draws the inserted blocks in the next animation frame: measure them after it.
+    await waitForDelivery(app.driver);
     const initial = await blocksText(app);
 
     await centerOn(app, b.id);
@@ -330,6 +332,8 @@ describe('Wrapping statements in an empty C-block', () => {
     const [x, y] = [print(ids, 'x'), print(ids, 'y')];
     const loop = forever(ids, [x, y]);
     await app.hook.insertBlocks(mainId, 'BODY', [loop]);
+    // Blockly draws the inserted blocks in the next animation frame: measure them after it.
+    await waitForDelivery(app.driver);
 
     await centerOn(app, x.id);
     await bringIntoView(app.driver, () => connectionPoint(app, loop.id, 'BODY'));

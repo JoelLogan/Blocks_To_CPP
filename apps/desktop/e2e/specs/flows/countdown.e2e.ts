@@ -9,7 +9,13 @@ import { describe, expect, it } from 'vitest';
 
 import { NodeIds, statementsOf } from '../../support/bdm';
 import { waitForConsoleState } from '../../support/console';
-import { fieldOf, foldCodePanel, runHeldBack, waitForErrors } from '../../support/editor';
+import {
+  fieldOf,
+  foldCodePanel,
+  runHeldBack,
+  waitForDelivery,
+  waitForErrors,
+} from '../../support/editor';
 import { pressKey, typeIntoField } from '../../support/ui';
 import { waitFor } from '../../support/wait';
 import { waitForTranscript } from './lib/console';
@@ -44,6 +50,8 @@ describe('Countdown', () => {
       repeat(ids, { expr: [{ num: '3' }] }, [printValue(ids, ref(COUNTER)), change]),
       printValue(ids, { expr: [{ str: 'Liftoff!' }] }),
     ]);
+    // Blockly draws the inserted blocks in the next animation frame: measure them after it.
+    await waitForDelivery(app.driver);
 
     // (1) Type -1 into the change block's number, as a person does.
     await typeIntoField(app.driver, await fieldOf(app, change.id, 'VALUE', 'BY'), '-1');

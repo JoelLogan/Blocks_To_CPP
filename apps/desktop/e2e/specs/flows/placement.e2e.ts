@@ -278,6 +278,8 @@ describe('Placing blocks', () => {
       const loop = repeat(ids, num(3), []);
       const block = print(ids, `placed at ${String(Math.round(zoom * 100))} %`);
       await app.hook.insertBlocks(mainId, 'BODY', [loop, block]);
+      // Blockly draws the inserted blocks in the next animation frame: measure them after it.
+      await waitForDelivery(driver);
       const facts = await dropOffTarget(app, loop.id, block.id);
       await waitFor(
         async () => ((await mouthIds(app, loop.id))?.join() === block.id ? true : null),

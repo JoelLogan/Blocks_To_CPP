@@ -27,6 +27,7 @@ import {
   fieldOf,
   foldCodePanel,
   grabPointOf,
+  waitForDelivery,
 } from '../../support/editor';
 import { clickMiddle, middleOf, textContent, typeIntoField } from '../../support/ui';
 import { sleep, waitFor } from '../../support/wait';
@@ -161,10 +162,13 @@ const MAX_MOVES = 6;
  * Drags the definition `id` below block `other` while the two overlap, with real pointer input. In
  * a small window (800 × 560) the definition is dropped just below the empty `main`, which then grows
  * over it when the test puts statements in it, and a click on those statements lands on the
- * definition. Each drag starts with the definition's grab point near the top of the visible canvas
+ * definition. The blocks are measured once Blockly has drawn what was just inserted. Each drag starts with the definition's grab point near the top of the visible canvas
  * and goes down as far as the canvas shows.
  */
 async function moveBelow(app: FlowApp, id: string, other: string): Promise<void> {
+  // Blockly draws blocks just inserted (by the test hook) in the next animation frame: until then
+  // `other` measures as it was before, and the two may seem apart when they are not.
+  await waitForDelivery(app.driver);
   for (let move = 0; move < MAX_MOVES; move += 1) {
     const block = await blockBox(app, id);
     const below = await blockBox(app, other);
