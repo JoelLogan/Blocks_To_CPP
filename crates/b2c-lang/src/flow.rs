@@ -421,7 +421,7 @@ impl Flow<'_> {
     fn check_fall_through(&mut self, stmt: &Stmt, fall_through: FallThrough, is_last: bool) {
         let message = match (fall_through, is_last) {
             (FallThrough::Last, true) => return,
-            (FallThrough::LastPart, true) => {
+            (FallThrough::LastPart, _) => {
                 "'go on into the next case' can't be used in the last part of a switch: there is no next case \
                  to go on into. Remove it."
             }

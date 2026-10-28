@@ -217,6 +217,11 @@ fn go_on_into_the_next_case_must_end_a_case_that_another_part_follows() {
         vec![case(int(1, "l1"), vec![fall("ok")])],
         Some(vec![fall("in_default")]),
     );
+    // In the last part but not at its end: moving it to the end would not help.
+    let mid_last = switch(
+        vec![case(int(1, "l1"), vec![fall("ok2")])],
+        Some(vec![fall("mid_default"), stmt(StmtKind::Break, "b0")]),
+    );
     let not_last = switch(
         vec![
             case(int(1, "l1"), vec![fall("early"), stmt(StmtKind::Break, "b1")]),
@@ -244,7 +249,7 @@ fn go_on_into_the_next_case_must_end_a_case_that_another_part_follows() {
         None,
     );
     let outside = fall("outside");
-    let item = main_item(vec![last_part, not_last, nested, outside]);
+    let item = main_item(vec![last_part, mid_last, not_last, nested, outside]);
     let mut diags = Diags::default();
     crate::flow::check_item(&item, &symbols(), &mut diags);
     let blocks: Vec<(&str, Option<&str>)> = diags
@@ -256,17 +261,20 @@ fn go_on_into_the_next_case_must_end_a_case_that_another_part_follows() {
         blocks,
         [
             (codes::MISPLACED_FALLTHROUGH, Some("in_default")),
+            (codes::MISPLACED_FALLTHROUGH, Some("mid_default")),
             (codes::MISPLACED_FALLTHROUGH, Some("early")),
             (codes::MISPLACED_FALLTHROUGH, Some("in_if")),
             (codes::MISPLACED_FALLTHROUGH, Some("outside")),
         ]
     );
-    assert_eq!(
-        diags.list[0].message,
-        "'go on into the next case' can't be used in the last part of a switch: there is no next case to go \
-         on into. Remove it."
-    );
-    for d in &diags.list[1..] {
+    for d in &diags.list[..2] {
+        assert_eq!(
+            d.message,
+            "'go on into the next case' can't be used in the last part of a switch: there is no next case to \
+             go on into. Remove it."
+        );
+    }
+    for d in &diags.list[2..] {
         assert_eq!(
             d.message,
             "'go on into the next case' must be the last block of a case, directly in the case (not inside \
