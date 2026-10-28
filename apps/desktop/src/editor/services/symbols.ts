@@ -86,8 +86,8 @@ export function analysisScope(deps: Pick<SymbolServiceDeps, 'core' | 'preview'>)
  * other block, such as one in the toolbox's flyout, gets the scope query's own answer, or nothing),
  * the current name of a symbol (from the document, then the last-known names, then the analysis),
  * the parameters of the function a call names ({@link calledFunctionParams}), the fields of the
- * struct a *new … with* names ({@link namedStructFields}), and the module's structs and enums for
- * the type fields' menus.
+ * struct a *new … with* names ({@link namedStructFields}), the module's structs and enums for
+ * the type fields' menus, and whether a function has overloads ({@link sharesName}).
  */
 export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
   const scope = analysisScope(deps);
@@ -111,7 +111,36 @@ export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
     functionOptional: (blockId, funcId) => calledFunctionOptional(deps, blockId, funcId),
     structFields: (blockId, structId) => namedStructFields(deps, blockId, structId),
     userTypes: () => userTypesOf(deps),
+    sharesName: (funcId) => sharesName(deps, funcId),
   };
+}
+
+/** How many functions of each module have each name (`module\0name`), built once per preview. */
+const FUNCTION_NAMES = new WeakMap<PreviewResult, ReadonlyMap<string, number>>();
+
+/**
+ * Whether another function of the module of function `funcId` has its name in the latest preview
+ * (overloads, w2.md §2.8): a call to it then shows its parameter types.
+ */
+function sharesName(deps: Pick<SymbolServiceDeps, 'preview'>, funcId: string): boolean {
+  const preview = deps.preview();
+  const fn = preview === null ? undefined : symbolsById(preview).get(funcId);
+  if (preview === null || fn?.kind !== 'function') {
+    return false;
+  }
+  let counts = FUNCTION_NAMES.get(preview);
+  if (counts === undefined) {
+    const map = new Map<string, number>();
+    for (const symbol of preview.symbols) {
+      if (symbol.kind === 'function') {
+        const key = `${symbol.module}\u0000${symbol.name}`;
+        map.set(key, (map.get(key) ?? 0) + 1);
+      }
+    }
+    counts = map;
+    FUNCTION_NAMES.set(preview, counts);
+  }
+  return (counts.get(`${fn.module}\u0000${fn.name}`) ?? 0) > 1;
 }
 
 /**

@@ -1,6 +1,6 @@
 /** The seven Blocks2Cpp fields (src/fields/). */
 import * as Blockly from 'blockly/core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   B2cCheckboxField,
@@ -420,6 +420,88 @@ describe('symbol references', () => {
     const call = workspace.newBlock('func.call');
     fakeSymbols({ [call.id]: [symbol('s_x', 'x'), symbol('s_f', 'f', 'function')] }, {});
     expect((call.getField('FUNC') as B2cSymbolRefField).menuOptions()).toEqual([['f', 's_f']]);
+  });
+
+  it('name overloads by their parameters’ types, in the menu and on the block', () => {
+    const workspace = headlessWorkspace();
+    const call = workspace.newBlock('func.call');
+    const pair = symbol('s_area2', 'area', 'function', { params: ['s_w', 's_h'], returns: 'int' });
+    const one = symbol('s_area1', 'area', 'function', { params: ['s_r'], returns: 'double' });
+    const square = symbol('s_sq', 'square', 'function', { params: ['s_n'], returns: 'int' });
+    const params: Record<string, SymbolInfo> = {
+      s_w: symbol('s_w', 'w', 'parameter'),
+      s_h: symbol('s_h', 'h', 'parameter'),
+      s_r: symbol('s_r', 'r', 'parameter', { type: 'double' }),
+      s_n: symbol('s_n', 'n', 'parameter'),
+    };
+    const all: Record<string, SymbolInfo> = {
+      ...params,
+      s_area2: pair,
+      s_area1: one,
+      s_sq: square,
+    };
+    setEditorServices({
+      ...DEFAULT_EDITOR_SERVICES,
+      symbols: {
+        symbolsAt: (blockId) => (blockId === call.id ? [pair, one, square] : []),
+        nameOf: (symId) => all[symId]?.name ?? null,
+        sharesName: (funcId) => funcId === 's_area1' || funcId === 's_area2',
+      },
+      types: { outputTypeOf: () => null, symbol: (id) => all[id] ?? null },
+    });
+    const field = call.getField('FUNC');
+    if (!(field instanceof B2cSymbolRefField)) {
+      throw new Error('no FUNC field');
+    }
+    expect(field.menuOptions()).toEqual([
+      ['area (int, int)', 's_area2'],
+      ['area (double)', 's_area1'],
+      ['square', 's_sq'],
+    ]);
+    field.setRef({ ref: 's_area1' });
+    expect(field.getText()).toBe('area (double)');
+    field.setRef({ ref: 's_sq' });
+    expect(field.getText()).toBe('square');
+  });
+
+  it('redraw a call whose function gained an overload when asked, and only then', async () => {
+    const workspace = renderedWorkspace();
+    const call = renderedBlock(workspace, 'func.call');
+    const area = symbol('s_area1', 'area', 'function', { params: ['s_r'], returns: 'double' });
+    const all: Record<string, SymbolInfo> = {
+      s_area1: area,
+      s_r: symbol('s_r', 'r', 'parameter', { type: 'double' }),
+    };
+    let overloaded = false;
+    setEditorServices({
+      ...DEFAULT_EDITOR_SERVICES,
+      symbols: {
+        symbolsAt: () => [area],
+        nameOf: (symId) => all[symId]?.name ?? null,
+        sharesName: () => overloaded,
+      },
+      types: { outputTypeOf: () => null, symbol: (id) => all[id] ?? null },
+    });
+    const field = call.getField('FUNC');
+    if (!(field instanceof B2cSymbolRefField)) {
+      throw new Error('no FUNC field');
+    }
+    field.setRef({ ref: 's_area1' });
+    await Blockly.renderManagement.finishQueuedRenders();
+    // Blockly draws spaces as no-break spaces.
+    const shown = (): string =>
+      (field.getSvgRoot()?.querySelector('text')?.textContent ?? '').replace(/\u00a0/g, ' ');
+    expect(shown()).toContain('area');
+    expect(shown()).not.toContain('double');
+    // The analysis now knows another `area`: the block still shows the old text until asked.
+    overloaded = true;
+    const rerender = vi.spyOn(field, 'forceRerender');
+    field.refreshText();
+    await Blockly.renderManagement.finishQueuedRenders();
+    expect(rerender).toHaveBeenCalledTimes(1);
+    expect(shown()).toContain('area (double)');
+    field.refreshText();
+    expect(rerender).toHaveBeenCalledTimes(1);
   });
 
   it('list only the symbols whose type binds the field’s pattern, and keep a chosen one', () => {

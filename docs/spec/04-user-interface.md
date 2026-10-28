@@ -155,7 +155,8 @@
   the module shown, or a short hint when there is none; module headings
   appear only when the project has more than one module. Functions that
   share a name (overloads, [03 §3.7.7](03-block-language.md#377-functions))
-  are each labelled with their parameter types (*area (int, int)*). A call
+  are each labelled with their parameter types (*area (int, int)*), here, in
+  a call's function menu and on the call block. A call
   block of a known function has as many arguments as the function has
   parameters: it shows no ⊖/⊕ while they match, and only the one that brings
   it back in line when the definition changes. *Libraries* lists installed

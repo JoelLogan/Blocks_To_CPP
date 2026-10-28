@@ -9,6 +9,9 @@
  * - The field always shows the current name of the symbol it refers to
  *   ({@link SymbolProvider.nameOf}), so a rename shows at once; a reference whose declaration is
  *   gone shows `missing (sym_…)`. The analyser's diagnostic (B2C-E0201–E0204) explains it.
+ * - A function that shares its name with another of its module (an overload, w2.md §2.8) is
+ *   named with its parameters' types, `area (int, int)`, in the menu and on the block, as the
+ *   toolbox labels its call ({@link overloadLabel}).
  * - A field with a type pattern in its block's signature (ADR-0018, slots.md §4.3) lists only the
  *   symbols whose type binds the pattern on its own (class and shape), without looking at the
  *   block's inputs, which are checked against the field and not the reverse. A type the editor
@@ -38,9 +41,10 @@ import {
   symbolsAt,
   toolboxSymbolGroups,
   type SymbolInfo,
+  type TypeOracle,
 } from '../services';
 import { blockSignature, TypeEnv, type TypePattern } from '../types/pattern';
-import { NO_FACTS, parseType } from '../types/static-type';
+import { NO_FACTS, parseType, typeLabel, type TypeFactsTs } from '../types/static-type';
 import { visibleInvisibles } from '../text';
 import { isSymbolRefValue, type SymbolRefValue } from './values';
 
@@ -153,6 +157,28 @@ function isVariable(symbol: SymbolInfo): boolean {
 /** What a reference shows when its declaration is not known: `missing (sym_x)`. */
 export function missingSymbolLabel(symId: string): string {
   return `missing (${symId})`;
+}
+
+/** The most parameters an overload's label names (a call takes at most 64 arguments). */
+const MAX_LABELLED_PARAMS = 64;
+
+/**
+ * The label of a function that shares its name with another of its module (an overload, w2.md
+ * §2.8): its name and its parameters' types, `area (int, int)` (`?` for a type not known), so that
+ * the overloads tell apart. `symbolOf` gives a parameter's symbol by ID; `facts` names user types.
+ */
+export function overloadLabel(
+  fn: SymbolInfo,
+  name: string,
+  symbolOf: (id: string) => SymbolInfo | null | undefined,
+  facts: TypeFactsTs,
+): string {
+  const types = (fn.params ?? []).slice(0, MAX_LABELLED_PARAMS).map((id) => {
+    const param = symbolOf(id);
+    const type = param === null || param === undefined ? null : parseType(param.type);
+    return type === null ? '?' : typeLabel(type, facts, 'friendly');
+  });
+  return `${name} (${types.join(', ')})`;
 }
 
 /** The value of the menu entry shown when there is nothing to choose; it is never accepted. */
@@ -376,19 +402,28 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
     let currentListed = false;
     for (const group of this.symbolGroups()) {
       const before = options.length;
-      for (const symbol of group) {
-        if (
-          !isProjectId(symbol.id) ||
-          typeof symbol.name !== 'string' ||
-          !symbolMatchesKinds(symbol, this.kinds) ||
-          (typed !== null && !B2cSymbolRefField.fitsPattern(symbol, typed))
-        ) {
-          continue;
+      const listed = group.filter(
+        (symbol) =>
+          isProjectId(symbol.id) &&
+          typeof symbol.name === 'string' &&
+          symbolMatchesKinds(symbol, this.kinds) &&
+          (typed === null || B2cSymbolRefField.fitsPattern(symbol, typed)),
+      );
+      const functionNames = new Map<string, number>();
+      for (const symbol of listed) {
+        if (symbol.kind === 'function') {
+          functionNames.set(symbol.name, (functionNames.get(symbol.name) ?? 0) + 1);
         }
+      }
+      for (const symbol of listed) {
         if (before > 0 && options.length === before) {
           options.push(Blockly.FieldDropdown.SEPARATOR);
         }
-        const label = visibleInvisibles(symbol.name, { lineBreaks: true });
+        const name = visibleInvisibles(symbol.name, { lineBreaks: true });
+        const label =
+          symbol.kind === 'function' && (functionNames.get(symbol.name) ?? 0) > 1
+            ? B2cSymbolRefField.overloadText(symbol, name)
+            : name;
         const count = (seenNames.get(label) ?? 0) + 1;
         seenNames.set(label, count);
         options.push([count === 1 ? label : `${label} (${String(count)})`, symbol.id]);
@@ -402,6 +437,65 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
       options.push([EMPTY_LABELS[this.kinds], NOTHING]);
     }
     return options;
+  }
+
+  /** {@link overloadLabel} with the analysis's symbols and facts (none when they fail). */
+  private static overloadText(fn: SymbolInfo, name: string): string {
+    let types: TypeOracle | null = null;
+    try {
+      types = getEditorServices().types;
+    } catch {
+      types = null;
+    }
+    const symbolOf = (id: string): SymbolInfo | null => {
+      try {
+        return types?.symbol?.(id) ?? null;
+      } catch {
+        return null;
+      }
+    };
+    let facts = NO_FACTS;
+    try {
+      facts = types?.facts?.() ?? NO_FACTS;
+    } catch {
+      // Without facts a user type reads `unknown type`.
+    }
+    return overloadLabel(fn, name, symbolOf, facts);
+  }
+
+  /**
+   * What the block shows for a function: its {@link overloadLabel} when another function of its
+   * module shares its name ({@link SymbolProvider.sharesName}), otherwise `null`.
+   */
+  private overloadTextOf(symId: string): string | null {
+    if (this.kinds !== 'functions') {
+      return null;
+    }
+    try {
+      const services = getEditorServices();
+      if (services.symbols.sharesName?.(symId) !== true) {
+        return null;
+      }
+      const fn = services.types.symbol?.(symId) ?? null;
+      const name = nameOf(symId);
+      return fn?.kind !== 'function' || name === null
+        ? null
+        : B2cSymbolRefField.overloadText(fn, visibleInvisibles(name, { lineBreaks: true }));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Redraws the block's text when it no longer matches what the field would show: a call whose
+   * function gained or lost an overload in the latest analysis (the call mutator asks after each
+   * one). A rename redraws every reference already ({@link refreshSymbolNames}).
+   */
+  refreshText(): void {
+    const shown = this.textContent_?.nodeValue ?? null;
+    if (shown !== null && shown !== this.getDisplayText_()) {
+      this.forceRerender();
+    }
   }
 
   /** The label for a symbol ID: its current name, or `missing (id)`. */
@@ -420,10 +514,10 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
     return isProjectId(newValue) ? newValue : null;
   }
 
-  /** Always the current name, never a cached menu label. */
+  /** Always the current name (with an overload's types), never a cached menu label. */
   protected override getText_(): string | null {
     const value = this.getValue();
-    return value === null ? '?' : this.labelFor(value);
+    return value === null ? '?' : (this.overloadTextOf(value) ?? this.labelFor(value));
   }
 
   /** Opens the menu (Blockly checks the current reference) and gives it an accessible name. */

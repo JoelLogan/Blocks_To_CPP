@@ -122,6 +122,12 @@ export interface SymbolProvider {
    * it, a type field asks {@link symbolsAt} at its block, whose answer lists them too.
    */
   userTypes?(): readonly SymbolInfo[];
+  /**
+   * Optional: whether another function of the module of function `funcId` has its name (an
+   * overload, docs/plans/m3-contracts/w2.md §2.8), from the latest analysis. A call then shows its
+   * function's parameter types on the block; without it, a call shows the bare name.
+   */
+  sharesName?(funcId: string): boolean;
 }
 
 /**

@@ -464,6 +464,37 @@ describe('the structs and enums the type fields list', () => {
   });
 });
 
+describe('whether a function has overloads', () => {
+  it('is whether another function of its module has its name', () => {
+    const fn = (id: string, name: string, module: string): SymbolInfo =>
+      symbol(id, name, { kind: 'function', params: [], returns: 'int', module, declBlock: id });
+    let current: PreviewResult | null = null;
+    const { symbols } = createSymbolServices({
+      core: () => null,
+      preview: () => current,
+      workspace: headlessWorkspace(),
+      activeModule: () => 'mod_main',
+    });
+    expect(symbols.sharesName?.('s_a1')).toBe(false);
+    current = {
+      ...previewFixture(),
+      symbols: [
+        fn('s_a1', 'area', 'mod_main'),
+        fn('s_a2', 'area', 'mod_main'),
+        fn('s_a3', 'area', 'mod_other'),
+        fn('s_sq', 'square', 'mod_main'),
+        fn('s_sq2', 'square', 'mod_other'),
+        symbol('s_x', 'area'),
+      ],
+    };
+    expect(symbols.sharesName?.('s_a1')).toBe(true);
+    expect(symbols.sharesName?.('s_a3')).toBe(false);
+    expect(symbols.sharesName?.('s_sq')).toBe(false);
+    expect(symbols.sharesName?.('s_x')).toBe(false);
+    expect(symbols.sharesName?.('s_missing')).toBe(false);
+  });
+});
+
 describe.skipIf(realCore === null)('call argument labels with the compiler core', () => {
   it('cost no scope query after an analysis, with 50 calls on the canvas', async () => {
     const core = present(realCore, 'the compiler core');

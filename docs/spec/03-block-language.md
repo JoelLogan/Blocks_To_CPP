@@ -718,7 +718,8 @@ as `std::string("…")` and a *list of* with its type
 (`show(std::vector<int>{1})`), so g++ picks the same function; calls to
 other functions print their arguments as before. *Your functions* labels
 each function that shares its name with its parameter types (*area (int,
-int)*). Functions of different modules still need different names until
+int)*), and so do a call's function menu and the call block itself.
+Functions of different modules still need different names until
 wave W3, since every module is compiled on its own
 ([§3.8](#38-organisation-features-editor)).
 

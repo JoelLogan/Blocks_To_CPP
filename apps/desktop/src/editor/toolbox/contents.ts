@@ -35,11 +35,10 @@ import {
   TOOLBOX,
   catalogBlock,
   catalogFieldOptions,
-  parseType,
+  overloadLabel as overloadLabelOf,
   symbolMatchesKinds,
   toolboxCategoryStyle,
   truncateForDisplay,
-  typeLabel,
   visibleInvisibles,
   type CategoryId,
   type TokenJson,
@@ -634,11 +633,7 @@ export function overloadLabel(
         : null;
     },
   };
-  const types = parametersOf(fn, byId).map((param) => {
-    const type = param === undefined ? null : parseType(param.type);
-    return type === null ? '?' : typeLabel(type, facts, 'friendly');
-  });
-  return `${displayName(fn.name)} (${types.join(', ')})`;
+  return overloadLabelOf(fn, displayName(fn.name), (id) => byId.get(id), facts);
 }
 
 /** The heading that names the module whose functions *Your functions* lists. */

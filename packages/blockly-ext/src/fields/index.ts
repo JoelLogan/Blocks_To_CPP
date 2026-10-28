@@ -14,6 +14,7 @@ export { B2cSymbolDeclField, type SymbolDeclFieldConfig } from './symbol-decl';
 export {
   B2cSymbolRefField,
   missingSymbolLabel,
+  overloadLabel,
   symbolMatchesKinds,
   type SymbolRefFieldConfig,
   type SymbolRefKinds,

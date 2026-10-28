@@ -28,6 +28,7 @@
 import * as Blockly from 'blockly/core';
 
 import { blockDef, partIndex } from '../checker/catalog';
+import { B2cSymbolRefField } from '../fields/symbol-ref';
 import { MutatorButton } from './buttons';
 import { asUndoStep, canEdit } from './events';
 import {
@@ -151,6 +152,11 @@ export class VariadicController implements MutatorController {
     this.refreshArgLabels(params);
     this.refreshCallButtons(params);
     this.markMirrorsDirty();
+    // A call's function may have gained or lost an overload: its label names the types then.
+    const ref = this.refField === null ? null : this.block.getField(this.refField);
+    if (ref instanceof B2cSymbolRefField) {
+      ref.refreshText();
+    }
   }
 
   // --- Layout -----------------------------------------------------------------------------------
