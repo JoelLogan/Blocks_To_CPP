@@ -131,7 +131,10 @@ impl SymbolInfo {
     /// `name` is the user's name for it. It usually equals `symbol.name`, but
     /// differs when the name is not a valid identifier: the table then holds a
     /// generated placeholder, while the editor must show what the user wrote.
-    pub fn new(id: SymbolId, name: impl Into<String>, symbol: &Symbol) -> Self {
+    ///
+    /// `None` for a namespace: the editor learns of namespaces once their
+    /// kind is part of the IPC contract (w3-modules.md §7.1).
+    pub fn new(id: SymbolId, name: impl Into<String>, symbol: &Symbol) -> Option<Self> {
         let kind = match &symbol.kind {
             SymbolKind::Variable { is_const } => SymbolInfoKind::Variable { is_const: *is_const },
             SymbolKind::Parameter { mode } => SymbolInfoKind::Parameter { mode: *mode },
@@ -156,8 +159,9 @@ impl SymbolInfo {
                 values: values.clone(),
             },
             SymbolKind::Enumerator { owner } => SymbolInfoKind::Enumerator { owner: owner.clone() },
+            SymbolKind::Namespace { .. } => return None,
         };
-        Self {
+        Some(Self {
             id,
             name: name.into(),
             kind,
@@ -165,7 +169,7 @@ impl SymbolInfo {
             module: symbol.origin.module.clone(),
             decl_block: symbol.origin.block.clone(),
             shared: false,
-        }
+        })
     }
 }
 
@@ -218,7 +222,7 @@ mod tests {
             "b003",
             field("NAME"),
         );
-        let info = SymbolInfo::new(sym("s_guess"), "guess", &s);
+        let info = SymbolInfo::new(sym("s_guess"), "guess", &s).unwrap();
         round_trip(
             &info,
             &json!({"id": "s_guess", "name": "guess", "kind": "variable", "isConst": false,
@@ -243,13 +247,13 @@ mod tests {
             field("params[0]"),
         );
         round_trip(
-            &SymbolInfo::new(sym("p_text"), "text", &param),
+            &SymbolInfo::new(sym("p_text"), "text", &param).unwrap(),
             &json!({"id": "p_text", "name": "text", "kind": "parameter", "mode": "read_only",
                     "type": "std::string", "module": "mod_main", "declBlock": "fn_f"}),
         );
         let counter = symbol("i", SymbolKind::LoopVariable, Type::Int, "b_for", field("VAR"));
         round_trip(
-            &SymbolInfo::new(sym("s_i"), "i", &counter),
+            &SymbolInfo::new(sym("s_i"), "i", &counter).unwrap(),
             &json!({"id": "s_i", "name": "i", "kind": "loopVariable", "type": "int",
                     "module": "mod_main", "declBlock": "b_for"}),
         );
@@ -261,7 +265,7 @@ mod tests {
             field("NAME"),
         );
         round_trip(
-            &SymbolInfo::new(sym("s_g"), "kGravity", &global),
+            &SymbolInfo::new(sym("s_g"), "kGravity", &global).unwrap(),
             &json!({"id": "s_g", "name": "kGravity", "kind": "global", "isConst": true, "type": "double",
                     "module": "mod_main", "declBlock": "b_global"}),
         );
@@ -276,7 +280,7 @@ mod tests {
             field("NAME"),
         );
         round_trip(
-            &SymbolInfo::new(sym("f_area"), "area", &function),
+            &SymbolInfo::new(sym("f_area"), "area", &function).unwrap(),
             &json!({"id": "f_area", "name": "area", "kind": "function", "params": ["p_w", "p_h"],
                     "returns": "double", "type": "double", "module": "mod_main", "declBlock": "fn_area"}),
         );
@@ -290,7 +294,7 @@ mod tests {
             "fn_stop",
             field("NAME"),
         );
-        let info = SymbolInfo::new(sym("f_stop"), "stop", &void);
+        let info = SymbolInfo::new(sym("f_stop"), "stop", &void).unwrap();
         assert_eq!(
             info.kind,
             SymbolInfoKind::Function {
@@ -312,11 +316,23 @@ mod tests {
             field("NAME"),
         );
         round_trip(
-            &SymbolInfo::new(sym("f_greet"), "greet", &greet),
+            &SymbolInfo::new(sym("f_greet"), "greet", &greet).unwrap(),
             &json!({"id": "f_greet", "name": "greet", "kind": "function", "params": ["p_name", "p_times"],
                     "returns": "void", "optional": 1, "type": "void", "module": "mod_main",
                     "declBlock": "fn_greet"}),
         );
+    }
+
+    #[test]
+    fn namespaces_have_no_record_yet() {
+        let geo = symbol(
+            "geo",
+            SymbolKind::Namespace { parent: None },
+            Type::Void,
+            "b_ns",
+            field("NAME"),
+        );
+        assert_eq!(SymbolInfo::new(sym("n_geo"), "geo", &geo), None);
     }
 
     #[test]
@@ -329,7 +345,7 @@ mod tests {
             field("NAME"),
         );
         s.name = Ident::generated("b2c_invalid_name1").expect("name");
-        let info = SymbolInfo::new(sym("s1"), "my score", &s);
+        let info = SymbolInfo::new(sym("s1"), "my score", &s).unwrap();
         assert_eq!(info.name, "my score");
         assert_eq!(info.kind, SymbolInfoKind::Variable { is_const: true });
         assert_eq!(serde_json::to_value(&info).expect("json")["type"], "error");
@@ -371,6 +387,7 @@ mod tests {
                 "Point",
                 &symbol("Point", kind, ty, "b1", field("NAME")),
             )
+            .unwrap()
         };
         let point = Type::Named(sym("s1"));
         let structure = make(

@@ -61,6 +61,7 @@ impl Lowerer<'_> {
             comment: self.comment(block),
             headers: ItemHeaders::default(),
             shared: false,
+            namespace: None,
         })
     }
 

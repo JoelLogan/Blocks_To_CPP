@@ -440,6 +440,7 @@ proptest! {
                 comment: None,
                 headers: ItemHeaders::default(),
                 shared: false,
+                namespace: None,
             },
             Item {
                 kind: ItemKind::Function(FunctionDef { symbol: function, params, ret, body: Block { stmts: function_body } }),
@@ -447,11 +448,18 @@ proptest! {
                 comment: None,
                 headers: ItemHeaders::default(),
                 shared: false,
+                namespace: None,
             },
         ];
         let modules = vec![Module { id: ModuleId::new("mod_main").unwrap(), name: String::from("main"), items }];
         let layout = Layout::flat(&modules, &symbols);
-        let program = Program { standard: CppStandard::Cpp20, modules, symbols, layout };
+        let program = Program {
+            standard: CppStandard::Cpp20,
+            modules,
+            symbols,
+            layout,
+            spellings: b2c_ir::spelling::Spellings::default(),
+        };
         let first = generate(&program, &options("Random"));
         assert_style(&first);
         source_map::assert_well_formed(&first);

@@ -16,6 +16,7 @@ use crate::diag::{Location, Part};
 use crate::headers::{Header, ItemHeaders};
 use crate::ids::{BlockId, ModuleId, SymbolId};
 use crate::layout::Layout;
+use crate::spelling::Spellings;
 use crate::text::{CharLit, Comment, Ident, NumLit, StrLit};
 use crate::types::{Type, TypeFacts, UserKind, UserType};
 
@@ -83,6 +84,11 @@ pub struct Program {
     /// JSON: the layout has its own snapshots.
     #[serde(skip)]
     pub layout: Layout,
+    /// How references to namespace-scope entities are written, where that
+    /// differs from the defaults (06 §6.14.2). Not serialised in the SAST
+    /// JSON; empty until namespaces and directives arrive.
+    #[serde(skip)]
+    pub spellings: Spellings,
 }
 
 /// One module.
@@ -114,6 +120,11 @@ pub struct Item {
     /// `true`.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub shared: bool,
+    /// The innermost user namespace the definition is in (its enclosing
+    /// ones come from the symbol table, `SymbolKind::Namespace::parent`);
+    /// `None` at global scope. Serialised only when set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<SymbolId>,
 }
 
 /// Kinds of top-level definitions.
@@ -1052,6 +1063,31 @@ impl SymbolTable {
     pub fn get(&self, id: &SymbolId) -> Option<&Symbol> {
         self.symbols.get(id)
     }
+
+    /// The user namespaces from the outermost to `innermost`, which an
+    /// [`Item::namespace`] names (`geo`, then `geo::shapes`). Empty for
+    /// `None`. A symbol that is not a namespace ends the path, and so does a
+    /// parent chain that comes back to a namespace already on it (a damaged
+    /// table), so this always ends.
+    pub fn namespace_path(&self, innermost: Option<&SymbolId>) -> Vec<&SymbolId> {
+        let mut path: Vec<&SymbolId> = Vec::new();
+        let mut next = innermost;
+        while let Some(id) = next {
+            let Some((key, symbol)) = self.symbols.get_key_value(id) else {
+                break;
+            };
+            let SymbolKind::Namespace { parent } = &symbol.kind else {
+                break;
+            };
+            if path.contains(&key) {
+                break;
+            }
+            path.push(key);
+            next = parent.as_ref();
+        }
+        path.reverse();
+        path
+    }
 }
 
 /// The program's structs and enums, with the effective flags the analyser
@@ -1072,7 +1108,8 @@ impl TypeFacts for SymbolTable {
             | SymbolKind::Global { .. }
             | SymbolKind::Function { .. }
             | SymbolKind::Field { .. }
-            | SymbolKind::Enumerator { .. } => return None,
+            | SymbolKind::Enumerator { .. }
+            | SymbolKind::Namespace { .. } => return None,
         };
         Some(UserType {
             name: symbol.name.as_str(),
@@ -1156,6 +1193,13 @@ pub enum SymbolKind {
     Enumerator {
         /// The enum.
         owner: SymbolId,
+    },
+    /// A user namespace (`program.namespace`, w3-modules.md §2.12). One
+    /// namespace may be opened in several modules and is one C++ namespace;
+    /// its type is [`Type::Void`].
+    Namespace {
+        /// The namespace it is nested in; `None` at global scope.
+        parent: Option<SymbolId>,
     },
 }
 
@@ -1241,6 +1285,7 @@ mod tests {
             comment: None,
             headers: ItemHeaders::default(),
             shared: false,
+            namespace: None,
         };
         let plain = serde_json::to_value(&item).unwrap();
         assert_eq!(plain.as_object().unwrap().len(), 3, "{plain}");
@@ -1251,5 +1296,51 @@ mod tests {
         let json = serde_json::to_value(&item).unwrap();
         assert_eq!(json["shared"], true);
         assert_eq!(json["headers"]["decl"], serde_json::json!(["<string>"]));
+        item.namespace = Some(sym("n_geo"));
+        assert_eq!(serde_json::to_value(&item).unwrap()["namespace"], "n_geo");
+    }
+
+    #[test]
+    fn namespace_paths_run_from_the_outermost() {
+        let mut table = SymbolTable::default();
+        let namespace = |name: &str, parent: Option<&str>| {
+            symbol(
+                name,
+                SymbolKind::Namespace {
+                    parent: parent.map(sym),
+                },
+                Type::Void,
+            )
+        };
+        table.symbols.insert(sym("n_geo"), namespace("geo", None));
+        table
+            .symbols
+            .insert(sym("n_shapes"), namespace("shapes", Some("n_geo")));
+        table
+            .symbols
+            .insert(sym("n_flat"), namespace("flat", Some("n_shapes")));
+        let path = table.namespace_path(Some(&sym("n_flat")));
+        assert_eq!(path, [&sym("n_geo"), &sym("n_shapes"), &sym("n_flat")]);
+        assert!(table.namespace_path(None).is_empty());
+        assert_eq!(table.user_type(&sym("n_geo")), None);
+        // A damaged table: a cycle of parents, a parent that is no namespace,
+        // and a missing one all end the path.
+        table.symbols.insert(sym("n_a"), namespace("a", Some("n_b")));
+        table.symbols.insert(sym("n_b"), namespace("b", Some("n_a")));
+        assert_eq!(
+            table.namespace_path(Some(&sym("n_a"))),
+            [&sym("n_b"), &sym("n_a")]
+        );
+        table.symbols.insert(
+            sym("v_n"),
+            symbol("n", SymbolKind::Variable { is_const: false }, Type::Int),
+        );
+        table.symbols.insert(sym("n_c"), namespace("c", Some("v_n")));
+        assert_eq!(table.namespace_path(Some(&sym("n_c"))), [&sym("n_c")]);
+        table.symbols.insert(sym("n_d"), namespace("d", Some("missing")));
+        assert_eq!(table.namespace_path(Some(&sym("n_d"))), [&sym("n_d")]);
+        // The kind serialises with its parent.
+        let json = serde_json::to_value(&table.symbols[&sym("n_shapes")].kind).unwrap();
+        assert_eq!(json, serde_json::json!({"namespace": {"parent": "n_geo"}}));
     }
 }

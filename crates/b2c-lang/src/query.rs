@@ -426,7 +426,7 @@ impl Analysis {
                     .names
                     .get(id)
                     .map_or_else(|| symbol.name.as_str(), String::as_str);
-                Some(SymbolInfo::new(id.clone(), name, symbol))
+                SymbolInfo::new(id.clone(), name, symbol)
             })
             .collect();
         infos.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
@@ -783,6 +783,7 @@ mod tests {
                 }],
                 symbols: table,
                 layout: b2c_ir::layout::Layout::default(),
+                spellings: b2c_ir::spelling::Spellings::default(),
             },
             diagnostics: Vec::new(),
             index,
@@ -863,10 +864,12 @@ mod tests {
                     comment: None,
                     headers: b2c_ir::headers::ItemHeaders::default(),
                     shared: false,
+                    namespace: None,
                 }],
             }],
             symbols: b2c_ir::sast::SymbolTable::default(),
             layout: b2c_ir::layout::Layout::default(),
+            spellings: b2c_ir::spelling::Spellings::default(),
         };
         let types = block_types(&program);
         assert_eq!(types.len(), 1);

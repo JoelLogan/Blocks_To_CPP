@@ -71,6 +71,7 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
             modules: Vec::new(),
             symbols: SymbolTable::default(),
             layout: Layout::default(),
+            spellings: b2c_ir::spelling::Spellings::default(),
         };
         return Analysis {
             program,
@@ -113,6 +114,7 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
             modules,
             symbols: lowerer.symbols,
             layout,
+            spellings: b2c_ir::spelling::Spellings::default(),
         },
         diagnostics: lowerer.diags.list,
         index: lowerer.index,
@@ -675,6 +677,7 @@ impl<'d> Lowerer<'d> {
             comment: self.comment(block),
             headers: std::mem::take(&mut self.headers),
             shared: false,
+            namespace: None,
         }
     }
 
@@ -742,6 +745,7 @@ impl<'d> Lowerer<'d> {
             comment: self.comment(block),
             headers: std::mem::take(&mut self.headers),
             shared: false,
+            namespace: None,
         })
     }
 

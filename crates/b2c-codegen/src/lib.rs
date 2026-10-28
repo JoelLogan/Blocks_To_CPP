@@ -282,6 +282,7 @@ mod tests {
             modules: Vec::new(),
             symbols: SymbolTable::default(),
             layout: b2c_ir::layout::Layout::default(),
+            spellings: b2c_ir::spelling::Spellings::default(),
         };
         let project = generate(&program, &CodegenOptions::default());
         assert!(project.files.is_empty());

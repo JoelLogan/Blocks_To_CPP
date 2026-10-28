@@ -277,6 +277,7 @@ impl<'d> Lowerer<'d> {
             comment: self.comment(block),
             headers: std::mem::take(&mut self.headers),
             shared: false,
+            namespace: None,
         })
     }
 

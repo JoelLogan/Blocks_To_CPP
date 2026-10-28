@@ -133,6 +133,7 @@ impl Sast {
         Program {
             standard,
             layout: Layout::flat(&modules, &self.symbols),
+            spellings: b2c_ir::spelling::Spellings::default(),
             modules,
             symbols: self.symbols.clone(),
         }
@@ -202,6 +203,7 @@ fn item(kind: ItemKind) -> Item {
         comment: None,
         headers: ItemHeaders::default(),
         shared: false,
+        namespace: None,
     }
 }
 

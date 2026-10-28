@@ -181,6 +181,7 @@ mod tests {
             comment: None,
             headers: ItemHeaders::default(),
             shared: false,
+            namespace: None,
         }
     }
 

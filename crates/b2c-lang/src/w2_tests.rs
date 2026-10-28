@@ -131,6 +131,7 @@ fn item(kind: ItemKind) -> Item {
         comment: None,
         headers: b2c_ir::headers::ItemHeaders::default(),
         shared: false,
+        namespace: None,
     }
 }
 

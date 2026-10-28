@@ -240,6 +240,7 @@ pub(super) mod tests {
         Program {
             standard,
             layout: Layout::flat(&modules, &symbols),
+            spellings: b2c_ir::spelling::Spellings::default(),
             modules,
             symbols,
         }

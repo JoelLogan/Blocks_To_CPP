@@ -426,6 +426,7 @@ impl Builder {
             comment: None,
             headers: ItemHeaders::default(),
             shared: false,
+            namespace: None,
         }
     }
 
@@ -461,6 +462,7 @@ impl Builder {
             comment: None,
             headers: ItemHeaders::default(),
             shared: false,
+            namespace: None,
         }
     }
 
@@ -475,6 +477,7 @@ impl Builder {
         Program {
             standard: CppStandard::Cpp20,
             layout: Layout::flat(&modules, &symbols),
+            spellings: b2c_ir::spelling::Spellings::default(),
             modules,
             symbols,
         }

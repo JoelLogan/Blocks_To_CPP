@@ -15,6 +15,7 @@
 //! * [`sast`]: the Semantic AST that analysis produces and generation consumes.
 //! * [`layout`]: which files each module gets.
 //! * [`scope_info`]: what the editor learns about a symbol from a scope query.
+//! * [`spelling`]: how references to namespace-scope entities are written.
 //! * [`source_map`]: generated files and the map back to blocks.
 //!
 //! It performs no I/O and compiles for `wasm32-unknown-unknown`.
@@ -28,6 +29,7 @@ pub mod sast;
 pub mod scope_info;
 pub mod sig;
 pub mod source_map;
+pub mod spelling;
 pub mod text;
 pub mod types;
 
@@ -39,4 +41,5 @@ pub use scope_info::{SymbolInfo, SymbolInfoKind};
 pub use sig::{
     BlockParts, BlockSig, Fit, PartName, PartType, Resolution, SigTable, TypeEnv, TypePattern, TypeVar,
 };
+pub use spelling::{Spelling, Spellings};
 pub use types::{LibType, TermForm, Type, TypeClass, TypeFacts, TypeFn, TypeTerm};
