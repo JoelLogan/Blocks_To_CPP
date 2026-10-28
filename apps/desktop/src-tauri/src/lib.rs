@@ -8,7 +8,7 @@
 //! of crossing the IPC boundary (`docs/spec/09-quality-and-delivery.md` §9.1).
 //! What this crate adds is only what needs Tauri:
 //!
-//! * `commands`: the 36 command adapters, in step with
+//! * `commands`: the 39 command adapters, in step with
 //!   [`b2c_ipc::COMMAND_NAMES`], `build.rs`, the capability and the isolation
 //!   allowlist (a test checks all five).
 //! * `channels`: Tauri channels as the backend's event and byte sinks (push
@@ -124,7 +124,7 @@ pub fn run() -> ExitCode {
 
 /// Adds everything the app's IPC needs to `builder`: the native dialog plugin
 /// (from Rust only; the capability grants the webview none of its commands),
-/// the 36 commands and the window-close handling. The app must manage an
+/// the 39 commands and the window-close handling. The app must manage an
 /// `Arc<Backend>` before its window is created.
 ///
 /// Tests build the same app on Tauri's mock runtime with this function.

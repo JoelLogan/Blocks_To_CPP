@@ -81,6 +81,26 @@ fn the_handler_list_is_the_command_table() {
     assert_eq!(handlers, b2c_ipc::COMMAND_NAMES);
 }
 
+/// The texts that give the number of commands give the command table's: the
+/// crate's documentation, `configure`'s and the developer guide's.
+#[test]
+fn the_documented_command_count_is_the_command_table_s() {
+    let count = b2c_ipc::COMMAND_NAMES.len();
+    let lib = read("src/lib.rs");
+    for expected in [
+        format!("`commands`: the {count} command adapters"),
+        format!("the {count} commands and the window-close handling"),
+    ] {
+        assert!(lib.contains(&expected), "src/lib.rs must say {expected:?}");
+    }
+    let guide = read("../../../docs/developer-guide/desktop-architecture.md");
+    let expected = format!("(`crates/b2c-ipc`, {count} commands)");
+    assert!(
+        guide.contains(&expected),
+        "the developer guide must say {expected:?}"
+    );
+}
+
 #[test]
 fn the_capability_allows_exactly_the_command_table() {
     let capability = json("capabilities/main-window.json");

@@ -35,7 +35,7 @@ shows the app from a user's side; the sections below describe how it is built.
 project, build, run, toolchain, settings, trust and recovery services:
 
 - **Commands** (`src-tauri/src/commands/`): one async adapter per command of the IPC contract
-  (`crates/b2c-ipc`, 36 commands): it decodes the request, calls the backend on Tauri's blocking
+  (`crates/b2c-ipc`, 39 commands): it decodes the request, calls the backend on Tauri's blocking
   pool and returns its response or error. Build and run output stream to the editor through
   channels (`channels.rs`). [Adding an IPC command](recipes.md#adding-an-ipc-command) lists the
   places a new command touches.
