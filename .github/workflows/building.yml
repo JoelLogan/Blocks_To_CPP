@@ -1,0 +1,96 @@
+# Weekly: follows BUILDING.md's "Linux: Debian and Ubuntu" steps word for word in Debian 12 and
+# Debian 13 containers, up to the release build and a 20-second start under xvfb (M3-7,
+# docs/plans/m3-contracts/w5-performance.md §8; docs/spec/09-quality-and-delivery.md §9.4: build
+# steps are written once, in BUILDING.md). tools/building-steps.py turns the section's shell
+# blocks into one script and prints the only changes it makes: no sudo (the container runs as
+# root), the job's checkout instead of a fresh clone, and the start check instead of starting the
+# app. Nothing is cached, so a step BUILDING.md lacks cannot be hidden by an earlier run.
+name: BUILDING.md
+
+on:
+  schedule:
+    - cron: "17 3 * * 2" # Tuesdays 03:17 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: building-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  steps:
+    name: Extract the Debian steps
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # check out the repository
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the step extraction (self-test)
+        run: python3 tools/building-steps.py --self-test
+
+      # The containers' checkout is under /__w (the runner's work folder as the container sees it).
+      - name: Write BUILDING.md's steps as one script
+        run: |
+          python3 tools/building-steps.py \
+            --checkout "/__w/${GITHUB_REPOSITORY#*/}/${GITHUB_REPOSITORY#*/}" > steps.sh
+          cat steps.sh
+
+      - name: Keep the script
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: building-steps
+          path: steps.sh
+          retention-days: 7
+
+  debian:
+    name: BUILDING.md on Debian ${{ matrix.release }}
+    needs: steps
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        # Pinned by digest (the tags' digests of 2026-10-28); the matrix names show the release.
+        include:
+          - release: "12"
+            image: debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880
+          - release: "13"
+            image: debian:13@sha256:2dc419c6d7fe3dad0a2f9fd469c34cc90b0f9ba642d8fde837fe3d7d34a0e7f1
+    container:
+      image: ${{ matrix.image }}
+    env:
+      # What a person does by hand: answer yes to apt and to Corepack's download of pnpm.
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      # A virtual display has no GPU (BUILDING.md, Troubleshooting).
+      WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Get the steps
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: building-steps
+          path: building-steps
+
+      # Not BUILDING.md's: apt answers yes as a person would, and xvfb for the start check (the
+      # steps' own packages come from the steps).
+      - name: Prepare the container
+        run: |
+          echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90assume-yes
+          apt-get update
+          apt-get install --no-install-recommends xvfb xauth
+
+      - name: Follow BUILDING.md
+        shell: bash
+        run: bash building-steps/steps.sh
