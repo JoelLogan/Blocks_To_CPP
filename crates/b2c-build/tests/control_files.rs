@@ -295,6 +295,16 @@ fn listing(dir: &Path) -> BTreeMap<String, Vec<u8>> {
         .collect()
 }
 
+/// The bytes a program's text-mode stream writes for `text`: each `\n` is
+/// `\r\n` on Windows, where `std::ofstream` translates line ends.
+fn written_text(text: &str) -> Vec<u8> {
+    if cfg!(windows) {
+        text.replace('\n', "\r\n").into_bytes()
+    } else {
+        text.as_bytes().to_vec()
+    }
+}
+
 /// Generates `main` with `body` for both standards, builds it with every
 /// compiler, and runs it in a fresh folder holding `files`; checks that it
 /// gives `expected` and leaves the folder as it was.
@@ -370,7 +380,7 @@ fn builds_and_runs(
             }
             let mut after = listing(folder.path());
             for (file_name, contents) in left {
-                after.insert((*file_name).to_owned(), contents.as_bytes().to_vec());
+                after.insert((*file_name).to_owned(), written_text(contents));
             }
             let run = command(&program, folder.path()).output().unwrap();
             let ran = Ran {
