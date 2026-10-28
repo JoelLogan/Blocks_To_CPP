@@ -376,8 +376,9 @@ M3's language exit is met for them. The golden C++ of the earlier examples
 is byte-identical. The integration step ran every check of w2.md §5.1, the
 every-g++ forms test on a project with every catalog block (g++ 11 to 14,
 C++17 and C++20, strict, `-Werror`), and the whole Linux E2E suite at the
-default size, 1028 × 749, 1024 × 768 and 800 × 560 (63 files, 246 passed,
-1 skipped, after the small-window fixes); the native benchmark's new
+default size, 1024 × 768 and 800 × 560 after the small-window fixes (63
+files, 246 passed, 1 skipped each), and at 1028 × 749 before them (243
+passed, 1 skipped); the native benchmark's new
 `preview-language` shape takes 15.4 ms locally, and a local native A/B of
 `pipeline/preview` against `f508fca` gave +1.4 % (gate 10 %). The
 specification describes what W2 built, and w2.md §7.1 records each place
