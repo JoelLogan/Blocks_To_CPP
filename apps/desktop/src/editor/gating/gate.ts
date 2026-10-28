@@ -9,12 +9,12 @@
  * or the compiler cannot do (`B2C-E0703`).
  */
 import type { CppStandard } from '@blocks2cpp/b2c-core-wasm';
+import type { LabelMode } from '@blocks2cpp/blockly-ext';
 import type { ToolchainCapabilities } from '@blocks2cpp/ipc-types';
 
 import { REQUIREMENTS, requirementKey, type RequirementKind } from './table';
 
-/** How blocks read: Friendly or C++ labels (03 §3.5.2). */
-export type LabelMode = 'friendly' | 'cpp';
+export type { LabelMode };
 
 /** What the editor shows, and for which project and compiler. */
 export interface EditorMode {

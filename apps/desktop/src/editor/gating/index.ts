@@ -19,12 +19,21 @@ export {
 export {
   blockLabelParts,
   CPP_OPTION_LABELS,
+  hasCppLayout,
   hasFullCppLabel,
   labelParts,
   labelTemplate,
   optionLabel,
   partsMissingFromCppLabel,
 } from './labels';
-export { installOptionGate } from './install';
+export { installLabelMode, installOptionGate } from './install';
 export { editorMode, modeKey } from './mode';
-export { AWAITED, REQUIREMENTS, requirementKey, type RequirementKind } from './table';
+export {
+  AWAITED,
+  BASIC_BLOCKS,
+  BASIC_OPTIONS,
+  BASIC_TYPES,
+  REQUIREMENTS,
+  requirementKey,
+  type RequirementKind,
+} from './table';

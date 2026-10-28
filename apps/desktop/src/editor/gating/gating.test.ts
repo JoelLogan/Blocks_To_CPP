@@ -11,6 +11,9 @@ import {
 } from '../../app/testing/fixtures';
 import {
   AWAITED,
+  BASIC_BLOCKS,
+  BASIC_OPTIONS,
+  BASIC_TYPES,
   blockGate,
   blockLabelParts,
   categoryGate,
@@ -173,6 +176,60 @@ describe('the requirements table', () => {
         );
       }
     }
+  });
+
+  it('decides every catalog block: a row or basic, never both (w4-editor-tools.md §2.1)', () => {
+    for (const def of BLOCK_DEFS) {
+      const row = REQUIREMENTS.has(requirementKey('block', def.id));
+      expect(row || BASIC_BLOCKS.has(def.id), `${def.id} has no gating decision`).toBe(true);
+      expect(row && BASIC_BLOCKS.has(def.id), `${def.id} is both basic and gated`).toBe(false);
+    }
+    for (const id of BASIC_BLOCKS) {
+      expect(catalogBlock(id), `${id} is not in the catalog`).toBeDefined();
+    }
+  });
+
+  it('decides every dropdown option of the catalog', () => {
+    const listed = new Set<string>();
+    for (const def of BLOCK_DEFS) {
+      for (const field of def.fields.filter((f) => f.kind === 'dropdown')) {
+        const basic = BASIC_OPTIONS[`${def.id}.${field.name}`] ?? [];
+        for (const [, value] of field.options) {
+          listed.add(`${def.id}.${field.name}=${value}`);
+          const row = REQUIREMENTS.has(requirementKey('option', def.id, field.name, value));
+          expect(row || basic.includes(value), `${def.id}.${field.name}=${value}`).toBe(true);
+          expect(row && basic.includes(value), `${def.id}.${field.name}=${value}`).toBe(false);
+        }
+      }
+    }
+    for (const [key, values] of Object.entries(BASIC_OPTIONS)) {
+      for (const value of values) {
+        expect(listed.has(`${key}=${value}`), `${key}=${value} is not in the catalog`).toBe(true);
+      }
+    }
+  });
+
+  it('decides every type a type field or row of the catalog lists', () => {
+    for (const def of BLOCK_DEFS) {
+      const types = [
+        ...def.fields.flatMap((field) => field.types),
+        ...def.extra.flatMap((extra) => extra.types),
+      ];
+      for (const type of types) {
+        const row = REQUIREMENTS.has(requirementKey('type', type));
+        expect(row || BASIC_TYPES.has(type), `${def.id}: ${type}`).toBe(true);
+      }
+    }
+  });
+
+  it('hides the blocks W4E-1 makes advanced, and never hides a form with a fallback', () => {
+    for (const id of ['program.use_header', 'program.check', 'control.fallthrough']) {
+      expect(blockGate(id, mode()), id).toMatchObject({ reason: 'advanced' });
+      expect(blockGate(id, mode({ showAdvanced: true })).allowed, id).toBe(true);
+    }
+    const old = mode({ standard: 'c++17' });
+    expect(blockGate('coll.contains', old).allowed).toBe(true);
+    expect(optionGate('text.find', 'OP', 'starts', old).allowed).toBe(true);
   });
 
   it('builds its keys', () => {

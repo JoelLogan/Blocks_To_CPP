@@ -26,6 +26,7 @@ import * as Blockly from 'blockly/core';
 import { dialogs as appDialogs } from '../../app/dialogs/instance';
 import type { DialogService, DialogTextOptions } from '../../app/dialogs/service';
 import type { EditorContext, EditorPlugin } from '../../app/editor-types';
+import { editorMode, modeKey } from '../gating';
 import { analysisScope } from '../services/symbols';
 import { handleBlockDrops } from '../sync/drag';
 import {
@@ -41,6 +42,7 @@ import {
   toolboxDefinition,
   toolboxSymbolGroups,
   variablesContents,
+  withLabelMode,
   type ContentsContext,
   type ModuleInfo,
 } from './contents';
@@ -140,15 +142,18 @@ function withBlocklyFocus(dialogs: ToolboxDialogs): ToolboxDialogs {
   };
 }
 
-/** Builds a dynamic category, showing a short note instead of failing the whole flyout. */
+/**
+ * Builds a dynamic category, its blocks marked with the label mode ({@link withLabelMode}), showing
+ * a short note instead of failing the whole flyout.
+ */
 function guarded(
   name: string,
-  build: (context: ContentsContext) => Blockly.utils.toolbox.FlyoutItemInfoArray,
+  build: (context: ContentsContext) => Blockly.utils.toolbox.FlyoutItemInfo[],
   context: ContentsContext,
 ): () => Blockly.utils.toolbox.FlyoutItemInfoArray {
   return () => {
     try {
-      return build(context);
+      return withLabelMode(build(context), context.mode?.() ?? null);
     } catch (error: unknown) {
       console.error(`The toolbox category ${name} could not be built`, error);
       return failedCategoryNote();
@@ -181,7 +186,7 @@ function setToolbox(
 const DYNAMIC_CATEGORIES: readonly {
   readonly key: string;
   readonly name: string;
-  readonly build: (context: ContentsContext) => Blockly.utils.toolbox.FlyoutItemInfoArray;
+  readonly build: (context: ContentsContext) => Blockly.utils.toolbox.FlyoutItemInfo[];
 }[] = [
   { key: PROGRAM_CATEGORY, name: 'Program', build: programContents },
   { key: VARIABLES_CATEGORY, name: 'Variables', build: variablesContents },
@@ -201,6 +206,7 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     modules: () => modulesOf(store),
     activeModuleId: () => context.activeModuleId(),
     programModuleId: () => programModule(store, workspace, context.activeModuleId()),
+    mode: () => editorMode(store.getState()),
   };
   /** What the dynamic categories show depends on, now; never throws. */
   const contentsKey = (): string | null => {
@@ -322,7 +328,9 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   if (toolbox instanceof B2cContinuousToolbox) {
     toolbox.setContentsKey(() => dynamicContentsKey(contentsContext));
   }
-  const installed = setToolbox(workspace, toolboxDefinition());
+  /** The mode the toolbox definition was installed for (`modeKey`). */
+  let installedMode = modeKey(editorMode(store.getState()));
+  const installed = setToolbox(workspace, toolboxDefinition(editorMode(store.getState())));
   if (installed) {
     builtKey = contentsKey();
     refresh();
@@ -344,7 +352,32 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     }
   };
   workspace.addChangeListener(onEvent);
+  /**
+   * The editor's mode changed (the label or advanced settings, the project's standard or options,
+   * the toolchain): the static categories' blocks and the categories shown may change, so the
+   * toolbox definition is installed again when the mode's key changed; the dynamic categories
+   * follow through their contents key, which holds the mode.
+   */
+  const followMode = (): void => {
+    const mode = editorMode(store.getState());
+    const key = modeKey(mode);
+    if (key === installedMode || !installed) {
+      return;
+    }
+    installedMode = key;
+    if (setToolbox(workspace, toolboxDefinition(mode))) {
+      builtKey = contentsKey();
+      refresh();
+    }
+  };
   const unsubscribe = store.subscribe((state, previous) => {
+    if (
+      state.settings !== previous.settings ||
+      state.toolchains !== previous.toolchains ||
+      state.project?.document.project !== previous.project?.document.project
+    ) {
+      followMode();
+    }
     // A new analysis, a notice that none is coming (the canvas did not load, the core failed),
     // other modules, or another module shown.
     if (

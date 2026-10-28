@@ -197,6 +197,8 @@ export class EditorSession {
     null;
   /** The module switch asked for during the block drag in progress, or `null`. */
   private waitingSwitch: WaitingSwitch | null = null;
+  /** Whether a {@link relabel} asked for during the block drag in progress waits for its end. */
+  private waitingRelabel = false;
   private readonly stopDragListening: () => void;
   private readonly uninstallUndoItems: () => void;
   private disposed = false;
@@ -227,6 +229,9 @@ export class EditorSession {
             },
             onDragEnd: () => {
               this.preDrag = null;
+              if (this.waitingRelabel) {
+                queueMicrotask(this.relabelAfterDrag);
+              }
               if (this.waitingSwitch !== null) {
                 // Blockly's gesture ends the drag after its dragger has finished the drop.
                 queueMicrotask(this.switchAfterDrag);
@@ -465,6 +470,69 @@ export class EditorSession {
     this.show(doc, moduleId, true);
     void this.pipeline.runNow();
   }
+
+  /**
+   * Builds the shown module's blocks again as they are, so that they read in the label mode now in
+   * effect (blocks read it when they are built: blockly-ext's `setBlockLabelMode`;
+   * docs/plans/m3-contracts/w4-editor-tools.md §2.1). It is not an edit: the blocks keep their IDs
+   * and state, Blockly's events are off, so there is no undo step, no change to the project and no
+   * preview, and the undo history, the view and the selection are kept. During a block drag it
+   * waits until the drag has ended. A canvas that does not load (`syncFailed`) is left as it is.
+   */
+  relabel(): void {
+    const project = this.store.getState().project;
+    if (project === null || this.shown === null || this.disposed) {
+      return;
+    }
+    if (isDragging(this.workspace)) {
+      this.waitingRelabel = true;
+      return;
+    }
+    this.waitingRelabel = false;
+    let doc: BdmDocument;
+    try {
+      doc = readModule(this.workspace, project.document, this.shown);
+    } catch (error: unknown) {
+      console.error('The shown module could not be read to show it in the new labels', error);
+      return;
+    }
+    if (!this.loads(doc)) {
+      return;
+    }
+    const workspace = this.workspace;
+    const view = viewStateOf(workspace);
+    const selected = Blockly.common.getSelected();
+    const selectedId =
+      selected instanceof Blockly.BlockSvg && selected.workspace === workspace ? selected.id : null;
+    loadModule(workspace, doc, this.shown);
+    this.index.rebuild(workspace);
+    if (view !== null && workspace instanceof Blockly.WorkspaceSvg) {
+      try {
+        workspace.setScale(view.scale);
+        workspace.scroll(view.scrollX, view.scrollY);
+      } catch (error: unknown) {
+        console.warn('The view could not be kept', error);
+      }
+    }
+    if (selectedId !== null) {
+      const block = workspace.getBlockById(selectedId);
+      if (block instanceof Blockly.BlockSvg) {
+        Blockly.Events.disable();
+        try {
+          Blockly.common.setSelected(block);
+        } finally {
+          Blockly.Events.enable();
+        }
+      }
+    }
+  }
+
+  /** Does the relabel asked for during the block drag that has just ended ({@link relabel}). */
+  private readonly relabelAfterDrag = (): void => {
+    if (this.waitingRelabel && !this.disposed && !isDragging(this.workspace)) {
+      this.relabel();
+    }
+  };
 
   /**
    * Fits a rendered workspace to its container (`Blockly.svgResize`); call it whenever the editor

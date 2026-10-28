@@ -53,8 +53,10 @@ import {
   FLYOUT_NOTE_CLASS,
   FLYOUT_NOTE_LINE_CLASS,
 } from '../keyboard/flyoutItems';
+import { blockGate, categoryGate, modeKey, type EditorMode } from '../gating';
 import { candidateName, DEFAULT_NAME_KINDS } from './names';
 import {
+  B2C_BLOCK_KIND,
   catalogPresetExtra,
   catalogPresetFields,
   presetBlock,
@@ -150,6 +152,41 @@ export interface ContentsContext {
    * one), or `null` while the project has none.
    */
   programModuleId(): string | null;
+  /**
+   * The editor's mode (../gating): the entries it refuses are left out, and blocks carry its label
+   * mode. Without it every entry is offered, in Friendly labels.
+   */
+  mode?(): EditorMode;
+}
+
+/** What the toolbox offers and how its blocks read; `null` offers everything, Friendly. */
+export type ToolboxMode = EditorMode | null;
+
+/** The mode of a contents context ({@link ContentsContext.mode}). */
+function contextMode(context: ContentsContext): ToolboxMode {
+  return context.mode?.() ?? null;
+}
+
+/**
+ * Marks the blocks of `items` with the label mode, so that the flyout builds a block again when the
+ * mode changes instead of keeping one built in the other mode (the inflater keeps a block for an
+ * equal item). Blocks read the mode itself when they are built (blockly-ext's `blockLabelMode`).
+ */
+export function withLabelMode(
+  items: Blockly.utils.toolbox.FlyoutItemInfo[],
+  mode: ToolboxMode,
+): Blockly.utils.toolbox.FlyoutItemInfo[] {
+  if (mode?.labels !== 'cpp') {
+    return items;
+  }
+  return items.map((item) =>
+    (item as { kind?: unknown }).kind === B2C_BLOCK_KIND ? { ...item, labels: 'cpp' } : item,
+  );
+}
+
+/** Whether the mode offers the toolbox entry for `block`. */
+export function offersBlock(block: string, mode: ToolboxMode): boolean {
+  return mode === null || blockGate(block, mode).allowed;
 }
 
 /** A flyout label, with the CSS class Blockly gives its SVG group (Blockly types it loosely). */
@@ -232,10 +269,19 @@ function entryBlock(entry: ToolboxEntryJson): B2cBlockInfo {
   return presetBlock(entry.block, preset);
 }
 
-/** The flyout items of a category's catalog entries. */
-function entryItems(category: ToolboxCategoryJson): Blockly.utils.toolbox.FlyoutItemInfo[] {
+/**
+ * The flyout items of a category's catalog entries that the mode offers. A label goes with its
+ * entry: an entry left out leaves its label out too.
+ */
+function entryItems(
+  category: ToolboxCategoryJson,
+  mode: ToolboxMode,
+): Blockly.utils.toolbox.FlyoutItemInfo[] {
   const items: Blockly.utils.toolbox.FlyoutItemInfo[] = [];
   for (const entry of category.entries) {
+    if (!offersBlock(entry.block, mode)) {
+      continue;
+    }
     if (entry.label !== null) {
       items.push(label(entry.label));
     }
@@ -279,9 +325,12 @@ export function newVariableBlock(name: string, type = 'int'): B2cBlockInfo {
  * The contents of a category without the project: its catalog entries, with the first default name
  * for each declaration. The dynamic categories use it before the toolbox plugin is attached.
  */
-export function staticCategoryContents(id: CategoryId): Blockly.utils.toolbox.FlyoutItemInfo[] {
+export function staticCategoryContents(
+  id: CategoryId,
+  mode: ToolboxMode = null,
+): Blockly.utils.toolbox.FlyoutItemInfo[] {
   const category = categoryJson(id);
-  return category === undefined ? [] : entryItems(category);
+  return category === undefined ? [] : withLabelMode(entryItems(category, mode), mode);
 }
 
 /** The function that declares a variable, as the Variables category groups it. */
@@ -491,9 +540,10 @@ export function variablesContents(
   const items: Blockly.utils.toolbox.FlyoutItemInfo[] = [
     { kind: 'button', text: MAKE_VARIABLE_TEXT, callbackkey: MAKE_VARIABLE_BUTTON },
   ];
+  const mode = contextMode(context);
   const category = categoryJson('variables');
   if (category !== undefined) {
-    items.push(...entryItems(category));
+    items.push(...entryItems(category, mode));
   }
   const groups = variableGroups(context.workspace, context.symbols, context.activeModuleId());
   items.push(genericItem(SET_TYPE, presetVariable(SET_TYPE, groups)));
@@ -574,10 +624,14 @@ export function programContents(context: ContentsContext): Blockly.utils.toolbox
     return [];
   }
   const where = context.programModuleId();
+  const mode = contextMode(context);
   const items: Blockly.utils.toolbox.FlyoutItemInfo[] = [];
   for (const entry of category.entries) {
     if (entry.block === MAIN_TYPE && where !== null) {
       items.push(...note(programNote(where, context)));
+      continue;
+    }
+    if (!offersBlock(entry.block, mode)) {
       continue;
     }
     if (entry.label !== null) {
@@ -653,7 +707,7 @@ export function functionsContents(
   const items: Blockly.utils.toolbox.FlyoutItemInfo[] = [];
   const category = categoryJson('functions');
   if (category !== undefined) {
-    items.push(...entryItems(category));
+    items.push(...entryItems(category, contextMode(context)));
   }
   items.push(label(YOUR_FUNCTIONS_HEADING));
   const active = context.activeModuleId();
@@ -741,7 +795,9 @@ export function dynamicContentsKey(context: ContentsContext): string {
       userTypes.push([symbol.id, symbol.name]);
     }
   }
+  const mode = contextMode(context);
   return JSON.stringify([
+    mode === null ? null : modeKey(mode),
     active,
     context.modules(),
     context.programModuleId(),
@@ -749,6 +805,33 @@ export function dynamicContentsKey(context: ContentsContext): string {
     functions,
     userTypes,
   ]);
+}
+
+/**
+ * The items a category shows in the flyout for the context's project and mode: built for Program,
+ * Variables and Functions, the catalog entries for the others (the search over the toolbox's blocks,
+ * ../search/index.ts).
+ */
+export function categoryContents(
+  category: ToolboxCategoryJson,
+  context: ContentsContext,
+): Blockly.utils.toolbox.FlyoutItemInfo[] {
+  const mode = contextMode(context);
+  switch (category.id) {
+    case 'program':
+      return withLabelMode(programContents(context), mode);
+    case 'variables':
+      return withLabelMode(variablesContents(context), mode);
+    case 'functions':
+      return withLabelMode(functionsContents(context), mode);
+    default:
+      return staticCategoryContents(category.id, mode);
+  }
+}
+
+/** The categories the toolbox shows for the context's mode, in catalog order. */
+export function shownToolboxCategories(context: ContentsContext): ToolboxCategoryJson[] {
+  return shownCategories(contextMode(context));
 }
 
 /** The key a category definition carries so its toolbox item can find its icon. */
@@ -760,7 +843,11 @@ export type B2cCategoryInfo = Blockly.utils.toolbox.CategoryInfo & {
 };
 
 /** The category definition of one toolbox category, dynamic or static. */
-function categoryDefinition(category: ToolboxCategoryJson, dynamic: boolean): B2cCategoryInfo {
+function categoryDefinition(
+  category: ToolboxCategoryJson,
+  dynamic: boolean,
+  mode: ToolboxMode,
+): B2cCategoryInfo {
   const custom = dynamic ? DYNAMIC_CATEGORY[category.id] : undefined;
   const common = {
     kind: B2C_CATEGORY_KIND,
@@ -774,7 +861,7 @@ function categoryDefinition(category: ToolboxCategoryJson, dynamic: boolean): B2
     [CATEGORY_KEY]: category.id,
   };
   if (custom === undefined) {
-    return { ...common, contents: staticCategoryContents(category.id) };
+    return { ...common, contents: staticCategoryContents(category.id, mode) };
   }
   // Blockly's type for a dynamic category has no `name`, but its toolbox item reads one.
   return { ...common, custom };
@@ -790,21 +877,25 @@ export function categoryOfDefinition(definition: unknown): CategoryId | null {
 }
 
 /**
- * Whether the toolbox shows a category: one with catalog entries, or one whose contents the editor
- * builds. A category with no entries yet (one of W2's, until its package adds blocks,
- * docs/plans/m3-contracts/w2.md §2.1) is not shown.
+ * Whether the toolbox shows a category: one the mode offers ({@link categoryGate}) with catalog
+ * entries the mode offers, or one whose contents the editor builds. A category with no entries yet
+ * (one of W2's, until its package adds blocks, docs/plans/m3-contracts/w2.md §2.1) or with none the
+ * mode offers is not shown.
  */
-export function isShownCategory(category: ToolboxCategoryJson): boolean {
+export function isShownCategory(category: ToolboxCategoryJson, mode: ToolboxMode = null): boolean {
+  if (mode !== null && !categoryGate(category.id, mode).allowed) {
+    return false;
+  }
   return (
-    category.entries.length > 0 ||
+    category.entries.some((entry) => offersBlock(entry.block, mode)) ||
     category.dynamic !== null ||
     DYNAMIC_CATEGORY[category.id] !== undefined
   );
 }
 
 /** The categories the toolbox shows, in catalog order. */
-function shownCategories(): ToolboxCategoryJson[] {
-  return TOOLBOX.filter(isShownCategory);
+function shownCategories(mode: ToolboxMode): ToolboxCategoryJson[] {
+  return TOOLBOX.filter((category) => isShownCategory(category, mode));
 }
 
 /**
@@ -813,10 +904,10 @@ function shownCategories(): ToolboxCategoryJson[] {
  * dynamic categories need their callbacks registered on the workspace (the toolbox plugin does
  * that) before the toolbox shows them.
  */
-export function toolboxDefinition(): Blockly.utils.toolbox.ToolboxInfo {
+export function toolboxDefinition(mode: ToolboxMode = null): Blockly.utils.toolbox.ToolboxInfo {
   return {
     kind: 'categoryToolbox',
-    contents: shownCategories().map((category) => categoryDefinition(category, true)),
+    contents: shownCategories(mode).map((category) => categoryDefinition(category, true, mode)),
   };
 }
 
@@ -825,9 +916,11 @@ export function toolboxDefinition(): Blockly.utils.toolbox.ToolboxInfo {
  * categories, all static (dynamic ones show their catalog entries only), so injecting needs no
  * callbacks. The plugin replaces it with {@link toolboxDefinition}.
  */
-export function initialToolboxDefinition(): Blockly.utils.toolbox.ToolboxInfo {
+export function initialToolboxDefinition(
+  mode: ToolboxMode = null,
+): Blockly.utils.toolbox.ToolboxInfo {
   return {
     kind: 'categoryToolbox',
-    contents: shownCategories().map((category) => categoryDefinition(category, false)),
+    contents: shownCategories(mode).map((category) => categoryDefinition(category, false, mode)),
   };
 }

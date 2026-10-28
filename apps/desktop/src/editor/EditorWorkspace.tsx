@@ -23,7 +23,7 @@ import {
 } from '../app/editor-types';
 import { EDITOR_PLUGINS } from '../app/editorPlugins';
 import { useAppStore } from '../app/store';
-import { editorMode, installOptionGate } from './gating';
+import { editorMode, installLabelMode, installOptionGate } from './gating';
 import { BLOCKLY_MEDIA_DIR } from './media';
 import { ModuleSwitcher } from './modules/ModuleSwitcher';
 import { appCoreHost, type CoreHost } from './preview/coreHost';
@@ -130,6 +130,16 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
   // Dropdown menus list only the options the editor's mode offers (W4's gating; *change*'s bitwise
   // forms need *Show advanced blocks*, w2.md §1.9).
   const uninstallOptionGate = installOptionGate(() => editorMode(deps.store.getState()));
+  // Blocks are built in the label mode of the settings (Friendly or C++), from the first document
+  // on; a change builds the shown blocks again, without an undo step (w4-editor-tools.md §2.1).
+  let relabel: () => void = () => undefined;
+  const uninstallLabelMode = installLabelMode(
+    () => editorMode(deps.store.getState()),
+    (listener) => deps.store.subscribe(listener),
+    () => {
+      relabel();
+    },
+  );
   const session = new EditorSession({
     workspace,
     store: deps.store,
@@ -137,6 +147,9 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
     hooks: servicesSessionHooks(services, workspace),
     ...(deps.service === undefined ? {} : { service: deps.service }),
   });
+  relabel = () => {
+    session.relabel();
+  };
   const handle: EditorHandle = {
     loadDocument: (doc, options) => {
       session.loadDocument(doc, options);
@@ -204,6 +217,7 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
       session.dispose();
       uninstallServices();
       uninstallOptionGate();
+      uninstallLabelMode();
     },
   };
 }

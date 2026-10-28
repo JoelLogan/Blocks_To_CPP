@@ -9,6 +9,7 @@ import type {
   CoreWasm,
   UpdateResult,
 } from '@blocks2cpp/b2c-core-wasm';
+import { setBlockLabelMode } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -619,5 +620,73 @@ describe('the editing session', () => {
     dragging.mockReturnValue(false);
     await vi.advanceTimersByTimeAsync(60);
     expect(useAppStore.getState().project?.dirty).toBe(true);
+  });
+});
+
+describe('relabel (w4-editor-tools.md §2.1)', () => {
+  afterEach(() => {
+    setBlockLabelMode('friendly');
+  });
+
+  /** One module with a loose `forever` and a loose `leave loop`. */
+  function listDocument(): BdmDocument {
+    const doc = twoModules();
+    const main = doc.modules[0];
+    if (main === undefined) {
+      throw new Error('no main module');
+    }
+    main.workspace.blocks = [
+      { ...forever('a'), x: 10, y: 10 },
+      { id: 'stop', type: 'control.break', v: 1, x: 10, y: 120 },
+    ];
+    return doc;
+  }
+
+  it('builds the blocks again in the new labels without an edit, keeping undo and selection', async () => {
+    const workspace = renderedWorkspace();
+    const session = start(listDocument(), workspace);
+    await vi.advanceTimersByTimeAsync(0);
+    session.workspace.getBlockById('a')?.setCommentText('kept');
+    await vi.advanceTimersByTimeAsync(200);
+    const undo = workspace.getUndoStack().length;
+    expect(undo).toBeGreaterThan(0);
+    const document = structuredClone(useAppStore.getState().project?.document);
+    const textHash = useAppStore.getState().project?.textHash;
+    const dirty = useAppStore.getState().project?.dirty;
+    const a = workspace.getBlockById('a');
+    if (!(a instanceof Blockly.BlockSvg)) {
+      throw new Error('no block a');
+    }
+    Blockly.common.setSelected(a);
+    const view = viewStateOf(workspace);
+    const first = () => workspace.getBlockById('stop')?.inputList[0]?.fieldRow[0]?.getText();
+    expect(first()).toBe('leave loop');
+
+    setBlockLabelMode('cpp');
+    session.relabel();
+    expect(first()).toBe('break;');
+    expect(workspace.getBlockById('a')?.getCommentText()).toBe('kept');
+    expect(workspace.getUndoStack()).toHaveLength(undo);
+    expect((Blockly.common.getSelected() as Blockly.Block | null)?.id).toBe('a');
+    expect(viewStateOf(workspace)).toEqual(view);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(session.syncPending).toBe(false);
+    expect(useAppStore.getState().project?.document).toEqual(document);
+    expect(useAppStore.getState().project?.textHash).toBe(textHash);
+    expect(useAppStore.getState().project?.dirty).toBe(dirty);
+
+    // Undo still takes the comment back (after Blockly's own moves of the loose blocks).
+    for (let step = 0; step < undo; step += 1) {
+      workspace.undo(false);
+    }
+    expect(workspace.getBlockById('a')?.getCommentText()).toBeNull();
+  });
+
+  it('does nothing without a project', () => {
+    const session = start(twoModules());
+    useAppStore.getState().actions.setProject(null);
+    expect(() => {
+      session.relabel();
+    }).not.toThrow();
   });
 });
