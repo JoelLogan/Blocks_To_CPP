@@ -690,3 +690,32 @@ M3), and it dominates `webview.edit-1000.p95-all` in this debug build.
 
 The worker flow and the M2 exit flow pass with the worker on (the exit flow
 failed before the scope index, w5-worker.md §4).
+
+### 13.2 M3-5: the compact source map and the paused panel
+
+Measured after the session's machine was replaced by a slower one (the same
+worker build's `update()` at 1,000 blocks took 78 ms instead of 51 ms), so
+these compare only with each other. "Worker" is the build of §13.1; "head"
+adds M3-5.
+
+| Metric (this machine) | Worker | Head |
+| --- | --- | --- |
+| `webview.edit-1000.p95-all` (5 samples) | 2,086 ms | 1,867 ms |
+| `webview.preview-1000.p95` (5 samples) | 21 ms | 28 ms |
+| `webview.guessing-game.edit.max-task`, 10 samples, three rounds (head second, second, first) | 52, 50, 50 ms | 55.5, 54.5, 48 ms |
+| `webview.guessing-game.select.max-task`, the same rounds | 21, 25.5, 22.5 ms | 21, 26, 27 ms |
+
+The guessing game's medians move by the order the builds run in (the build
+run second was slower each time), not by the build, and 5 samples at 1,000
+blocks do not separate the two either; the A/B job (Status) decides. What
+M3-5 removes is visible in the spans: with the C++ panel folded,
+`b2c:code-panel` no longer runs at all, and the answer the page parses is
+smaller: for the 1,000-block document the source map is 381,204 characters
+in version 1 (82 % of the answer) and 65,003 in version 2, so the answer the
+page parses after each preview falls from 466,399 to 150,198 characters
+(−68 %).
+
+On this slower machine the guessing game's medians are about 50 ms, so the
+new 50 ms budget of §6 fails here whatever the build; on CI's runners the
+same metrics were 8–9 ms (next steps §3.8), and the nightly's runners are
+what the budget is for.
