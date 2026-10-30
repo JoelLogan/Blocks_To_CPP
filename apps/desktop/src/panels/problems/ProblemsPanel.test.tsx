@@ -276,4 +276,28 @@ describe('ProblemsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy bug report…' }));
     expect(onCopyBugReport).toHaveBeenCalledWith(expect.objectContaining({ key: 'b4' }));
   });
+
+  it('keeps one Tab stop with Copy bug report… shown, which F2 reaches and Escape leaves', () => {
+    const onCopyBugReport = vi.fn();
+    renderPanel({ reportsBug: (row) => row.key === 'b4', onCopyBugReport });
+    fireEvent.click(screen.getByRole('button', { name: 'Show C++ compiler message' }));
+    const report = screen.getByRole('button', { name: 'Copy bug report…' });
+    const grid = screen.getByRole('grid');
+    // Every focusable element of the grid, by its tab index or as a native control.
+    const tabStops = [...grid.querySelectorAll<HTMLElement>('button, [tabindex]')].filter(
+      (element) => element.tabIndex >= 0,
+    );
+    expect(tabStops).toHaveLength(1);
+    const message = report.closest<HTMLElement>('[role="gridcell"]');
+    if (message === null) {
+      throw new Error('no message cell');
+    }
+    act(() => {
+      message.focus();
+    });
+    fireEvent.keyDown(message, { key: 'F2' });
+    expect(document.activeElement).toBe(report);
+    fireEvent.keyDown(report, { key: 'Escape' });
+    expect(document.activeElement).toBe(message);
+  });
 });

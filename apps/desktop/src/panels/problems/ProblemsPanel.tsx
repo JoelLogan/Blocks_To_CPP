@@ -74,7 +74,8 @@ interface CellPosition {
  * code. It follows the ARIA grid pattern: one Tab stop, arrow keys between cells, Home and End,
  * Ctrl+Home and Ctrl+End, Page Up and Page Down; Enter or a click activates a row. Compiler, linker
  * and toolchain rows can reveal the original compiler text, and a generator bug's row then offers
- * *Copy bug report…*. A row with a quick fix offers it in its *Details* cell (*Fix: …*). *Learn
+ * *Copy bug report…* in its message cell: F2 there moves into it, Escape back to the cell (the
+ * grid's widget-in-a-cell keys), so the grid keeps its one Tab stop. A row with a quick fix offers it in its *Details* cell (*Fix: …*). *Learn
  * more* opens the diagnostics reference in the web browser, and says so.
  */
 export function ProblemsPanel({
@@ -90,6 +91,8 @@ export function ProblemsPanel({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [focus, setFocus] = useState<CellPosition>({ row: 1, col: 0 });
   const targets = useRef(new Map<string, HTMLElement>());
+  /** The *Copy bug report…* button of each row that shows one, by the row's key. */
+  const reportButtons = useRef(new Map<string, HTMLButtonElement>());
   const moveFocus = useRef(false);
   const baseId = useId();
 
@@ -130,6 +133,13 @@ export function ProblemsPanel({
     if (event.key === 'Enter' && item !== undefined && event.target === event.currentTarget) {
       event.preventDefault();
       onActivate(item);
+      return;
+    }
+    // Into the widget of the message cell: its *Copy bug report…*.
+    const report = item === undefined ? undefined : reportButtons.current.get(item.key);
+    if (event.key === 'F2' && report !== undefined && event.target === event.currentTarget) {
+      event.preventDefault();
+      report.focus();
     }
   };
 
@@ -267,9 +277,24 @@ export function ProblemsPanel({
                         <button
                           type="button"
                           className="b2c-problems-report"
+                          tabIndex={-1}
+                          ref={(element) => {
+                            if (element === null) {
+                              reportButtons.current.delete(item.key);
+                            } else {
+                              reportButtons.current.set(item.key, element);
+                            }
+                          }}
                           onClick={(event) => {
                             event.stopPropagation();
                             onCopyBugReport(item);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              targets.current.get(cellKey({ row, col: 1 }))?.focus();
+                            }
                           }}
                         >
                           Copy bug report…

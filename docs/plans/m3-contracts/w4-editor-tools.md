@@ -302,7 +302,9 @@ catalogues).
 
 `apps/desktop/src/features/bug-report/`: a pure `bugReport(input,
 { includeProject })` and a dialog. On a generator-bug diagnostic the Problems
-panel offers *Copy bug report…*, which opens the dialog: the report as it
+panel offers *Copy bug report…* (in the row's message cell, inside the grid's
+one Tab stop: F2 on the cell moves into it, Escape back; not on a stale row,
+whose C++ is no longer the C++ that was built), which opens the dialog: the report as it
 will be copied (read-only, in a `<pre>`), a checkbox *Include my blocks and
 the generated C++* (unticked), *Copy* and *Cancel*. *Copy* puts the text on
 the clipboard (a `copy` event in the page; nothing is sent anywhere) and
