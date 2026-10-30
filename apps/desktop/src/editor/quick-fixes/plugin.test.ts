@@ -1,12 +1,11 @@
 /** The quick-fix plugin: the block menu's items and the fixes the Problems panel asks for. */
 import * as Blockly from 'blockly/core';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { resetAppStore, useAppStore } from '../../app/store';
 import { diagnosticFixture, documentFixture } from '../../app/testing/fixtures';
 import { createToolboxPlugin } from '../toolbox/plugin';
 import {
-  FLYOUT_TEST_TIMEOUT_MS,
   disposeTestWorkspaces,
   editorContext,
   fakeCore,
@@ -16,9 +15,9 @@ import {
 } from '../toolbox/testing';
 import { QUICK_FIX_MENU_ID, quickFixPlugin, quickFixesFor } from './plugin';
 
-// The toolbox the fixes read its symbols from shows its flyout (FLYOUT_TEST_TIMEOUT_MS): the
-// slowest took 1.9 s with this file and Quick Insert's alone, under coverage with two workers.
-vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
+// The toolbox the fixes read its symbols from shows its flyout, but the slowest test took 2.2 s
+// in the whole suite under coverage with two workers (2026-10-30), within the 2.5 s under which a
+// file keeps Vitest's 5 s default (FLYOUT_TEST_TIMEOUT_MS in ../toolbox/testing.ts).
 
 beforeAll(() => {
   setUpToolboxBlocks();

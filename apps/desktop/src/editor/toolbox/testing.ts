@@ -50,6 +50,10 @@ import type { SymbolSource } from './scope';
  * sets it too, and the slowest of all, `toolbox/reuse`, 14.1 s, still below this limit. Package S's
  * six (use header, check at compile time, and the file blocks open, read line, write and exists)
  * took it to 16.2 s, and no file showing the flyout that leaves this limit unset went over 2.5 s.
+ * After M3's W4 (the gated blocks leave the Program flyout; toolbox search; Quick Insert) and W5
+ * (the kept toolbox blocks), in the whole suite under coverage with two workers (2026-10-30):
+ * `toolbox/reuse` 12.4 s, `keyboard/mover` 14.4 s, `toolbox/plugin` 6.3 s, Quick Insert's 4.8 s
+ * and the quick fixes' 2.2 s (so that file no longer sets it); none reached this limit.
  */
 export const FLYOUT_TEST_TIMEOUT_MS = 20_000;
 

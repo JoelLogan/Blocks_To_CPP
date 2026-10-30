@@ -31,9 +31,8 @@ import { QUICK_INSERT_IDS, openQuickInsertOn, quickInsertPlugin } from './plugin
 import { closeQuickInsert, quickInsertSession } from './store';
 import { closeToolboxSearch, openToolboxSearch, toolboxSearchOpen } from './toolboxSearchStore';
 
-// The tests show the continuous toolbox's flyout (FLYOUT_TEST_TIMEOUT_MS): the slowest took 4.5 s
-// with this file and the quick fixes' alone, under coverage with two workers, against Vitest's
-// 5 s default.
+// The tests show the continuous toolbox's flyout (FLYOUT_TEST_TIMEOUT_MS): the slowest took 4.8 s
+// in the whole suite under coverage with two workers (2026-10-30), against Vitest's 5 s default.
 vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 /** Counts the search index builds (`searchEntries`), which run the real one. */

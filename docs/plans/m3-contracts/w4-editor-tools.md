@@ -561,7 +561,12 @@ On `m3/w4-editor-tools`, from `8a3d8ec`, on 2026-10-28 to 2026-10-30.
 **Checks.** Locally: `pnpm -r` typecheck, lint and format; blockly-ext
 Vitest (473); desktop Vitest with coverage and two workers (2,337 passed;
 four toolbox and mover tests timed out at the 20 s flyout limit under that
-load and pass on their own, 62 of 62); `test:isolation`; the four
+load and pass on their own, 62 of 62; which four was not recorded. On the
+merged head after the review fixes, the whole suite under coverage with two
+workers timed nothing out: the slowest flyout tests were `keyboard/mover`
+14.4 s, `toolbox/reuse` 12.4 s and `toolbox/plugin` 6.3 s, with Quick
+Insert's file at 4.8 s and the quick fixes' at 2.2 s, recorded beside their
+timeouts and in `toolbox/testing.ts`); `test:isolation`; the four
 `tools/check-*.py`; markdownlint. No Rust changed, so the Rust checks are
 CI's (green on `6192152`). The WASM core was built without wasm-opt. E2E
 under xvfb: `editor-tools` at the default size, 1024 × 768 and 800 × 560
