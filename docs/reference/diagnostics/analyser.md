@@ -1220,4 +1220,3 @@ Codes by area:
 * **Meaning:** a `use namespace` block names a namespace that is already in
   use at that place, through another such block or *Textbook style*.
 * **How to fix:** remove the block, or leave it: it changes nothing.
-

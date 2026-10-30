@@ -632,7 +632,7 @@ package adds its blocks"*, next steps §3.8; P0).
   M2-readable.
 * **Source map** version 1 with the optional `module` key; `IPC_VERSION`
   unchanged; `packages/ipc-types` regenerated for the new symbol kind
-  (`SymbolInfoKind::Namespace`).
+  (`SymbolInfoKind::Namespace`, by N1, §7.1).
 * **Module edits** (add, rename, delete, move) are edits of the document
   (§2.11's dialogs), saved like any other: a module has `id`, `name` and
   `workspace` (05 §5.3). A new module's ID is `mod_<random>` from the
@@ -728,12 +728,13 @@ package adds its blocks"*, next steps §3.8; P0).
   `lower/mod.rs`); N owns all of them (§3.2). §6 D2 records the shape
   question and the spike that settles it.
 * **The IR.** `SymbolKind::Namespace { parent: Option<SymbolId> }` and its
-  `SymbolInfoKind`; each `Item` gains `namespace: Option<SymbolId>` (the
-  innermost; the parents come from the symbol table); every reference to a
-  namespace-scope entity carries a `Spelling` (`Plain`, `Global` for `::n`,
-  `Qualified` for `geo::n`, `Full` for a standard name in full), default
-  `Plain`/`Full` so that today's output is unchanged. P0 adds the types;
-  N fills them.
+  `SymbolInfoKind` (N1, §7.1); each `Item` gains `namespace:
+  Option<SymbolId>` (the innermost; the parents come from the symbol
+  table); each reference to a namespace-scope entity has a `Spelling`
+  (`Plain`, `Global` for `::n`, `Qualified` for `geo::n`, `Full` for a
+  standard name in full), kept in `Program::spellings` beside the SAST and
+  keyed by the referring block and the symbol, default `Plain`/`Full` so
+  that today's output is unchanged. P0 adds the types; N fills them.
 * **One namespace in several modules** is one C++ namespace: each member
   is shared or not on its own; a namespace has no `SHARED`.
 * **Lookup (06 §6.14.2), M3 subset.** Scopes are blocks, functions,
@@ -801,10 +802,12 @@ shared; the new text says so.
 Like W2's P0, it keeps the workspace and every test green and leaves each
 package only its own files. One agent, Rust and a little TypeScript, size L:
 
-* `b2c-ir`: `SymbolKind::Namespace`, `SymbolInfoKind::Namespace` (IPC
-  mirror, `packages/ipc-types` regenerated), `Item::namespace`, `Spelling`
-  on references (§2.12), all with defaults that change no output and
-  serialise nothing while default.
+* `b2c-ir`: `SymbolKind::Namespace` (with `SymbolTable::namespace_path`),
+  `Item::namespace`, `Spelling` and the table `Program::spellings`
+  (§2.12), all with defaults that change no output and serialise nothing
+  while default. `SymbolInfoKind::Namespace` (IPC mirror, `packages/ipc-types`
+  regenerated) moves to N1 (§7.1); until then `SymbolInfo::new` gives
+  `None` for a namespace.
 * `b2c-model`:
   * *Textbook style* readable and writable (§2.9): `ProjectOptions`
     (`crates/b2c-model/src/document.rs`), the decoder of `project.options`,
@@ -874,7 +877,7 @@ two packages is edited in different rounds.
 | **F, functions across modules** | §1.2 but the editor rows; `E0206`, `E0211`, `E0213` (with its cause), `E0214`, `E0421` and `E0422` for functions; the `::name` guard (§2.1); the golden test's new checks | `crates/b2c-lang/src/lower/resolve.rs`, the function pre-pass and `declare_function`/`check_overloads` in `lower/mod.rs`, `query.rs` (scope query and precedence), `layout.rs` (functions' header parts and includes); `crates/b2c-codegen/src/lower/mod.rs` (calls and declarations across files), `emit.rs` (header declarations); `crates/b2c-lang/tests/modules_functions.rs` (new); `crates/b2c-build/tests/golden.rs` (a stale `.cpp` or `.hpp` in a golden folder fails, deleted under `B2C_UPDATE_GOLDEN`; each header compiled alone through a one-line unit; the M2 rule restated for multi-module output); `crates/b2c-build/tests/export.rs` (`unit_converter` in `EXAMPLES`); the `unit_converter` example and golden | L | P0, B | `unit_converter` |
 | **E, the editor for modules** | §1.2's editor rows (limits, *Undo delete*, refusal in the banner state), §1.5, §2.5, §2.6's revealing, §2.11, §2.13's status message | `apps/desktop/src/features/project/modules/` (new: dialogs, commands, the document operations, the kept deleted module); `apps/desktop/src/editor/modules/` and the module operations of `editor/sync/session.ts` and `EditorWorkspace.tsx` (carve-outs, §3.3); `apps/desktop/src/app/editor-types.ts`, `app/panels.tsx`, `apps/desktop/src/panels/code/`; `apps/desktop/src/editor/services/symbols.ts` (other modules' shared functions and types, `multiModule()`); `packages/blockly-ext/src/blocks/layout.ts`, `register.ts` and `services.ts` (`SHARED` shown on `func.define` only; carve-out); `apps/desktop/src/editor/toolbox/contents.ts` (*Your functions* by module; carve-out); `apps/desktop/src/editor/sync/workspaceToBdm.ts` (`SHARED` written only when true, if W3M-D11 is accepted; carve-out); `apps/desktop/src/features/project-settings/` (the *Project* section; carve-out); `apps/desktop/e2e/specs/flows/modules.e2e.ts`, `project-name.e2e.ts` | L | P0; F merged before its E2E | — |
 | **T, types, globals and constants across modules** | §1.3; §2.2; the rest of §2.3 and §2.4 | `crates/b2c-lang/src/order.rs` (the program graph, the summary), `layout.rs` (types' and constants' header parts, forward declarations, includes, `E0422`), `lower/user_types.rs`, `lower/globals.rs`, `consts.rs` (constant expressions across modules), `lower/resolve.rs` (the globals branch of `E0206`, after F); `crates/b2c-codegen/src/lower/typedefs.rs` (enum print support split between header and `.cpp`), `lower/globals.rs` (the constant forms), `emit.rs` (header definitions, `extern`); `crates/b2c-lang/tests/modules_types.rs` (new); `crates/b2c-build/tests/export.rs` (`gradebook`, `inventory` in `EXAMPLES`); `layout.ts` (`SHARED` shown on struct, enum and global; carve-out) and the type field's module grouping (carve-out, §3.3); `apps/desktop/e2e/specs/flows/modules-types.e2e.ts`; the `gradebook` and `inventory` examples | L | F, E merged | `gradebook`, `inventory` |
-| **N1, namespaces: the block and the table** (if 1) | §2.12's block, placement and table; `E0219`; namespace symbols and nesting | `catalog/core/program.toml` (`program.namespace`, `program.use_namespace`); `crates/b2c-catalog/src/schema.rs`, `resolve.rs`, `stack.rs` (placement and the `namespace` field kind) and `packages/catalog-gen`; `crates/b2c-lang/src/collect.rs` (definitions inside a mouth), `crates/b2c-lang/src/lower/namespaces.rs` (new: namespace symbols, nesting, `E0219`, `E0210` for namespace names, the map from each definition to its namespace); `tools/gen-std-names.py` and `crates/b2c-ir/src/std_names.rs` (new); `.github/workflows/ci.yml` (the GCC 15 check step); `packages/blockly-ext/src/blocks/namespace.ts`, `fields/namespace.ts` (new files) and the `definition` connection check and depth refusal in `checker/` (carve-out) | M | P0; the D2 spike first | — |
+| **N1, namespaces: the block and the table** (if 1) | §2.12's block, placement and table; `E0219`; namespace symbols and nesting; `SymbolInfoKind::Namespace` (§7.1) | `crates/b2c-ir/src/scope_info.rs` and `crates/b2c-ipc/src/pipeline.rs` (`SymbolInfoKind::Namespace`, `packages/ipc-types` regenerated); `catalog/core/program.toml` (`program.namespace`, `program.use_namespace`); `crates/b2c-catalog/src/schema.rs`, `resolve.rs`, `stack.rs` (placement and the `namespace` field kind) and `packages/catalog-gen`; `crates/b2c-lang/src/collect.rs` (definitions inside a mouth), `crates/b2c-lang/src/lower/namespaces.rs` (new: namespace symbols, nesting, `E0219`, `E0210` for namespace names, the map from each definition to its namespace); `tools/gen-std-names.py` and `crates/b2c-ir/src/std_names.rs` (new); `.github/workflows/ci.yml` (the GCC 15 check step); `packages/blockly-ext/src/blocks/namespace.ts`, `fields/namespace.ts` (new files) and the `definition` connection check and depth refusal in `checker/` (carve-out) | M | P0; the D2 spike first | — |
 | **N2, namespaces: lookup, spellings and directives** (if 1) | §1.4's other rows, §2.12's lookup, spellings and directives | `crates/b2c-lang/src/lower/lookup.rs` (new), `query.rs` (`DEFINITION_TYPES`, namespace members), `lower/mod.rs`, `lower/user_types.rs`, `lower/globals.rs` (copying `Item::namespace`, `E0210` per namespace); every lowering file of `crates/b2c-codegen` that prints a reference or a standard name, `emit.rs` (directives, empty namespace declarations) and `lower/names.rs` (new); `crates/b2c-build/src/export.rs` (the README line) and `tests/export.rs` (`shapes`, `textbook_grades`); the *Language* switch in `features/project-settings/` (carve-out); `apps/desktop/e2e/specs/flows/namespaces.e2e.ts`; the `shapes` and `textbook_grades` examples | L | N1, T merged | `shapes`, `textbook_grades` |
 | **C, the object cache** (if 2) | §1.6 | `crates/b2c-build/src/compile.rs` (steps), `build_dir.rs` (`obj/`), new `crates/b2c-build/src/objects.rs`; `crates/b2c-build/tests/build_sessions.rs` (cache cases) | M | B, T merged | — |
 | **S, if-time sweep** (if 3) | `use namespace … here`, the standard sub-namespaces, `use header of module` (modules.md §7.3) | N2's files and `catalog/core/program.toml` after N merged; the `module` field kind | S–M | N merged | — |
@@ -913,7 +916,7 @@ nothing half-built on the wave branch.
   | W4 | `apps/desktop/src/features/project-settings/` | the *Project* section (name; both save paths) and, in *Language*, the Textbook style switch with its note | E, N2 |
   | W4 | `packages/blockly-ext/src/blocks/namespace.ts`, `fields/namespace.ts` (new), `checker/` (the `definition` check, the depth refusal) | the namespace blocks | N1 |
   | W5 | `packages/b2c-core-wasm/src/bdm.ts` | the optional `usingNamespaceStd` option | P0 |
-  | W5 | `crates/b2c-core-wasm/src/clipboard.rs` | paste precedence (§2.1) and namespace-qualified names; a cut declaration pasted where its symbol ID is free keeps it (only if W3M-D12 (b) is chosen); the module documentation's *In M2* section | integration step, or W5 on request |
+  | W5 | `crates/b2c-core-wasm/src/clipboard.rs`, `scope.rs` | the arms of `SymbolInfoKind::Namespace` (N1, §7.1); paste precedence (§2.1) and namespace-qualified names; a cut declaration pasted where its symbol ID is free keeps it (only if W3M-D12 (b) is chosen); the module documentation's *In M2* section | integration step, or W5 on request |
   | W5 | `crates/b2c-core-wasm/src/facade.rs`, `benches/pipeline/`, `tests/common/mod.rs` | `helper_placement: Inline` removed once codegen drops the field; the 8-module benchmark case (modules.md §12) | integration step |
   | W5 | M3-5's compact source map | keeps `FileMap::module` on each file and `shared` on each symbol (ADR-0019 §10, modules.md §10); the C++ tab and compiler mapping depend on it | W5 (coordination, before R1) |
   | W5 | the worker's scope index (`Analysis::scope_index_parts()`, which W5 adds on its branch) | must include other modules' shared symbols with their module and namespace; F exposes them through `query.rs` and tells the W5 session the shape; the integration step checks the worker's index includes them, with a test | F (coordination), integration step |
@@ -1345,3 +1348,7 @@ corrected in place and the correction is recorded here with its reason.
 
 | Correction | Reason | Where |
 | --- | --- | --- |
+| `SymbolInfoKind::Namespace` and its IPC mirror move from P0 to N1; `SymbolInfo::new` returns `None` for a namespace until then | `crates/b2c-core-wasm/src/clipboard.rs` and `scope.rs`, W5's files, match `SymbolInfoKind` without a wildcard, so a new variant breaks W5's build; no symbol is a namespace before N1 | §2.9, §2.12, §3.1, §3.2 N1, §3.3 (P0) |
+| A reference's `Spelling` is kept in `Program::spellings`, keyed by the referring block and the symbol, not as a field of each SAST reference | a field on every reference node would change every constructor and the SAST snapshots; a table beside the SAST, like the layout, is not serialised and is empty until N2 fills it | §2.12 (P0) |
+| `Layout::flat` gives `module<N>` also to a module whose stem an earlier module already has, and code generation names files only by `ModuleFiles::stem` | `source_path`'s own de-duplication went with it (§3.1); the loader refuses such names, but code generation must never write two files with one name | §3.1 (P0) |
+| `emit::header_file` prints a shared enum's definition only (its `operator<<` and `b2c::to_text` are T's, §1.7) and a shared global as `extern` or `inline constexpr`; a `.cpp` leaves out what its header declares, but still defines a shared global that is not `constexpr` | what P0 prints for each kind `header_order` can list; F and T refine it | §3.1 (P0) |
