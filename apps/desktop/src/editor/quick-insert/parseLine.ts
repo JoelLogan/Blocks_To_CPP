@@ -151,7 +151,55 @@ export function valueTokens(text: string, names: LineNames): TokenJson[] | null 
     tokens.push({ op });
     index += op.length;
   }
-  return tokens.length === 0 ? null : tokens;
+  return tokens.length === 0 || !balanced(tokens) ? null : tokens;
+}
+
+/** Whether the brackets of `tokens` pair up: none closes before it opens, none is left open. */
+function balanced(tokens: readonly TokenJson[]): boolean {
+  let depth = 0;
+  for (const token of tokens) {
+    if ('op' in token && token.op === '(') {
+      depth += 1;
+    } else if ('op' in token && token.op === ')') {
+      depth -= 1;
+      if (depth < 0) {
+        return false;
+      }
+    }
+  }
+  return depth === 0;
+}
+
+/**
+ * Whether `text` is one bracketed whole: it starts with `(` and the `)` that closes it is its last
+ * character (`(a) && (b)` is not; quoted text is skipped, as in {@link splitTop}).
+ */
+function wrapsWhole(text: string): boolean {
+  if (!text.startsWith('(') || !text.endsWith(')')) {
+    return false;
+  }
+  let depth = 0;
+  let quote: string | null = null;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text.charAt(index);
+    if (quote !== null) {
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === '(') {
+      depth += 1;
+    } else if (char === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        return index === text.length - 1;
+      }
+    }
+  }
+  return false;
 }
 
 /** Splits `text` at top-level `sep` (outside quotes and brackets). */
@@ -250,7 +298,8 @@ export function parseLine(line: string, names: LineNames): ParsedLine | null {
   }
   const keyword = /^(return|repeat|while|if)\s+(.+)$/u.exec(text);
   if (keyword?.[1] !== undefined && keyword[2] !== undefined) {
-    const value = keyword[2].replace(/^\((.*)\)$/u, '$1');
+    // `if (x > 3)`: the brackets around the whole condition are the statement's, not the value's.
+    const value = wrapsWhole(keyword[2]) ? keyword[2].slice(1, -1) : keyword[2];
     switch (keyword[1]) {
       case 'return':
         return withValue('func.return', 'VALUE', value, names, 'return');

@@ -115,6 +115,45 @@ describe('lines', () => {
       type: 'control.if',
       inputs: { COND0: [{ ref: 's_x' }, { op: '>' }, { num: '3' }] },
     });
+    // The outer brackets go only when they are one pair around the whole condition.
+    expect(read('if (x > 1) && (y < 2)')).toMatchObject({
+      type: 'control.if',
+      inputs: {
+        COND0: [
+          { op: '(' },
+          { ref: 's_x' },
+          { op: '>' },
+          { num: '1' },
+          { op: ')' },
+          { op: '&&' },
+          { op: '(' },
+          { ref: 's_y' },
+          { op: '<' },
+          { num: '2' },
+          { op: ')' },
+        ],
+      },
+    });
+    expect(read('while (x) || (y)')).toMatchObject({
+      type: 'control.while',
+      inputs: {
+        COND: [
+          { op: '(' },
+          { ref: 's_x' },
+          { op: ')' },
+          { op: '||' },
+          { op: '(' },
+          { ref: 's_y' },
+          { op: ')' },
+        ],
+      },
+    });
+    expect(read('if ((x > 1))')).toMatchObject({
+      inputs: { COND0: [{ op: '(' }, { ref: 's_x' }, { op: '>' }, { num: '1' }, { op: ')' }] },
+    });
+    // Unbalanced brackets are no value: the line falls back to the search.
+    expect(parseLine('if x > 1)', names)).toBeNull();
+    expect(valueTokens('(x + 1', names)).toBeNull();
     expect(read('return x')).toMatchObject({ type: 'func.return' });
     expect(read('return')).toMatchObject({ type: 'func.return' });
     expect(read('break;')).toMatchObject({ type: 'control.break' });
