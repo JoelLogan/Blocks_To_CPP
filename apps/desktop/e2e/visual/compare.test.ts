@@ -178,6 +178,18 @@ describe('compareScreenshots', () => {
     expect(result).toMatchObject({ diffPixels: 4, changedTiles: 0, passed: true });
   });
 
+  it('leaves pixels that pixelmatch takes for anti-aliasing to the pixel rule', () => {
+    // A 2-pixel black stroke on the toolbar's 800 × 40, its left column half lightened, as a stroke
+    // drawn half a pixel off looks: pixelmatch sees that column change beyond the threshold but
+    // takes it for anti-aliasing and counts none of it. Its pixels are flat in the baseline, and
+    // counted they would move their tile 0.034, but they are not the tile rule’s.
+    const before = withRect(png(800, 40, 0, [255, 255, 255]), [100, 0, 2, 40], [0, 0, 0]);
+    const result = compareScreenshots(before, withRect(before, [100, 0, 1, 40], [128, 128, 128]));
+    expect(result).toMatchObject({ diffPixels: 0, changedTiles: 0, maxTileDistance: 0 });
+    expect(pixel(result.diffPng, 100, 20)).toEqual([255, 255, 0]);
+    expect(result.passed).toBe(true);
+  });
+
   it('passes changed tiles up to 0.5% of the tiles and fails above', () => {
     // 320 × 160 is 20 × 10 = 200 tiles: 1 is 0.5%, 2 is over. Each tile is recoloured as above.
     const side = TILE_SIDE;

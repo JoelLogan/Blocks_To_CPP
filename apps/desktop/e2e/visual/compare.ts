@@ -4,26 +4,29 @@
  *
  * - pixels: pixelmatch with a colour threshold of 0.1 counts the pixels that differ noticeably
  *   (anti-aliased edges are not counted), which finds what moved, appeared or went;
- * - tiles: a 16×16 tile in which pixelmatch counted no pixel has changed when the mean colour of
- *   its pixels that are flat in the baseline moves more than 0.015, which finds a colour change
- *   too slight for 0.1 on any one pixel. The W2 review's new Types and Files colours (2f747cf) moved every pixel of those blocks
- *   by 0.060 to 0.084, and pixelmatch 8 counted none of them on scenes where a third of the image
- *   changed colour.
+ * - tiles: a 16×16 tile in which pixelmatch counted no pixel has changed when its mean colour
+ *   moves more than 0.015, which finds a colour change too slight for 0.1 on any one pixel. The W2
+ *   review's new Types and Files colours (2f747cf) moved every pixel of those blocks by 0.060 to
+ *   0.084, and pixelmatch 8 counted none of them on scenes where a third of the image changed
+ *   colour.
  *
  * Both distances are pixelmatch 8's perceptual colour distance (OKLab HyAB with Ottosson's
- * toe-corrected lightness, where 1 is black against white). A pixel is flat when 3 or more of its
- * 8 neighbours have its colour (pixelmatch's test before it calls a pixel anti-aliased); edges and
- * the anti-aliased pixels of text are left out, so a bolder or lighter font does not change a
- * tile, while a recoloured area does. Each tile's sum is divided by 256, the pixels of a whole
- * tile, also for the smaller tiles at the right and bottom edges, so a thin edge row counts no
- * more than its share. The tile rule leaves strong changes to the pixel rule: a tile in which
- * pixelmatch counted a pixel is not measured.
+ * toe-corrected lightness, where 1 is black against white). A tile's mean colour is taken over a
+ * whole tile's 256 pixels, also for the smaller tiles at the right and bottom edges, so a thin
+ * edge row counts no more than its share. Only a pixel that pixelmatch found under its threshold
+ * and that is flat in the baseline counts as changed; every other pixel counts as unchanged. A
+ * pixel is flat when 3 or more of its 8 neighbours have its colour (pixelmatch's test before it
+ * calls a pixel anti-aliased), so edges and the anti-aliased pixels of text are left out. Every
+ * change beyond the threshold is the pixel rule's: a tile in which pixelmatch counted a pixel is
+ * not measured, and a pixel that pixelmatch took for anti-aliasing is not counted in its tile. So
+ * the tile rule measures only what pixelmatch found too slight to count: a bolder font or a stroke
+ * drawn half a pixel off is the pixel rule's, a recoloured area the tile rule's.
  *
  * Screenshots of an unchanged scene are the same pixel for pixel from run to run: in 9 Desktop
- * runs on each system (24 to 28 October 2026, two Ubuntu runner images), only Windows'
- * chrome-console-scrolled differed, in at most 36 anti-aliased corner pixels by 1 in a channel.
- * Measured on the 59 committed baselines (30 October 2026), and on the W2 review's 9 recoloured
- * scenes before and after it:
+ * runs on each system (24 to 28 October 2026), only Windows' chrome-console-scrolled differed, in
+ * at most 36 anti-aliased corner pixels by 1 in a channel. Those runs had two Ubuntu runner images
+ * but one Windows one, so no WebView2 or font update has been seen. Measured on the 59 committed
+ * baselines (30 October 2026), and on the W2 review's 9 recoloured scenes before and after it:
  *
  * - {@link MAX_TILE_DISTANCE} lets through each channel ±3 on every pixel (in a pattern whose mean
  *   is 0: at most 0.0025 on a tile, 6 times under the limit; clipped at 0 and 255, 0.0053), every
@@ -31,11 +34,13 @@
  *   text 15% stronger or weaker (at most 0.0024 on a tile, 6 times under; pixelmatch counts more
  *   than 0.5% of the pixels of one scene, linux/chrome-toolbox-errors, 15% weaker, as before).
  *   Every pixel 3 lighter still passes (0.0130); 4 lighter fails 49 of the 59 baselines and 5
- *   lighter all of them (the deciding tile moving at least 0.0175, 1.17 times the limit). The W2
+ *   lighter all of them (the deciding tile moving at least 0.0175, 1.17 times the limit), so a
+ *   runner update that shifts every colour by more than about 3 fails every scene. The W2
  *   recolouring fails all 9 of its scenes: the tile that decides the least changed one moved
  *   0.030, 2.0 times the limit.
- * - Near black, one step of one channel is already a large distance (#000 to #010101 is 0.016):
- *   a black area that comes out a step lighter fails. No committed baseline has a black area.
+ * - Near black, one step in each channel (#000 to #010101) is already 0.016, beyond the limit, and
+ *   one step of a single channel 0.026 to 0.033: a black area that comes out a step lighter fails.
+ *   No committed baseline has a black area.
  * - {@link MAX_DIFF_RATIO} of the tiles is less than one tile on the smallest scenes (the toolbar,
  *   150 tiles): one recoloured tile fails them. A recolouring of about 0.5% of a scene fails or
  *   passes depending on how it falls on the tiles (a 24×24 block on a 420-tile scene passes at 6
@@ -65,6 +70,12 @@ export const MAX_SIDE = 8_192;
 
 /** The colour pixelmatch marks a counted pixel with in the diff image (its default). */
 const DIFF_COLOUR: [number, number, number] = [255, 0, 0];
+
+/**
+ * The colour pixelmatch marks a pixel with that differs beyond {@link PIXEL_THRESHOLD} but that it
+ * takes for anti-aliasing and does not count (its default).
+ */
+const AA_COLOUR: [number, number, number] = [255, 255, 0];
 
 /** A screenshot or baseline that cannot be compared. */
 export class VisualCompareError extends Error {
@@ -174,8 +185,8 @@ function flat(pixels: Uint32Array, x: number, y: number, width: number, height: 
 
 /**
  * The distance between each tile's mean colours in `before` and `after` (row by row), over the
- * pixels flat in `before` and divided by a whole tile's pixels; `NaN` for a tile in which
- * pixelmatch counted a pixel (marked in `diff`).
+ * pixels flat in `before` that pixelmatch found under its threshold, divided by a whole tile's
+ * pixels; `NaN` for a tile in which pixelmatch counted a pixel (both are read from `diff`).
  */
 function tileDistances(before: PNG, after: PNG, diff: PNG, columns: number): Float64Array {
   const { width, height } = before;
@@ -202,9 +213,11 @@ function tileDistances(before: PNG, after: PNG, diff: PNG, columns: number): Flo
       if (a32[index] === b32[index]) continue;
       const tile = rowStart + Math.floor(x / TILE_SIDE);
       const at = index * 4;
-      if (DIFF_COLOUR.every((value, channel) => diff.data[at + channel] === value)) {
+      const marked = (mark: readonly number[]) =>
+        mark.every((value, channel) => diff.data[at + channel] === value);
+      if (marked(DIFF_COLOUR)) {
         counted[tile] = 1;
-      } else if (flat(a32, x, y, width, height)) {
+      } else if (!marked(AA_COLOUR) && flat(a32, x, y, width, height)) {
         const [p, q] = [colour(before.data, at), colour(after.data, at)];
         for (let channel = 0; channel < 3; channel += 1) {
           sums[tile * 3 + channel] =
@@ -257,6 +270,7 @@ export function compareScreenshots(baseline: Buffer, candidate: Buffer): VisualR
   const diffPixels = pixelmatch(expected.data, actual.data, diff.data, width, height, {
     threshold: PIXEL_THRESHOLD,
     diffColor: DIFF_COLOUR,
+    aaColor: AA_COLOUR,
   });
   const ratio = diffPixels / (width * height);
   const columns = Math.ceil(width / TILE_SIDE);
