@@ -158,6 +158,12 @@ export interface FieldDefJson {
    * by the block's mutator as members of its repeated group; `null` for a field shown once.
    */
   readonly repeat: RepeatJson | null;
+  /**
+   * Present and `true` when the editor writes the field into a project only while it holds
+   * something other than its default, so that a block left at the default reads as before the
+   * field existed (every `SHARED`, w3-modules.md §6 W3M-D11). A missing field reads as its default.
+   */
+  readonly omitDefault?: true;
 }
 
 /** A value-input definition. */
@@ -1884,7 +1890,10 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     version: 1,
     category: 'functions',
     shape: 'definition',
-    label: { friendly: 'define %NAME with … returns %RETURNS', cpp: '%RETURNS %NAME(…) { … }' },
+    label: {
+      friendly: 'define %NAME with … returns %RETURNS share with other modules %SHARED',
+      cpp: '%RETURNS %NAME(…) { … }',
+    },
     labelParts: [
       { text: 'define' },
       { arg: 'NAME' },
@@ -1892,6 +1901,8 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       { repeat: true },
       { text: 'returns' },
       { arg: 'RETURNS' },
+      { text: 'share with other modules' },
+      { arg: 'SHARED' },
     ],
     statementsNotInLabel: ['BODY'],
     help: 'Defines a function: a named group of blocks you can use again.',
@@ -1914,6 +1925,16 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         default: 'void',
         type: { kind: 'var', name: 'R' },
         repeat: null,
+      },
+      {
+        name: 'SHARED',
+        kind: 'checkbox',
+        options: [],
+        types: [],
+        default: false,
+        type: null,
+        repeat: null,
+        omitDefault: true,
       },
     ],
     inputs: [
@@ -3570,6 +3591,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         default: false,
         type: null,
         repeat: null,
+        omitDefault: true,
       },
     ],
     inputs: [],
@@ -3848,6 +3870,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         default: false,
         type: null,
         repeat: null,
+        omitDefault: true,
       },
     ],
     inputs: [
@@ -4155,6 +4178,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         default: false,
         type: null,
         repeat: null,
+        omitDefault: true,
       },
     ],
     inputs: [

@@ -5,7 +5,7 @@ id = "func.define"
 version = 1
 category = "functions"
 shape = "definition"
-label = { friendly = "define %NAME with … returns %RETURNS", cpp = "%RETURNS %NAME(…) { … }" }
+label = { friendly = "define %NAME with … returns %RETURNS share with other modules %SHARED", cpp = "%RETURNS %NAME(…) { … }" }
 # What a function gives back offers these types first and takes any type a
 # variable can hold, such as a struct (docs/plans/m3-contracts/w2.md §1.9).
 where = { R = "value" }
@@ -45,6 +45,16 @@ type = "param:NAME"
 
 [[block.statement]]
 name = "BODY"
+
+# Whether the function goes into its module's header, so that other modules
+# can call it (ADR-0019; docs/plans/m3-contracts/w3-modules.md §1.2). Shown
+# only in a project with several modules, and written into a project only
+# when ticked (W3M-D11), so a project that shares nothing reads as before.
+[[block.field]]
+name = "SHARED"
+kind = "checkbox"
+default = false
+omit_default = true
 
 [[block]]
 id = "func.call"

@@ -464,7 +464,28 @@ fn check_field(field: &FieldDef, problems: &mut Vec<String>) {
     if !field.default.as_ref().is_none_or(|d| field_value_fits(field, d)) {
         problems.push(format!("the default of {name} does not fit its kind or choices"));
     }
+    if field.omit_default && (field.default.is_none() || field.repeat.is_some()) {
+        problems.push(format!(
+            "only a field shown once with a default can leave it out of a project (omit_default on {name})"
+        ));
+    }
+    // A definition's *share with other modules* (modules.md §7.1): a
+    // checkbox that starts unticked and is written only when ticked.
+    if name == SHARED_FIELD
+        && (field.kind != FieldKind::Checkbox
+            || field.default != Some(FieldDefault::Bool(false))
+            || !field.omit_default
+            || field.repeat.is_some())
+    {
+        problems.push(format!(
+            "the field {SHARED_FIELD} is a checkbox shown once, unticked by default, with omit_default = true"
+        ));
+    }
 }
+
+/// The name of a definition's *share with other modules* checkbox
+/// (ADR-0019, modules.md §7.1).
+pub(crate) const SHARED_FIELD: &str = "SHARED";
 
 /// Whether a value written in the catalog (a default, or a toolbox preset)
 /// fits a field: a dropdown's option value, a checkbox's `true` or `false`,
@@ -635,6 +656,7 @@ mod tests {
                 members: None,
                 headers: BTreeMap::new(),
                 repeat: None,
+                omit_default: false,
             }],
             input: vec![InputDef {
                 name: "ITEM".into(),
@@ -776,6 +798,7 @@ mod tests {
                 members: None,
                 headers: BTreeMap::new(),
                 repeat: None,
+                omit_default: false,
             };
             d.label.friendly = label.into();
         };
@@ -864,6 +887,7 @@ mod tests {
             members: None,
             headers: BTreeMap::new(),
             repeat: None,
+            omit_default: false,
         };
         for (kind, default, types, ok) in [
             (FieldKind::Checkbox, Some(FieldDefault::Bool(true)), vec![], true),
@@ -890,6 +914,54 @@ mod tests {
             let problems = problems_after(|d| d.field[0] = field(kind, default, types));
             assert_eq!(problems.is_empty(), ok, "{kind:?}: {problems:?}");
         }
+    }
+
+    #[test]
+    fn omit_default_and_the_shared_field() {
+        // An extra checkbox, with words before it in the friendly label.
+        let with = |field: FieldDef| {
+            problems_after(move |d| {
+                d.label.friendly = format!("{} share %{}", d.label.friendly, field.name);
+                d.field.push(field);
+            })
+        };
+        let checkbox = |name: &str, default: Option<bool>, omit: bool| FieldDef {
+            default: default.map(FieldDefault::Bool),
+            omit_default: omit,
+            ..plain_field(name, FieldKind::Checkbox)
+        };
+        assert_eq!(with(checkbox("SHARED", Some(false), true)), Vec::<String>::new());
+        assert_eq!(with(checkbox("TICK", Some(true), true)), Vec::<String>::new());
+        assert_eq!(with(checkbox("TICK", Some(true), false)), Vec::<String>::new());
+        // Leaving out a default needs one.
+        assert_eq!(
+            with(checkbox("TICK", None, true)),
+            ["only a field shown once with a default can leave it out of a project (omit_default on TICK)"]
+        );
+        // SHARED starts unticked and is written only when ticked.
+        let shared_rule =
+            "the field SHARED is a checkbox shown once, unticked by default, with omit_default = true";
+        assert_eq!(with(checkbox("SHARED", Some(false), false)), [shared_rule]);
+        assert_eq!(with(checkbox("SHARED", Some(true), true)), [shared_rule]);
+        let text = FieldDef {
+            default: Some(FieldDefault::Text(String::new())),
+            omit_default: true,
+            ..plain_field("SHARED", FieldKind::Text)
+        };
+        assert_eq!(with(text), [shared_rule]);
+        // A repeated field cannot leave its parts out.
+        let problems = problems_after(|d| {
+            let mut field = repeated_field("F", FieldKind::Checkbox);
+            field.default = Some(FieldDefault::Bool(false));
+            field.omit_default = true;
+            d.field.push(field);
+        });
+        assert!(
+            problems.contains(&String::from(
+                "only a field shown once with a default can leave it out of a project (omit_default on F)"
+            )),
+            "{problems:?}"
+        );
     }
 
     #[test]
@@ -941,6 +1013,7 @@ mod tests {
             members: None,
             headers: BTreeMap::new(),
             repeat: None,
+            omit_default: false,
         }
     }
 
@@ -1217,6 +1290,7 @@ mod tests {
             pattern: None,
             members: None,
             headers: BTreeMap::new(),
+            omit_default: false,
             repeat: Some(Repeat {
                 count: "itemCount".into(),
                 plus: 0,

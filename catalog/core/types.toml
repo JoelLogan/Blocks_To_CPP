@@ -49,6 +49,7 @@ default = false
 name = "SHARED"
 kind = "checkbox"
 default = false
+omit_default = true
 
 [[block]]
 id = "type.new"
@@ -154,6 +155,7 @@ max = 64
 name = "SHARED"
 kind = "checkbox"
 default = false
+omit_default = true
 
 [[block]]
 id = "type.enum_value"

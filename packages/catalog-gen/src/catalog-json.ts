@@ -153,6 +153,11 @@ export interface RustFieldDef {
    * once (the export may leave the key out while it is empty).
    */
   readonly repeat?: RustRepeat | null;
+  /**
+   * `omit_default`: the editor writes the field into a project only when it differs from its
+   * default (w3-modules.md §6 W3M-D11); the export writes the key only when it is true.
+   */
+  readonly omitDefault?: boolean;
 }
 
 /** `b2c_catalog::Repeat`. */
@@ -401,7 +406,16 @@ function blockDef(value: unknown, path: string): RustBlockDef {
 }
 
 function fieldDef(value: unknown, path: string): RustFieldDef {
-  const keys = ['name', 'kind', 'options', 'types', 'default', 'type', 'repeat'] as const;
+  const keys = [
+    'name',
+    'kind',
+    'options',
+    'types',
+    'default',
+    'type',
+    'repeat',
+    'omitDefault',
+  ] as const;
   const o = object(value, path, keys);
   return {
     name: string(o.name, `${path}.name`),
@@ -411,6 +425,7 @@ function fieldDef(value: unknown, path: string): RustFieldDef {
     default: nullable(o.default, `${path}.default`, stringOrBoolean),
     ...optional(o.type, `${path}.type`, (v, p) => ({ type: pattern(v, p, 0) })),
     ...optional(o.repeat, `${path}.repeat`, (v, p) => ({ repeat: nullable(v, p, repeat) })),
+    ...optional(o.omitDefault, `${path}.omitDefault`, (v, p) => ({ omitDefault: boolean(v, p) })),
   };
 }
 

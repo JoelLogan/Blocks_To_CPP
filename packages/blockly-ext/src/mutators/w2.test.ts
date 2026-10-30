@@ -135,7 +135,7 @@ describe('specs of W2-shaped blocks', () => {
   it('read the inputs a row extra counts as row parts, not as a group (DEFAULT)', () => {
     const spec = rowsSpec(blockDefOf('func.define'));
     expect(spec.rowInputs.map((input) => input.name)).toEqual(['DEFAULT']);
-    expect(spec.anchorArgs).toEqual(['RETURNS', 'BODY']);
+    expect(spec.anchorArgs).toEqual(['RETURNS', 'SHARED', 'BODY']);
   });
 
   it('refuse what they cannot draw', () => {

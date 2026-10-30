@@ -1938,7 +1938,7 @@
         "R": "value"
       },
       "label": {
-        "friendly": "define %NAME with … returns %RETURNS",
+        "friendly": "define %NAME with … returns %RETURNS share with other modules %SHARED",
         "cpp": "%RETURNS %NAME(…) { … }"
       },
       "lowering": "builtin",
@@ -1969,6 +1969,14 @@
             "kind": "var",
             "name": "R"
           }
+        },
+        {
+          "name": "SHARED",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": false,
+          "omitDefault": true
         }
       ],
       "input": [
@@ -3861,7 +3869,8 @@
           "kind": "checkbox",
           "options": [],
           "types": [],
-          "default": false
+          "default": false,
+          "omitDefault": true
         }
       ],
       "input": [],
@@ -4143,7 +4152,8 @@
           "kind": "checkbox",
           "options": [],
           "types": [],
-          "default": false
+          "default": false,
+          "omitDefault": true
         }
       ],
       "input": [
@@ -4502,7 +4512,8 @@
           "kind": "checkbox",
           "options": [],
           "types": [],
-          "default": false
+          "default": false,
+          "omitDefault": true
         }
       ],
       "input": [

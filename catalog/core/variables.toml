@@ -78,6 +78,7 @@ type = "T"
 name = "SHARED"
 kind = "checkbox"
 default = false
+omit_default = true
 
 [[block]]
 id = "var.set"

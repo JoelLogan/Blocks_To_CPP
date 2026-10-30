@@ -169,7 +169,7 @@ describe('paramsSpec', () => {
           assign: false,
         },
       ],
-      anchorArgs: ['RETURNS', 'BODY'],
+      anchorArgs: ['RETURNS', 'SHARED', 'BODY'],
     });
   });
 

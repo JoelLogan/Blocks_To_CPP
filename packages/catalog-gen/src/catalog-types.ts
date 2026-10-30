@@ -158,6 +158,12 @@ export interface FieldDefJson {
    * by the block's mutator as members of its repeated group; `null` for a field shown once.
    */
   readonly repeat: RepeatJson | null;
+  /**
+   * Present and `true` when the editor writes the field into a project only while it holds
+   * something other than its default, so that a block left at the default reads as before the
+   * field existed (every `SHARED`, w3-modules.md §6 W3M-D11). A missing field reads as its default.
+   */
+  readonly omitDefault?: true;
 }
 
 /** A value-input definition. */

@@ -112225,6 +112225,14 @@
               "char",
               "std::string"
             ]
+          },
+          {
+            "default": false,
+            "kind": "checkbox",
+            "name": "SHARED",
+            "omitDefault": true,
+            "options": [],
+            "types": []
           }
         ],
         "headers": [],
@@ -112248,7 +112256,7 @@
         ],
         "label": {
           "cpp": "%RETURNS %NAME(…) { … }",
-          "friendly": "define %NAME with … returns %RETURNS"
+          "friendly": "define %NAME with … returns %RETURNS share with other modules %SHARED"
         },
         "lowering": "builtin",
         "order": [
@@ -166224,6 +166232,7 @@
             "default": false,
             "kind": "checkbox",
             "name": "SHARED",
+            "omitDefault": true,
             "options": [],
             "types": []
           }
@@ -184026,6 +184035,7 @@
             "default": false,
             "kind": "checkbox",
             "name": "SHARED",
+            "omitDefault": true,
             "options": [],
             "types": []
           }

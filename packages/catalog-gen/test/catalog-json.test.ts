@@ -417,6 +417,12 @@ describe('readCatalogJson', () => {
     expect(declare?.typeVars).toEqual({ T: 'value' });
     expect(declare?.order).toEqual([{ field: 'TYPE' }, { field: 'NAME' }, { input: 'VALUE' }]);
     expect(exported.types?.find((t) => t.name === 'std::vector')?.label).toBe('list of %1');
+    // Every SHARED field is written only when ticked (w3-modules.md §6 W3M-D11).
+    const shared = exported.blocks.flatMap((b) => b.field.filter((f) => f.name === 'SHARED'));
+    expect(shared.map((f) => f.omitDefault)).toEqual([true, true, true, true]);
+    expect(exported.blocks.find((b) => b.id === 'func.define')?.field.map((f) => f.name)).toContain(
+      'SHARED',
+    );
   });
 
   it('names the place of the problem', () => {

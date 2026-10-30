@@ -1,5 +1,6 @@
 //! The catalog snapshot cases of `catalog/core/functions.toml`, with
-//! package C2's default values of parameters (w2.md §2.8).
+//! package C2's default values of parameters (w2.md §2.8) and W3's *share
+//! with other modules* (w3-modules.md §1.2).
 
 use serde_json::json;
 
@@ -61,6 +62,15 @@ pub(super) fn cases(b: &Blocks) -> Vec<Case> {
                 ]),
                 with_defaults,
             ],
+        ),
+        // A single-module project has no header, so the tick changes nothing
+        // (w3-modules.md §3.1): the same code as the default case.
+        Case::variant(
+            "func.define",
+            "shared",
+            "the void function f with share with other modules ticked, next to an empty main, in a \
+             project of one module",
+            vec![b.main(&[]), b.define_f(&json!({ "fields": { "SHARED": true } }))],
         ),
         Case::new(
             "func.call_stmt",

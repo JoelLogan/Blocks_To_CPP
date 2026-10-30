@@ -154,6 +154,54 @@ fn present_values_are_kept_and_optional_inputs_stay_empty() {
     assert_eq!(body[2].fields["CONST"], FieldValue::Bool(false));
 }
 
+/// *define*'s *share with other modules* (w3-modules.md §1.2): a file
+/// without it (every M2 file, and what the editor writes while it is not
+/// ticked) reads as not shared; a tick is kept; anything else is refused.
+#[test]
+fn define_reads_with_and_without_shared() {
+    let define = |id: &str, fields: Value| json!({"id": id, "type": "func.define", "v": 1, "x": 0, "y": 0, "fields": fields, "extra": {"params": []}});
+    let value = project(
+        json!([]),
+        json!([
+            define("b1", json!({"NAME": {"sym": "s1", "name": "f"}})),
+            define("b2", json!({"NAME": {"sym": "s2", "name": "g"}, "SHARED": true})),
+            define("b3", json!({"NAME": {"sym": "s3", "name": "h"}, "SHARED": false})),
+        ]),
+    );
+    let (document, diagnostics) = common::resolve(&value);
+    assert_eq!(diagnostics, []);
+    let shared: Vec<&FieldValue> = document.modules[0].workspace.blocks[1..]
+        .iter()
+        .map(|block| &block.fields["SHARED"])
+        .collect();
+    assert_eq!(
+        shared,
+        [
+            &FieldValue::Bool(false),
+            &FieldValue::Bool(true),
+            &FieldValue::Bool(false)
+        ]
+    );
+    let value = project(
+        json!([]),
+        json!([define(
+            "b1",
+            json!({"NAME": {"sym": "s1", "name": "f"}, "SHARED": "yes"})
+        )]),
+    );
+    assert_eq!(codes(&value), ["B2C-E0607"]);
+    let (_, diagnostics) = common::resolve(&value);
+    assert_eq!(
+        diagnostics[0].primary,
+        location(
+            "b1",
+            Part::Field {
+                name: "SHARED".into()
+            }
+        )
+    );
+}
+
 // --- E0600–E0603: catalog and versions --------------------------------------
 
 #[test]

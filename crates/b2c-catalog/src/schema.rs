@@ -272,6 +272,18 @@ pub struct FieldDef {
     /// field with the same repeat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeat: Option<Repeat>,
+    /// `omit_default = true`: the editor writes the field into a project
+    /// only while it holds something other than its default, so a block that
+    /// leaves it at the default reads as it did before the field existed
+    /// (w3-modules.md §6 W3M-D11). A missing field reads as its default
+    /// anyway (03 §3.11.3). Every `SHARED` field has it. `omitDefault` in
+    /// `catalog.json`, written only when set.
+    #[serde(
+        default,
+        rename(deserialize = "omit_default", serialize = "omitDefault"),
+        skip_serializing_if = "is_false"
+    )]
+    pub omit_default: bool,
 }
 
 /// A field's default.

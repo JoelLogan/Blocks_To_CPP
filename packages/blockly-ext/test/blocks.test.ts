@@ -256,7 +256,7 @@ describe('blockLayout', () => {
     expect(describeLayout(def('func.define'))).toEqual([
       'dummy:b2c_row0["define" NAME]',
       `anchor:${REPEAT_ANCHOR}[]`,
-      'dummy:b2c_row1["returns" RETURNS]',
+      'dummy:b2c_row1["returns" RETURNS ("share with other modules") (SHARED)]',
       'statement:BODY[]',
     ]);
     expect(blockLayout(def('control.if')).mutatorParts).toEqual(['COND', 'DO', 'ELSE']);

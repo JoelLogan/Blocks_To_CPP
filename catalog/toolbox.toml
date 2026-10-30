@@ -232,8 +232,8 @@ block = "func.define"
 [[category.entry]]
 block = "func.return"
 
-# Milestone M3's second wave adds these four categories (docs/plans/m3-contracts/w2.md §2.1). Each
-# is empty until its package adds its blocks here, and the editor does not show an empty category.
+# Milestone M3's second wave added these four categories (docs/plans/m3-contracts/w2.md §2.1). The
+# editor does not show a category without entries.
 
 [[category]]
 id = "collections"

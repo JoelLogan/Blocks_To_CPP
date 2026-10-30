@@ -115,6 +115,34 @@ describe('normalize', () => {
     expect(noDefault.blocks.at(-1)?.extra[0]?.default).toBeNull();
   });
 
+  it('marks a field the editor writes only when it differs from its default (W3M-D11)', () => {
+    const field = (omitDefault?: boolean) => ({
+      name: 'SHARED',
+      kind: 'checkbox' as const,
+      options: [],
+      types: [],
+      default: false,
+      ...(omitDefault === undefined ? {} : { omitDefault }),
+    });
+    const fieldsOf = (omitDefault?: boolean) =>
+      model((c) =>
+        c.blocks.push(
+          rustBlock('x.shared', {
+            label: { friendly: 'thing share %SHARED', cpp: 'thing' },
+            field: [field(omitDefault)],
+          }),
+        ),
+      ).blocks.at(-1)?.fields;
+    expect(fieldsOf(true)?.[0]).toMatchObject({
+      name: 'SHARED',
+      default: false,
+      omitDefault: true,
+    });
+    // Absent or false, the key is left out of the generated definition.
+    expect(fieldsOf(false)?.[0]).not.toHaveProperty('omitDefault');
+    expect(fieldsOf()?.[0]).not.toHaveProperty('omitDefault');
+  });
+
   it('reads the row extras, repeated fields and header fields of milestone M3 (w2.md §2.1)', () => {
     const rows = model((c) =>
       c.blocks.push(
