@@ -217,12 +217,20 @@ function fixOfProblem(item: ProblemItem): ProblemFix | null {
   return item.origin === 'live' ? (quickFixesOf(item.diagnostic)[0] ?? null) : null;
 }
 
-/** Whether a row is a generator bug, which offers *Copy bug report…* (07 §7.5.3). */
+/**
+ * Whether a row is a generator bug, which offers *Copy bug report…* (07 §7.5.3): not once the
+ * project has changed since its build (a stale row), when the C++ the report would hold is no
+ * longer the C++ g++ compiled.
+ */
 function reportsBug(item: ProblemItem): boolean {
-  return item.diagnostic.message.includes(GENERATOR_BUG_LABEL);
+  return !item.stale && item.diagnostic.message.includes(GENERATOR_BUG_LABEL);
 }
 
-/** What the bug report of a row is made from, now. */
+/**
+ * What the bug report of a row is made from: the project now (a row that reports a bug is not
+ * stale, so its generated C++ is the C++ that was built) and, for a build's row, the configuration
+ * it was built in.
+ */
 function bugReportInput(item: ProblemItem): BugReportInput {
   const state = useAppStore.getState();
   const project = state.project?.document ?? null;
@@ -230,7 +238,10 @@ function bugReportInput(item: ProblemItem): BugReportInput {
     appInfo: state.appInfo,
     toolchain: selectedToolchain(state),
     standard: project?.project.language.standard ?? null,
-    configuration: state.build.config,
+    configuration:
+      item.origin === 'build'
+        ? (state.build.diagnosticsConfig ?? state.build.config)
+        : state.build.config,
     diagnostic: item.diagnostic,
     document: project,
     files: state.analysis.preview?.files ?? [],

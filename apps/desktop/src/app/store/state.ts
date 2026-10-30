@@ -116,6 +116,11 @@ export interface BuildState {
   diagnostics: Diagnostic[];
   /** The `projectHash` those diagnostics belong to, so they can be marked stale. */
   diagnosticsHash: string | null;
+  /**
+   * The configuration of the build those diagnostics come from (`config` may have changed since,
+   * which does not make them stale): what a bug report on one of them names.
+   */
+  diagnosticsConfig: BuildConfig | null;
   /** The Build output tab's lines, oldest first, at most {@link MAX_BUILD_OUTPUT_LINES}. */
   output: BuildOutputLine[];
   lastSuccess: BuildSuccess | null;
@@ -220,6 +225,7 @@ export function initialBuild(config: BuildConfig = 'debug'): BuildState {
     progress: null,
     diagnostics: [],
     diagnosticsHash: null,
+    diagnosticsConfig: null,
     output: [],
     lastSuccess: null,
   };

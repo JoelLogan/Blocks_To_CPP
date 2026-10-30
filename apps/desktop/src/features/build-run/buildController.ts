@@ -106,7 +106,7 @@ interface Session {
   readonly finished: Promise<BuildFinish>;
   readonly resolve: (finish: BuildFinish) => void;
   /** The build store's diagnostics before this build reported any. */
-  readonly previous: Pick<BuildState, 'diagnostics' | 'diagnosticsHash'>;
+  readonly previous: Pick<BuildState, 'diagnostics' | 'diagnosticsHash' | 'diagnosticsConfig'>;
   buildId: BuildId | null;
   /** Whether `build_start` has answered (with an ID or an error). */
   answered: boolean;
@@ -225,6 +225,7 @@ export class BuildController {
     let previous: Session['previous'] = {
       diagnostics: build.diagnostics,
       diagnosticsHash: build.diagnosticsHash,
+      diagnosticsConfig: build.diagnosticsConfig,
     };
     const running = this.#current;
     if (running !== null && !running.done) {
@@ -430,6 +431,7 @@ export class BuildController {
         actions.setBuild({
           diagnostics: [...session.diagnostics],
           diagnosticsHash: session.key.hash,
+          diagnosticsConfig: session.key.config,
         });
         const lines = diagnosticLines(labelled.items);
         if (labelled.generatorBug && !session.generatorBugNoted) {
@@ -468,6 +470,7 @@ export class BuildController {
           // (a build this one replaced may have reported some meanwhile).
           patch.diagnostics = session.previous.diagnostics;
           patch.diagnosticsHash = session.previous.diagnosticsHash;
+          patch.diagnosticsConfig = session.previous.diagnosticsConfig;
           break;
         case 'upToDate': {
           const kept =
@@ -476,11 +479,13 @@ export class BuildController {
               : [];
           patch.diagnostics = [...session.diagnostics, ...kept];
           patch.diagnosticsHash = projectHash;
+          patch.diagnosticsConfig = session.key.config;
           break;
         }
         default:
           patch.diagnostics = session.diagnostics;
           patch.diagnosticsHash = projectHash;
+          patch.diagnosticsConfig = session.key.config;
       }
       if ((event.outcome === 'built' || event.outcome === 'upToDate') && session.buildId !== null) {
         patch.lastSuccess = {

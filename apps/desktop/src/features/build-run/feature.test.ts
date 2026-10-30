@@ -332,6 +332,23 @@ describe('Build', () => {
     );
   });
 
+  it('remembers the configuration its diagnostics were built in', async () => {
+    state().actions.setBuild({ config: 'debug' });
+    await run('build.start');
+    const error = diagnosticFixture({ code: 'C:error', severity: 'error', source: 'compiler' });
+    backend.builds[0]?.send({ kind: 'diagnostics', items: [error] });
+    expect(state().build.diagnosticsConfig).toBe('debug');
+    await finishBuild(0, 'failed', null);
+    // Choosing Release does not change what the diagnostics were built in.
+    state().actions.setBuild({ config: 'release' });
+    expect(state().build.diagnosticsConfig).toBe('debug');
+    // A cancelled Release build puts the Debug build's diagnostics back, with their configuration.
+    await run('build.start');
+    await finishBuild(1, 'cancelled', null);
+    expect(state().build.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(['C:error']);
+    expect(state().build.diagnosticsConfig).toBe('debug');
+  });
+
   it('puts back the diagnostics of the last finished build, not those of a replaced one', async () => {
     await run('build.start');
     const finished = diagnosticFixture({

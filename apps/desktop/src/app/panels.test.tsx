@@ -19,6 +19,7 @@ import {
   guessingGame,
   renderedWorkspace,
 } from '../editor/diagnostics/testing';
+import { GENERATOR_BUG_LABEL, labelGeneratorBugs } from '../features/build-run/buildOutput';
 import { setIpcForTests } from '../lib/ipc';
 import { expectNoAxeViolations } from '../test/axe';
 import { type SelectBlockOptions, setEditorHandle } from './editor-types';
@@ -30,7 +31,13 @@ import {
   moduleSourcePath,
 } from './panels';
 import { resetAppStore, useAppStore } from './store';
-import { createFakeIpc, documentFixture, previewFixture, projectFixture } from './testing/fixtures';
+import {
+  createFakeIpc,
+  documentFixture,
+  previewFixture,
+  projectFixture,
+  toolchainFixture,
+} from './testing/fixtures';
 
 const MAIN_LINES = [
   '#include "b2c_support.hpp"',
@@ -392,6 +399,56 @@ describe('the Problems tab', () => {
     render(<ConnectedProblemsPanel />);
     fireEvent.click(screen.getByRole('button', { name: /compiler message/i }));
     expect(screen.getByText(/invalid conversion/)).toBeDefined();
+  });
+
+  /** The guessing game's build row `b005`, labelled a generator bug as a build labels it. */
+  function generatorBug(): Diagnostic {
+    const [bug] = labelGeneratorBugs([compilerMessage('b005')], null).items;
+    if (!bug?.message.includes(GENERATOR_BUG_LABEL)) {
+      throw new Error('not labelled');
+    }
+    return bug;
+  }
+
+  /** A selected toolchain, and the configuration the build ran in and the one chosen since. */
+  function withToolchain(built: 'debug' | 'release', chosen: 'debug' | 'release'): void {
+    useAppStore.setState((state) => ({
+      toolchains: {
+        ...state.toolchains,
+        list: [toolchainFixture({ selected: true, usable: true, version: '13.3.0' })],
+      },
+      build: { ...state.build, diagnosticsConfig: built, config: chosen },
+    }));
+  }
+
+  it('offers Copy bug report on a generator bug, with the build’s facts', () => {
+    openGuessingGame([], [generatorBug(), compilerMessage('b003')]);
+    withToolchain('debug', 'release');
+    render(<ConnectedProblemsPanel />);
+    expect(screen.queryByRole('button', { name: 'Copy bug report…' })).toBeNull();
+    for (const button of screen.getAllByRole('button', { name: 'Show C++ compiler message' })) {
+      fireEvent.click(button);
+    }
+    // Only the labelled row offers it.
+    expect(screen.getAllByRole('button', { name: 'Copy bug report…' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy bug report…' }));
+    expect(screen.getByRole('dialog', { name: /bug report/iu })).toBeDefined();
+    const text = screen.getByTestId('bug-report-text').textContent;
+    const standard = guessingGame().project.language.standard;
+    expect(text).toContain('13.3.0');
+    // The configuration it was built in, not the one chosen since.
+    expect(text).toContain(`C++ standard: ${standard}; configuration: debug`);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog', { name: /bug report/iu })).toBeNull();
+  });
+
+  it('does not offer Copy bug report on a stale generator bug', () => {
+    openGuessingGame([], [generatorBug()], 'c'.repeat(64));
+    withToolchain('debug', 'debug');
+    render(<ConnectedProblemsPanel />);
+    expect(rows()[0]?.textContent).toContain('(from the last build)');
+    fireEvent.click(screen.getByRole('button', { name: 'Show C++ compiler message' }));
+    expect(screen.queryByRole('button', { name: 'Copy bug report…' })).toBeNull();
   });
 
   it('has no accessibility problems', async () => {
