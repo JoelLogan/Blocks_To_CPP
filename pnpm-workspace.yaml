@@ -22,16 +22,13 @@ strictDepBuilds: true
 
 # Fixed versions of vulnerable transitive dependencies that their parents pin.
 overrides:
-  # GHSA-r4xh-jqrq-34v2 (smol-toml <=1.8.0, quadratic-time parse): markdownlint-cli2 0.23.3
-  # pins 1.8.0. 1.9.0 has the same API.
-  smol-toml: 1.9.0
   # GHSA-238p-pmpm-9mq7 (katex <0.18.2): markdownlint's math syntax extension
   # (micromark-extension-math) asks for ^0.16 but never renders math; 0.18.2 is the fixed release.
   katex: 0.18.2
-  # GHSA-r7fv-28h4-cvq7, GHSA-gfr2-rv44-r23c (high) and GHSA-vfgh-jcmw-g37q (markdown-it <15.0.3,
-  # quadratic-time parsing and rendering): markdownlint-cli2 0.23.3 pins 15.0.1. 15.0.3 is the
-  # fixed release of the same major; drop this once markdownlint-cli2 0.24 (15.0.3) is old enough.
-  markdown-it: 15.0.3
+  # GHSA-gg6h-894w-4m9c (high; re2js >=2.2.0 <2.8.7, quadratic-time lookbehind matching):
+  # markdownlint 0.42.0 (through markdownlint-cli2 0.24.0) pins 2.8.6. 2.8.8 is the last
+  # 2.8 patch release; drop this once markdownlint pins 2.8.7 or later.
+  re2js: 2.8.8
 
 # Tracked `pnpm audit` exceptions (docs/spec/08-security.md §8.9). Each one names the
 # only path that reaches the package and is reviewed by its date.

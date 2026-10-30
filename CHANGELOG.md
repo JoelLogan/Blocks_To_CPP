@@ -640,6 +640,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   exceptions in `pnpm-workspace.yaml` and `osv-scanner.toml` are gone, and
   `pnpm audit` reports nothing. typescript-eslint 8.72.0 (lint only) finds
   nothing new.
+- Dependencies updated on 2026-10-30, again to releases at least 7 days old:
+  markdownlint-cli2 0.24.0 (markdownlint 0.42.0; no new rules, the docs lint
+  clean). It brings `markdown-it` 15.0.3 and `smol-toml` 1.9.1 itself, so
+  their overrides are gone; a new override moves `re2js` (pinned at 2.8.6 by
+  markdownlint 0.42) to 2.8.8 for GHSA-gg6h-894w-4m9c; the `katex` override
+  stays (the math extension still asks for 0.16).
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
