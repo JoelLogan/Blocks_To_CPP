@@ -318,14 +318,40 @@ if the profile shows its cost and the benchmark moves:
    categories (04 §4.2), so only if 1–3 do not bring the first showing near
    the refresh's cost.
 
+**What the profile found.** A CPU profile of the flyout (happy-dom, the
+test helper's continuous toolbox with every catalog block, 186 items of which
+80 are blocks) puts almost all of a showing in Blockly's rendering, and of
+that almost all in measuring field text (`getTextWidth`, which asks
+`getComputedStyle` for each field: a forced style recalculation in a real
+webview). A refresh with nothing new drew exactly the 12 blocks that declare
+something, which package T built again at every showing to give them new
+symbols: 74 text measurements, 440–720 ms in happy-dom, against 365
+measurements for the 80 blocks of the first showing. Candidates 1–3 cost
+under 10 ms together (the fingerprint 1 ms, the bounds under 1 ms), so they
+were left as they are. Blockly's text-width cache (`startTextWidthCache`)
+around a showing was tried and did nothing: within one showing almost no
+field text repeats.
+
+**What changed.** A kept block that declares something is kept too, and
+gets a new symbol ID for each declaration, with the same name
+(`renewDeclarations` in `inflater.ts`): exactly what building it again gave
+it (each showing declares new symbols), without building or drawing it,
+since the name it shows does not change (`setDecl` with the same name
+changes only the ID). A declaring block whose name the user changed in the
+flyout differs from the state it was built with and is built again, like any
+changed block. A refresh with nothing new now draws nothing: 6–12 ms in
+happy-dom instead of 440–720 ms. The first showing still draws every block;
+candidate 4 (lazy drawing) is not done (§13.3).
+
 Every change keeps package T's rules (next steps §3.8; the module comment of
 `inflater.ts`): everything a toolbox block shows comes from its toolbox item,
 the project's dependencies are in `dynamicContentsKey`, and a block that
 declares something or that the user changed in the flyout is built again.
-`reuse.test.ts` and `continuous.refresh.test.ts` keep passing unchanged; new
-tests cover each change (a block edited in the flyout is not kept after the
-change event path replaces the fingerprint, a block moved inside the flyout
-is not kept, the bounds are read once).
+`continuous.refresh.test.ts` passes unchanged. `reuse.test.ts` follows the
+refined rule: a refresh with nothing new builds and disposes of nothing (it
+built and disposed of the 12 declaring blocks), each declaring block is the
+same block at the next showing with new symbols of the same names, and a
+declaring block renamed in the flyout is built again with new symbols.
 
 ## 4. M3-5: the compact source map and a C++ panel that pauses
 

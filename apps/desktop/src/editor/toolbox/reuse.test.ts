@@ -1,9 +1,9 @@
 /**
  * The toolbox's flyout keeps a block from one showing to the next when its item is unchanged
  * (./inflater.ts, ./continuous.ts): showing the flyout again builds only the blocks whose items
- * changed, plus the blocks that declare something, however many blocks the toolbox has. A kept
- * block is the block its item would build, and a block the user changed in the flyout is built
- * again.
+ * changed, however many blocks the toolbox has. A kept block is the block its item would build: a
+ * block that declares something gets new symbols at each showing, as a new build would. A block
+ * the user changed in the flyout is built again.
  */
 import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import { B2cSymbolDeclField, b2cDarkTheme } from '@blocks2cpp/blockly-ext';
@@ -214,7 +214,7 @@ interface Shown {
 }
 
 /** Whether a shown item's block is built again on every showing (it declares something). */
-function rebuilt(shown: Shown): boolean {
+function declares(shown: Shown): boolean {
   return shown.info.declares !== undefined || declaresSymbols(shown.block);
 }
 
@@ -222,10 +222,8 @@ function rebuilt(shown: Shown): boolean {
 function keptKeys(items: readonly Shown[]): Map<string, number> {
   const keys = new Map<string, number>();
   for (const item of items) {
-    if (!rebuilt(item)) {
-      const key = JSON.stringify(item.info);
-      keys.set(key, (keys.get(key) ?? 0) + 1);
-    }
+    const key = JSON.stringify(item.info);
+    keys.set(key, (keys.get(key) ?? 0) + 1);
   }
   return keys;
 }
@@ -239,9 +237,9 @@ function missingFrom(of: Map<string, number>, from: Map<string, number>): number
   return missing;
 }
 
-/** How many shown items are built again on every showing. */
+/** How many shown items declare something (kept, with new symbols at each showing). */
 function declaring(items: readonly Shown[]): number {
-  return items.filter(rebuilt).length;
+  return items.filter(declares).length;
 }
 
 /**
@@ -276,7 +274,7 @@ async function variableRefresh(workspace: Blockly.WorkspaceSvg): Promise<{
   const kept = new Map<string, number>();
   for (const item of after) {
     const key = JSON.stringify(item.info);
-    if (!rebuilt(item) && blocksBefore.get(key)?.has(item.block) === true) {
+    if (blocksBefore.get(key)?.has(item.block) === true) {
       kept.set(key, (kept.get(key) ?? 0) + 1);
     }
   }
@@ -286,22 +284,23 @@ async function variableRefresh(workspace: Blockly.WorkspaceSvg): Promise<{
   return {
     stats,
     expected: {
-      created: missingFrom(keysAfter, keysBefore) + declaring(after),
-      disposed: missingFrom(keysBefore, keysAfter) + declaringBefore,
+      created: missingFrom(keysAfter, keysBefore),
+      disposed: missingFrom(keysBefore, keysAfter),
     },
     declaring: { before: declaringBefore, after: declaring(after) },
   };
 }
 
 describe('showing the flyout again', () => {
-  it('builds only the changed and the declaring blocks, however many blocks it shows', async () => {
+  it('builds only the changed blocks, however many blocks it shows', async () => {
     const workspace = attached();
     await settle();
     const plain = await variableRefresh(workspace);
     expect(plain.stats.created).toBe(plain.expected.created);
     expect(plain.stats.disposed).toBe(plain.expected.disposed);
-    // The getter, set and change of count, and the declaring blocks.
-    expect(plain.stats.created).toBeLessThan(15);
+    // The getter, set and change of count.
+    expect(plain.stats.created).toBeGreaterThan(0);
+    expect(plain.stats.created).toBeLessThan(6);
 
     // The same refresh with every block of the fixed categories shown twice.
     const blocks = flyoutBlocks(workspace).length;
@@ -315,24 +314,23 @@ describe('showing the flyout again', () => {
     const twice = await variableRefresh(padded);
     expect(twice.stats.created).toBe(twice.expected.created);
     expect(twice.stats.disposed).toBe(twice.expected.disposed);
-    // As many blocks built and disposed of (the copies leave out the declaring blocks).
+    // As many blocks built and disposed of.
     expect(twice.declaring).toEqual(plain.declaring);
     expect(twice.stats.created).toBe(plain.stats.created);
     expect(twice.stats.disposed).toBe(plain.stats.disposed);
   });
 
-  it('builds only the declaring blocks when nothing changed', async () => {
+  it('builds nothing when nothing changed, the declaring blocks included', async () => {
     const workspace = attached();
     await settle();
     const items = shownItems(workspace);
-    const declarations = declaring(items);
     const stats = await statsOf(inflaterOf(workspace), () =>
       continuousToolbox(workspace).showAllCategories(),
     );
-    expect(declarations).toBeGreaterThanOrEqual(6);
-    expect(stats.created).toBe(declarations);
-    expect(stats.disposed).toBe(declarations);
-    expect(stats.reused).toBe(items.length - declarations);
+    expect(declaring(items)).toBeGreaterThanOrEqual(6);
+    expect(stats.created).toBe(0);
+    expect(stats.disposed).toBe(0);
+    expect(stats.reused).toBe(items.length);
   });
 
   it('builds at the start only what the toolbox plugin changed from the injected toolbox', async () => {
@@ -349,7 +347,7 @@ describe('showing the flyout again', () => {
       continuousToolbox(workspace).showAllCategories(false);
     });
     const shown = shownItems(workspace);
-    expect(stats.created).toBe(missingFrom(keptKeys(shown), injected) + declaring(shown));
+    expect(stats.created).toBe(missingFrom(keptKeys(shown), injected));
     expect(stats.reused).toBeGreaterThan(30);
   });
 
@@ -386,7 +384,7 @@ describe('showing the flyout again', () => {
     await settle();
     const declarations = () =>
       shownItems(workspace)
-        .filter(rebuilt)
+        .filter(declares)
         .map(({ block }) => ({
           block,
           decls: block
@@ -411,7 +409,8 @@ describe('showing the flyout again', () => {
     expect(second).toHaveLength(first.length);
     second.forEach((entry, index) => {
       const before = first[index];
-      expect(entry.block).not.toBe(before?.block);
+      // The same block, kept, with new symbols of the same names.
+      expect(entry.block).toBe(before?.block);
       expect(entry.decls.length).toBeGreaterThan(0);
       entry.decls.forEach((decl, at) => {
         expect(decl?.name).toBe(before?.decls[at]?.name);
@@ -513,7 +512,7 @@ describe('a block changed in the flyout', () => {
     shadow: Blockly.Block;
   } {
     for (const { info, block } of shownItems(workspace)) {
-      if (rebuilt({ info, block })) {
+      if (declares({ info, block })) {
         continue;
       }
       for (const input of block.inputList) {
@@ -548,6 +547,34 @@ describe('a block changed in the flyout', () => {
     const again = numberSlot(workspace);
     expect(again.block.type).toBe(type);
     expect(again.shadow.getFieldValue('VALUE')).toBe(value);
+  });
+
+  it('is built again when the name it declares was changed, with new symbols', async () => {
+    const workspace = attached();
+    await settle();
+    const create = () => {
+      const block = flyoutBlocks(workspace).find((candidate) => candidate.type === 'var.declare');
+      if (block === undefined) {
+        throw new Error('no create in the flyout');
+      }
+      return block;
+    };
+    const field = (block: Blockly.BlockSvg) => {
+      const found = block.getField('NAME');
+      if (!(found instanceof B2cSymbolDeclField)) {
+        throw new Error('no declaration');
+      }
+      return found;
+    };
+    const block = create();
+    const before = field(block).getDecl();
+    field(block).setValue('renamed');
+    await settle();
+    continuousToolbox(workspace).showAllCategories();
+    expect(block.isDeadOrDying()).toBe(true);
+    const again = field(create()).getDecl();
+    expect(again?.name).toBe(before?.name);
+    expect(again?.sym).not.toBe(before?.sym);
   });
 
   it('is built again when its variable was changed, and its start value with it', async () => {
@@ -628,7 +655,7 @@ describe('a kept block', () => {
     const listeners = (inflaterOf(workspace) as unknown as { listeners: Map<string, unknown> })
       .listeners;
     expect(listeners.size).toBe(flyoutBlocks(workspace).length);
-    const block = shownItems(workspace).find((item) => !rebuilt(item))?.block;
+    const block = shownItems(workspace).find((item) => !declares(item))?.block;
     if (block === undefined) {
       throw new Error('no kept block');
     }
@@ -646,7 +673,7 @@ describe('a kept block', () => {
   it('is no longer highlighted by a pointer that was over it', async () => {
     const workspace = attached();
     await settle();
-    const block = shownItems(workspace).find((item) => !rebuilt(item))?.block;
+    const block = shownItems(workspace).find((item) => !declares(item))?.block;
     if (block === undefined) {
       throw new Error('no kept block');
     }
@@ -660,7 +687,7 @@ describe('a kept block', () => {
   it('keeps the keyboard focus, on the same element', async () => {
     const workspace = attached();
     await settle();
-    const block = shownItems(workspace).find((item) => !rebuilt(item))?.block;
+    const block = shownItems(workspace).find((item) => !declares(item))?.block;
     if (block === undefined) {
       throw new Error('no kept block');
     }
@@ -677,7 +704,7 @@ describe('a kept block', () => {
     const workspace = attached();
     await settle();
     const block = shownItems(workspace).find(
-      (item) => !rebuilt(item) && item.info.type === 'io.print',
+      (item) => !declares(item) && item.info.type === 'io.print',
     )?.block;
     if (block === undefined) {
       throw new Error('no print block');
