@@ -490,8 +490,11 @@ Windows (paths through `node:path`, commands through `spawnSync` without a
 shell, `.exe` on Windows). It reads files and runs version commands only;
 it changes nothing and sends nothing anywhere. Tests:
 `tools/doctor.test.mjs` with `node --test` (each check's parsing on sample
-outputs, the exit code, Windows without pnpm's user agent), run by the root
-`test:tools` script; CI's jobs are not changed (§10.5 asks the coordinator
+outputs, the exit code (`exitCode(findings)`), Windows without pnpm's user
+agent, and that rustc, rustup and cargo run with `RUSTUP_AUTO_INSTALL=0`, so
+rustup never downloads the pinned toolchain while the doctor looks), run by
+the root `test:tools` script (`node --test "tools/*.test.mjs"`: Node 22
+loads a folder argument as a module); CI's jobs are not changed (§10.5 asks the coordinator
 whether to add it). `BUILDING.md`'s _Troubleshooting_ gains a paragraph
 pointing to it (additive, in a file the coordinator does not own;
 `check-build-docs.py` passes).
@@ -499,7 +502,7 @@ pointing to it (additive, in a file the coordinator does not own;
 ## 8. M3-7: a weekly job that follows `BUILDING.md`
 
 `.github/workflows/building.yml` (new; no existing job changes): weekly
-(Mondays, a minute unlike `weekly.yml`'s) and on `workflow_dispatch`, a
+(Tuesdays at 03:17 UTC; `weekly.yml` runs on Mondays) and on `workflow_dispatch`, a
 matrix of `debian:12` and `debian:13` containers on `ubuntu-24.04`. Each
 step extracts the shell blocks of `BUILDING.md`'s _Linux: Debian and
 Ubuntu_ section with `tools/building-steps.py` (new) and runs them in order,
@@ -630,9 +633,10 @@ In `EditorSession`'s constructor, the pipeline's options gain
 
 ### 10.5 `pnpm doctor`'s test in CI
 
-`ci.yml`'s or `desktop.yml`'s frontend job runs `node --test tools/` (or this
-branch's `pnpm test:tools`), if the coordinator wants it in CI; this branch
-does not change existing jobs.
+`ci.yml`'s or `desktop.yml`'s frontend job runs `pnpm test:tools`
+(`node --test "tools/*.test.mjs"`; `node --test tools/` fails on Node 22,
+which loads a folder argument as a module), if the coordinator wants it in
+CI; this branch does not change existing jobs.
 
 ### 10.6 Coordination with W3
 
@@ -847,7 +851,10 @@ crates changed, `cargo doc -D warnings` of `b2c-lang` and `b2c-core-wasm`,
 the workspace's tests, both clippy targets and the coverage gates in CI.
 TypeScript: every package's typecheck, lint and format check; the package's
 350 tests with the real core (`B2C_REQUIRE_WASM=1`); the desktop suite
-(2,283 tests); `node --test tools/` and `building-steps.py --self-test`;
+(2,283 tests); `building-steps.py --self-test`; the doctor's tests were
+recorded here as `node --test tools/`, which runs none on Node 22 (it loads
+the folder as a module and fails): the integration step made the script
+`node --test "tools/*.test.mjs"` (`a8ae92e`), and they pass;
 the four `tools/check-*.py`; markdownlint. E2E on Linux locally with the
 toolbox build: the whole suite at the default size (56 files, 215 passed,
 1 skipped) and the flows this branch touches (the worker, the M2 exit flow,
@@ -878,16 +885,21 @@ nightly gates a metric once its history has five baselines, which the
 * No file of the coordinator's list is changed except
   `crates/b2c-lang/src/query.rs` (additive: `ScopePoint`, `ScopeBlock`,
   `ScopeIndexParts`, `Analysis::scope_index_parts()` and one test; no
-  `lib.rs` change). Expected conflict there: none textual unless W3's
-  package F edits the end of the `impl Analysis` block or the test module's
-  end, both of which this branch appends to.
+  `lib.rs` change). A textual conflict there is certain against W3's R0
+  (`e81b8f4`), which adds `fn shared_symbols` right after the end of `impl
+  Analysis`, where this branch adds its types: keep both (their order does
+  not matter), then run `b2c-lang`'s tests. (Resolved so in the merge
+  `5078e61`.)
 * Files outside this branch's own list: `apps/desktop/src/editor/sync/drag.test.ts`
   (its stand-in answer's `scope` key), `apps/desktop/src/lib/timing.ts`
   (three spans and `recordSpan`), `apps/desktop/src/app/panels.test.tsx`
   and `src/panels/types.ts` (the compact map; `panels/` is this branch's
   for M3-5), `apps/desktop/src/e2e/{contract,index}.ts` and
   `vite.config.ts` (the flag's wording), `apps/desktop/e2e/specs/flows/{selection.e2e.ts,README.md}`
-  (the kept _create_ block; the flows table), the root `package.json`
+  (the kept _create_ block; the flows table, which Prettier re-pads whole
+  once the `preview-worker` row is wider: merged with W4's new
+  `editor-tools` row and changed `typed-slots` row, the table is formatted
+  again with Prettier, as in the merge `116a5d4`), the root `package.json`
   (`doctor`, `test:tools`) and `BUILDING.md` (a paragraph in
   Troubleshooting).
 * W4's `EditorWorkspace.tsx` still says, in a comment, that the worker is
