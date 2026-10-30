@@ -1095,11 +1095,19 @@ describe('the toolbox and the editor mode (w4-editor-tools.md §2.1)', () => {
         .find((block) => block.type === 'coll.add')
         ?.inputList[0]?.fieldRow[0]?.getText();
     expect(firstText()).toBe('add');
+    const toolbox = workspace.getToolbox();
+    if (!(toolbox instanceof B2cContinuousToolbox)) {
+      throw new Error('no continuous toolbox');
+    }
+    const builds = vi.spyOn(toolbox, 'flyoutContents');
     // The editor sets the blocks' mode first (gating's installLabelMode), then the store changes.
     setBlockLabelMode('cpp');
     setEditorSettings({ blockLabels: 'cpp', showAdvanced: false });
     await settle();
     expect(firstText()).not.toBe('add');
+    // Rebuilt once, not once for the new definition and again for the refresh.
+    expect(builds).toHaveBeenCalledTimes(1);
+    builds.mockRestore();
   });
 
   it('keeps its blocks when a toolchain is found and nothing it shows changes', async () => {

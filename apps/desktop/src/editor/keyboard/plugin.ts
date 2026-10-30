@@ -196,6 +196,19 @@ function releaseConnectionFocus(workspace: Blockly.WorkspaceSvg): void {
   }
 }
 
+/** The announcer of each workspace with the keyboard plugin attached. */
+const ANNOUNCERS = new WeakMap<Blockly.Workspace, Announcer>();
+
+/**
+ * Says `text` in the polite live region of `workspace`'s keyboard plugin (what another editor tool
+ * did, such as Quick Insert's *Inserted “print”*); false when the plugin is not attached.
+ */
+export function announceOn(workspace: Blockly.Workspace, text: string): boolean {
+  const announcer = ANNOUNCERS.get(workspace);
+  announcer?.announce(text);
+  return announcer !== undefined;
+}
+
 /** The keyboard plugin with its dependencies replaced (see {@link KeyboardPluginOptions}). */
 export function createKeyboardPlugin(options: KeyboardPluginOptions = {}): EditorPlugin {
   return {
@@ -206,6 +219,7 @@ export function createKeyboardPlugin(options: KeyboardPluginOptions = {}): Edito
         canvas: CANVAS_DESCRIPTION,
         flyout: FLYOUT_DESCRIPTION,
       });
+      ANNOUNCERS.set(workspace, announcer);
       const keyboard = new EditorKeyboard({ workspace, announcer, names: symbolNames(ctx.store) });
       const undoTrees = prepareTrees(keyboard);
       const stopListening = listen(keyboard);
@@ -229,6 +243,7 @@ export function createKeyboardPlugin(options: KeyboardPluginOptions = {}): Edito
         uninstallShortcuts();
         stopListening();
         undoTrees();
+        ANNOUNCERS.delete(workspace);
         announcer.dispose();
       };
     },

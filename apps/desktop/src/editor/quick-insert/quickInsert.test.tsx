@@ -24,6 +24,7 @@ import {
   storeAnalysis,
   symbolFixture,
 } from '../toolbox/testing';
+import { createKeyboardPlugin } from '../keyboard/plugin';
 import { QuickInsert } from './QuickInsert';
 import { SEARCH_DELAY_MS, ToolboxSearch } from './ToolboxSearch';
 import { QUICK_INSERT_IDS, openQuickInsertOn, quickInsertPlugin } from './plugin';
@@ -109,6 +110,9 @@ describe('Quick Insert', () => {
       Blockly.ShortcutRegistry.registry.getRegistry()[QUICK_INSERT_IDS.shortcut],
     ).toBeDefined();
     expect(
+      Blockly.ShortcutRegistry.registry.getRegistry()[QUICK_INSERT_IDS.searchShortcut],
+    ).toBeDefined();
+    expect(
       Blockly.ContextMenuRegistry.registry.getItem(QUICK_INSERT_IDS.canvasMenu),
     ).not.toBeNull();
     expect(workspace).toBeDefined();
@@ -117,6 +121,9 @@ describe('Quick Insert', () => {
     }
     expect(
       Blockly.ShortcutRegistry.registry.getRegistry()[QUICK_INSERT_IDS.shortcut],
+    ).toBeUndefined();
+    expect(
+      Blockly.ShortcutRegistry.registry.getRegistry()[QUICK_INSERT_IDS.searchShortcut],
     ).toBeUndefined();
   });
 
@@ -169,6 +176,50 @@ describe('Quick Insert', () => {
     expect(first?.type).toBe('var.declare');
     expect(first?.getFieldValue('NAME')).toBe('total');
     expect(first?.getNextBlock()?.id).toBe('decl');
+  });
+
+  it('inserts at the connection the keyboard cursor is on, as one undo step, and says so', async () => {
+    const workspace = attached();
+    detachers.push(
+      createKeyboardPlugin({ matchMedia: null }).attach(editorContext(workspace, fakeCore({}))),
+    );
+    await settle();
+    const print = workspace.getBlockById('print');
+    if (
+      !(print instanceof Blockly.BlockSvg) ||
+      !(print.nextConnection instanceof Blockly.RenderedConnection)
+    ) {
+      throw new Error('no print block');
+    }
+    Blockly.getFocusManager().focusNode(print.nextConnection);
+    const box = openAndType(workspace, 'int total = 5');
+    fireEvent.keyDown(box, { key: 'Enter' });
+    const added = workspace.getBlockById('print')?.getNextBlock();
+    expect(added?.type).toBe('var.declare');
+    expect(added?.getFieldValue('NAME')).toBe('total');
+    const announcer = workspace
+      .getInjectionDiv()
+      .querySelector('[data-testid="keyboard-announcer"] [role="status"]');
+    expect(announcer?.textContent.trim()).toBe('Inserted “create total”');
+    await settle();
+    workspace.undo(false);
+    expect(workspace.getBlockById(added?.id ?? '')).toBeNull();
+    expect(workspace.getBlockById('print')?.getNextBlock()).toBeNull();
+  });
+
+  it('inserts a value into the selected block’s first empty value input', async () => {
+    const workspace = attached();
+    await settle();
+    const fn = workspace.getBlockById('fn');
+    if (!(fn instanceof Blockly.BlockSvg)) {
+      throw new Error('no define block');
+    }
+    Blockly.common.setSelected(fn);
+    const box = openAndType(workspace, 'sqrt');
+    fireEvent.keyDown(box, { key: 'Enter' });
+    const added = fn.getInputTargetBlock('DEFAULT0');
+    expect(added).not.toBeNull();
+    expect(added?.getParent()?.id).toBe('fn');
   });
 
   it('says it reads simple lines only, moves with the arrows and closes on Escape', async () => {

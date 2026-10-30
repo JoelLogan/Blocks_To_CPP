@@ -9,6 +9,7 @@
 import * as Blockly from 'blockly/core';
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
+import { announceOn } from '../keyboard/plugin';
 import { MAX_RESULTS, searchBlocks } from '../search';
 import { insertBlock } from './insert';
 import { parseLine } from './parseLine';
@@ -21,6 +22,8 @@ interface Result {
   readonly item: B2cBlockInfo;
   readonly title: string;
   readonly detail: string;
+  /** What is announced once it is inserted: *Inserted “…”*. */
+  readonly name: string;
 }
 
 /** The note shown when a line looks like a statement but is not one Quick Insert reads. */
@@ -58,10 +61,15 @@ export function QuickInsert({ workspace }: { readonly workspace: Blockly.Workspa
     const out: Result[] = [];
     const line = parseLine(query, shown.names);
     if (line !== null) {
-      out.push({ item: line.item, title: query.trim(), detail: `Insert “${line.title}”` });
+      out.push({
+        item: line.item,
+        title: query.trim(),
+        detail: `Insert “${line.title}”`,
+        name: line.title,
+      });
     }
     for (const entry of searchBlocks(shown.entries, query, MAX_RESULTS)) {
-      out.push({ item: entry.item, title: entry.title, detail: entry.category });
+      out.push({ item: entry.item, title: entry.title, detail: entry.category, name: entry.title });
     }
     return out;
   }, [shown, query]);
@@ -91,6 +99,7 @@ export function QuickInsert({ workspace }: { readonly workspace: Blockly.Workspa
       return;
     }
     close(false);
+    announceOn(workspace, `Inserted “${result.name}”`);
   };
 
   const listId = `${baseId}-list`;
