@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   check,
   compareVersions,
+  exitCode,
   parseVersion,
   readPins,
   REPO_ROOT,
@@ -95,6 +96,29 @@ test("reports a computer with everything as BUILDING.md has it", async () => {
   assert.match(report(findings), /BUILDING\.md has the steps\.$/);
 });
 
+test("never lets rustup install the pinned toolchain while it looks", async () => {
+  const asked = new Map();
+  const exec = (command, args, options) => {
+    asked.set([command, ...args].join(" "), options);
+    return null;
+  };
+  await check({
+    exec,
+    platform: "linux",
+    nodeVersion: "22.14.0",
+    userAgent: "",
+  });
+  for (const command of [
+    "rustc --version",
+    "rustup target list --installed",
+    "cargo install --list",
+  ]) {
+    assert.ok(asked.has(command), command);
+    assert.equal(asked.get(command)?.env?.RUSTUP_AUTO_INSTALL, "0", command);
+    assert.equal(asked.get(command)?.cwd, REPO_ROOT, command);
+  }
+});
+
 test("reports problems with their fixes, and what is optional as warnings", async () => {
   const pins = readPins(REPO_ROOT);
   const answers = {
@@ -133,6 +157,13 @@ test("reports problems with their fixes, and what is optional as warnings", asyn
   const text = report(findings);
   assert.match(text, /^PROBLEM {2}Rust: 1\.80\.0/m);
   assert.match(text, /problems? to fix first/);
+  assert.equal(exitCode(findings), 1);
+  // Warnings alone do not fail it.
+  assert.equal(
+    exitCode(findings.filter((finding) => finding.level !== "problem")),
+    0,
+  );
+  assert.equal(exitCode([]), 0);
 });
 
 test("on Windows, run on its own, asks to be run as pnpm doctor for pnpm", async () => {

@@ -143,6 +143,12 @@ export async function check({
   userAgent = process.env.npm_config_user_agent ?? "",
 } = {}) {
   const exe = (name) => (platform === "win32" ? `${name}.exe` : name);
+  // rustc, rustup and cargo are rustup's proxies, which by default install the toolchain
+  // rust-toolchain.toml pins when it is missing: a download, the very case to report.
+  const rustup = {
+    cwd: root,
+    env: { ...process.env, RUSTUP_AUTO_INSTALL: "0" },
+  };
   const pins = readPins(root);
   /** @type {Finding[]} */
   const findings = [];
@@ -168,15 +174,17 @@ export async function check({
     }),
   );
 
-  const rustc = exec(exe("rustc"), ["--version"], { cwd: root });
+  const rustc = exec(exe("rustc"), ["--version"], rustup);
   findings.push(
     versionFinding("Rust", rustc, pins.rust ?? "0", {
       fix: `rustup toolchain install (from the repository; ${BUILDING}, steps 2 and 4)`,
     }),
   );
-  const installed = exec(exe("rustup"), ["target", "list", "--installed"], {
-    cwd: root,
-  });
+  const installed = exec(
+    exe("rustup"),
+    ["target", "list", "--installed"],
+    rustup,
+  );
   for (const target of pins.targets) {
     findings.push(
       installed !== null && installed.split(/\r?\n/).includes(target)
@@ -251,7 +259,7 @@ export async function check({
   // tauri-driver has no --version; Cargo lists what it installed.
   const driver =
     /^tauri-driver v(\S+):/m.exec(
-      exec(exe("cargo"), ["install", "--list"]) ?? "",
+      exec(exe("cargo"), ["install", "--list"], rustup) ?? "",
     )?.[1] ?? null;
   findings.push(
     driver === null
@@ -339,10 +347,13 @@ export function report(findings) {
   return lines.join("\n");
 }
 
+/** The exit code for `findings`: 1 when one is a problem, 0 otherwise (warnings included). */
+export function exitCode(findings) {
+  return findings.some((finding) => finding.level === "problem") ? 1 : 0;
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const findings = await check();
   process.stdout.write(`${report(findings)}\n`);
-  process.exitCode = findings.some((finding) => finding.level === "problem")
-    ? 1
-    : 0;
+  process.exitCode = exitCode(findings);
 }
