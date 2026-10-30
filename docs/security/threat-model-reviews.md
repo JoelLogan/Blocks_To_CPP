@@ -567,6 +567,18 @@ fixed the same day.
   plugin's `rfd` from `Cargo.lock` and fails when it is a release not known
   to need the doubling, so the doubling goes when the plugin moves to
   `rfd` 0.16.1, where a doubled `%` would show as two.
+- *2026-10-30:* the plugin's `rfd` is 0.16.1, which passes the text as an
+  argument; the doubling is gone, and a test
+  (`the_plugins_rfd_shows_a_message_as_text`) pins the plugin's `rfd` to the
+  releases known to do this (0.17.2 does not, so `tauri-plugin-dialog` 2.8.4,
+  which moves to `rfd` 0.17, is not taken as it is); a second test checks
+  that the trust dialog's text keeps each `%` as typed. Checked on Linux
+  (Xvfb, GTK 3.24) with a scratch program that shows the trust dialog's
+  text through `rfd`'s GTK 3 message dialog, as the plugin does, for a
+  project named `%s%s%n` in `/home/ada/%x%x` with the library `lib%d`: with
+  0.16.1 the dialog showed each name as typed, one `%` each, and closed
+  cleanly on Escape; with 0.16.0 the same program crashed (SIGSEGV) before
+  the dialog appeared, and showed the dialog when the names held no `%`.
 
 Apart from TM-M2-9, no finding of this review is a vulnerability that a
 project file, a clipboard payload or a web page can exploit.

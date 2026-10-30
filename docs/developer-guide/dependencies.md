@@ -71,8 +71,8 @@ to the Cargo workspace.
 | -------------------------------------------- | -------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tauri`                                      | 2.12.4 (2026-10-14)  | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../adr/0001-desktop-shell-tauri.md))                                                                                                                                                                                                                                                                                                                  |
 | `tauri-build` (build)                        | 2.7.3 (2026-10-14)   | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources. 2.7.3 replaced its own module that links the C runtime statically into Windows MSVC builds with the `static_vcruntime` crate 3.0.0 (2025-11-25; MIT OR Apache-2.0 OR Zlib, no dependencies, build time only)                                                                                                          |
-| `tauri-plugin-dialog`                        | 2.8.3 (2026-10-14)   | Apache-2.0 OR MIT | Native open, save and message dialogs, from Rust only (no JavaScript permission). Default features off except `gtk3`: rfd 0.16.0's GTK 3 backend on Linux, no XDG portal and no D-Bus. Brings `tauri-plugin-fs` 2.7.1 (for its `FilePath` type; the fs plugin is not registered)                                                                                                    |
-| `rfd` (Windows only)                         | 0.17.2 (2026-01-12)  | MIT               | The Windows trust dialog with _Stay in Restricted Mode_ as its first and default button (08 §8.3.1). No default features (no XDG portal or Wayland code), `common-controls-v6`. A newer release than the dialog plugin's 0.16.0, so Windows builds compile both (see the notes); its `windows-sys` 0.61.2 is already in the lockfile                                                |
+| `tauri-plugin-dialog`                        | 2.8.3 (2026-10-14)   | Apache-2.0 OR MIT | Native open, save and message dialogs, from Rust only (no JavaScript permission). Default features off except `gtk3`: rfd 0.16.1's GTK 3 backend on Linux, no XDG portal and no D-Bus. Brings `tauri-plugin-fs` 2.7.1 (for its `FilePath` type; the fs plugin is not registered)                                                                                                    |
+| `rfd` (Windows only)                         | 0.17.2 (2026-01-12)  | MIT               | The Windows trust dialog with _Stay in Restricted Mode_ as its first and default button (08 §8.3.1). No default features (no XDG portal or Wayland code), `common-controls-v6`. A newer release than the dialog plugin's 0.16.1, so Windows builds compile both (see the notes); its `windows-sys` 0.61.2 is already in the lockfile                                                |
 | `tracing-subscriber`                         | 0.3.23 (2026-03-13)  | MIT               | The span registry under the app's own JSON-lines log layer. Features `registry` and `std` only: no `fmt`, ANSI, `log` bridge or `EnvFilter`                                                                                                                                                                                                                                         |
 | `notify` (through `b2c-app`)                 | 8.2.0 (2025-08-03)   | CC0-1.0           | The file watcher of open projects (05 §5.10): inotify on Linux, `ReadDirectoryChangesW` on Windows, one non-recursive watch per project folder. No default features (no macOS FSEvents). Its events only wake the backend's own 300 ms debounce and SHA-256 check                                                                                                                   |
 | `tracing` (through `b2c-build`, `b2c-app`)   | 0.1.44 (2025-12-18)  | MIT               | Structured logging with a span per build and run session (09 §9.1, 08 §8.11). No default features (`std` only): no `log` bridge and no attribute macros. Already in the lockfile through Tauri                                                                                                                                                                                      |
@@ -187,16 +187,17 @@ build needs.
   features and moved to `windows-sys` 0.61. Windows builds compile both copies, Linux builds only
   the plugin's. The plugin converts only its own release's answers, so `src-tauri/src/dialogs.rs`
   converts 0.17's itself (`from_rfd`). The copies become one when the plugin moves to 0.17. The
-  plugin's copy brings `windows-sys` 0.60.2 on Windows, which `notify` uses too.
-- **`rfd` 0.16.0's GTK 3 message dialog** hands its text to
-  `gtk_message_dialog_format_secondary_text` as a printf format, so a `%` in a project's name,
-  folder or library names would be read as a conversion when the trust dialog opens.
-  `src-tauri/src/dialogs.rs` doubles every `%` of a message on Linux (`plugin_message_text`).
-  `rfd` 0.16.1 (2026-10-22 21:30 UTC) passes the text as an argument and fits the plugin's `^0.16`;
-  it is old enough on 2026-10-29. Update it with `cargo update -p rfd@0.16.0 --precise 0.16.1` and
-  remove the doubling then, or every `%` shows twice; a test in `dialogs.rs` fails once the
-  plugin's `rfd` is another release than 0.16.0 or 0.17.2. `rfd` 0.17.2 still hands the text to
-  GTK as the format, so the plugin moving to 0.17 is no reason to remove the doubling.
+  plugin's copy, 0.16.1 since 2026-10-30, brings `windows-sys` 0.60.2 on Windows, which `notify`
+  uses too.
+- **`rfd`'s GTK 3 message dialog and `%`:** 0.16.0 handed a message dialog's text to
+  `gtk_message_dialog_format_secondary_text` as its printf format, so a `%` in a project's name,
+  folder or library names was read as a conversion when the trust dialog opened (TM-M2-9).
+  `rfd` 0.16.1 (2026-10-22 21:30 UTC), the plugin's copy since 2026-10-30, passes the text as an
+  argument after a `"%s"` format, so `src-tauri/src/dialogs.rs` passes the text unchanged (the
+  doubling of every `%` it did with 0.16.0 is gone). A test in `dialogs.rs` fails once the
+  plugin's locked `rfd` is any release other than 0.16.1. `rfd` 0.17.2 still uses the text as the
+  format (the fix is unreleased on the 0.17 line), so the plugin moving to 0.17
+  (`tauri-plugin-dialog` 2.8.4) needs the doubling back, or an `rfd` 0.17 release with the fix.
 - **`lazy_static` 1.5.0** (through `tracing-subscriber`'s `sharded-slab`): 1.5.1 was less than 7
   days old when it was added. It is old enough now (2026-10-01), but it changes no code and, being
   a transitive crate, is in no Dependabot pull request, so it waits for a later Cargo update.

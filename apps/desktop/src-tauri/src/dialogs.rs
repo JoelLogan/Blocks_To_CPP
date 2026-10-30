@@ -23,11 +23,8 @@
 //! (or Stay in Restricted Mode), never a panic.
 //!
 //! The trust dialog's text comes from [`trust_dialog_text`], built by the
-//! backend from its own parsed copy of the project. The text of a message
-//! dialog shown through the plugin goes through [`plugin_message_text`]
-//! first.
+//! backend from its own parsed copy of the project.
 
-use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{SyncSender, sync_channel};
 
@@ -103,7 +100,7 @@ impl<R: Runtime> NativeDialogs<R> {
             return false;
         };
         let mut builder = dialog
-            .message(plugin_message_text(message))
+            .message(message)
             .title(title)
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::OkCancelCustom(
@@ -239,7 +236,7 @@ impl<R: Runtime> NativeDialogs<R> {
         };
         let [project, folder, restricted] = TrustChoice::LABELS.map(|(_, label)| label.to_owned());
         let mut builder = dialog
-            .message(plugin_message_text(body))
+            .message(body)
             .title(title)
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::YesNoCancelCustom(
@@ -290,49 +287,6 @@ fn from_rfd(result: rfd::MessageDialogResult) -> MessageDialogResult {
         rfd::MessageDialogResult::Ok => MessageDialogResult::Ok,
         rfd::MessageDialogResult::Cancel => MessageDialogResult::Cancel,
         rfd::MessageDialogResult::Custom(label) => MessageDialogResult::Custom(label),
-    }
-}
-
-/// The text of a message dialog shown through the plugin, made safe for
-/// the dialog library that shows it.
-///
-/// On Linux the plugin's `rfd` 0.16.0 hands the text to GTK's
-/// `gtk_message_dialog_format_secondary_text` as its printf format, so each
-/// `%` in it would be read as a conversion. The trust dialog's text names the
-/// project, its folder and its libraries, all chosen by whoever made the
-/// project, and the "Replace file?" question names a file: a project named
-/// `%s%s%n` could crash the app, or worse, as the dialog opens. Doubling
-/// every `%` makes GTK show one. Elsewhere ([`GTK_DIALOGS`] false: Windows)
-/// the text is shown as it is.
-///
-/// `rfd` 0.16.1 passes the text as an argument instead, and then a doubled
-/// `%` would show as two: this must go when the lockfile moves the plugin's
-/// `rfd` to 0.16.1, which a test below checks. `rfd` 0.17.2 still hands it
-/// over as the format, so the plugin moving to 0.17 is no reason to drop it.
-fn plugin_message_text(text: &str) -> Cow<'_, str> {
-    if GTK_DIALOGS {
-        printf_literal(text)
-    } else {
-        Cow::Borrowed(text)
-    }
-}
-
-/// Whether `rfd` shows message dialogs with GTK 3 on this system (its
-/// `gtk3` backend's systems).
-const GTK_DIALOGS: bool = cfg!(any(
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "dragonfly",
-    target_os = "netbsd",
-    target_os = "openbsd"
-));
-
-/// `text` as a printf format that prints `text` itself: every `%` doubled.
-fn printf_literal(text: &str) -> Cow<'_, str> {
-    if text.contains('%') {
-        Cow::Owned(text.replace('%', "%%"))
-    } else {
-        Cow::Borrowed(text)
     }
 }
 
@@ -511,18 +465,28 @@ mod tests {
         }
     }
 
-    /// A `%` in a dialog's text is shown as a `%`, never read as a printf
-    /// conversion by GTK (Linux): the trust dialog of a project named
-    /// `%s%s%n` passes the name with every `%` doubled.
+    /// Linux shows the plugin's message dialogs with `rfd`'s GTK 3 backend,
+    /// and the text goes to it as typed. `rfd` 0.16.0 and 0.17.2 hand it to
+    /// `gtk_message_dialog_format_secondary_text` as its printf format
+    /// (TM-M2-9); 0.16.1 passes it as an argument after a `"%s"` format. Fails
+    /// when the lockfile moves the plugin to any other release.
     #[test]
-    fn a_percent_sign_in_a_message_is_never_a_printf_conversion() {
-        assert_eq!(printf_literal("Project: %s%s%n"), "Project: %%s%%s%%n");
-        assert_eq!(printf_literal("100% %%"), "100%% %%%%");
-        assert!(matches!(
-            printf_literal("no percent"),
-            Cow::Borrowed("no percent")
-        ));
+    fn the_plugins_rfd_shows_a_message_as_text() {
+        const ARGUMENT_RELEASES: [&str; 1] = ["0.16.1"];
+        let rfd = plugin_rfd_version(include_str!("../../../../Cargo.lock"));
+        assert!(
+            ARGUMENT_RELEASES.contains(&rfd.as_str()),
+            "the dialog plugin's rfd is now {rfd}: read its src/backend/gtk3/message_dialog.rs; if \
+             gtk_message_dialog_format_secondary_text gets the text after a \"%s\" format, add {rfd} \
+             here; if the text is the format (0.16.0 and 0.17.2 do that), every % must be doubled \
+             again (TM-M2-9)"
+        );
+    }
 
+    /// A `%` in the trust dialog's text is passed on as typed: nothing between
+    /// the prompt and the plugin rewrites it (a doubled `%` would now show as two).
+    #[test]
+    fn a_percent_sign_reaches_the_dialog_as_typed() {
         let prompt = TrustPrompt {
             project_name: String::from("%s%s%n"),
             folder_display: String::from("/home/ada/%x%x"),
@@ -532,35 +496,10 @@ mod tests {
             mark_of_the_web: false,
         };
         let (_, body) = trust_dialog_text(&prompt);
-        let shown = plugin_message_text(&body);
-        if GTK_DIALOGS {
-            assert!(shown.contains("Project: %%s%%s%%n"), "{shown}");
-            assert!(shown.contains("Folder: /home/ada/%%x%%x"), "{shown}");
-            assert!(shown.contains("Libraries: lib%%d"), "{shown}");
-            // Read back as GTK reads a format, it is the body again.
-            assert_eq!(shown.replace("%%", "%"), body);
-        } else {
-            assert_eq!(shown, body);
-        }
-        // The systems the app is built for: GTK on Linux, not on Windows.
-        assert_eq!(GTK_DIALOGS, cfg!(target_os = "linux"));
-    }
-
-    /// The doubling above is for the `rfd` releases that hand a message to
-    /// GTK as its printf format: 0.16.0, which the dialog plugin brings, and
-    /// 0.17.2. `rfd` 0.16.1 passes the text as an argument, so once the
-    /// lockfile moves the plugin to it a doubled `%` would show as two: then
-    /// remove [`plugin_message_text`]'s doubling, and this test.
-    #[test]
-    fn the_percent_doubling_matches_the_locked_rfd() {
-        const FORMAT_RELEASES: [&str; 2] = ["0.16.0", "0.17.2"];
-        let rfd = plugin_rfd_version(include_str!("../../../../Cargo.lock"));
-        assert!(
-            FORMAT_RELEASES.contains(&rfd.as_str()),
-            "the dialog plugin's rfd is now {rfd}: if its GTK 3 message dialog passes the text \
-             as an argument (0.16.1 does), remove the doubling of % in plugin_message_text and \
-             this test; if it still passes the text as the printf format, add {rfd} here"
-        );
+        assert!(body.contains("Project: %s%s%n\n"), "{body}");
+        assert!(body.contains("Folder: /home/ada/%x%x\n"), "{body}");
+        assert!(body.contains("Libraries: lib%d\n"), "{body}");
+        assert!(!body.contains("%%"), "{body}");
     }
 
     /// The version of `rfd` that `tauri-plugin-dialog` uses in `lock` (a
