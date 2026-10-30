@@ -489,6 +489,7 @@ of §2.1 are the values to write. `E0703` (06 §6.10) reads the same keys.
 | W4E-5 | Where the friendly g++ messages are made | In the frontend, from `raw` and the option, so the backend's messages and the IPC stay as they are; moved into `b2c-build` if the CLI should show them too |
 | W4E-6 | The bug report's default | Nothing from the project unless ticked; quoted names and paths always replaced |
 | W4E-7 | The type picker's first view | *Common*, *My types*, *Collections*; a search box focused |
+| W4E-8 | Toolbox search's field | Shown on demand (`Ctrl+F`, *Search blocks…*), over the toolbox, rather than always above it (§2.4: Blockly's toolbox DOM and focus, and every canvas scene would move) |
 
 ## 11. Coordination with W3
 
@@ -509,4 +510,76 @@ this branch changed there, so W3's packages build on it.
 
 ## 12. Status
 
-In progress.
+On `m3/w4-editor-tools`, from `8a3d8ec`, on 2026-10-28 to 2026-10-30.
+
+**Done.**
+
+* The contract (`f507c6e`; corrected as built in `40d131b`, with §11's
+  answers to W3).
+* Gating in W2's blocks (`abb3689`): C++ labels (layouts from the C++
+  template where it names each part once and the block has no mutator
+  parts; C++ option texts; C++ type names), `EditorSession.relabel()`, the
+  toolbox hiding what the gate refuses and following the mode, and the
+  audit of every catalog block, option and type (`BASIC_*` and the rows of
+  §2.1). AWAITED keeps `block:text.format` (the coordinator's, §7) and the
+  M4 categories.
+* The type picker (`d06e793`), Quick Insert and toolbox search
+  (`6192152`), quick fixes (`9bff391`), the friendly g++ messages and
+  *Copy bug report* (`ad7361e`), the E2E flow and the fixes it and CI found
+  (`167de44`, `ee2d2a2`).
+
+**Not done, and why.**
+
+* Quick Insert reads a fixed set of one-liners (W4E-4); full statement
+  parsing waits for expression slots and a parser call in
+  `b2c-core-wasm` (W5's).
+* The catalog's `advanced`/`requires` keys and the spec sections (§6.1,
+  §9): the coordinator's paths.
+* The ⚙ popover, *format … with* and the `[]` index: the coordinator's
+  (§7 lists what the editor needs).
+* The friendly rules are checked against GCC 13's messages (recorded) and
+  the wording GCC 11 and 15 use for the same options; no GCC 11 or 15 was
+  installed here to record them.
+* The E0201 fix creates an `int` (the analysis no longer knows the
+  variable's type).
+
+**Checks.** Locally: `pnpm -r` typecheck, lint and format; blockly-ext
+Vitest (473); desktop Vitest with coverage and two workers (2,337 passed;
+four toolbox and mover tests timed out at the 20 s flyout limit under that
+load and pass on their own, 62 of 62); `test:isolation`; the four
+`tools/check-*.py`; markdownlint. No Rust changed, so the Rust checks are
+CI's (green on `6192152`). The WASM core was built without wasm-opt. E2E
+under xvfb: `editor-tools` at the default size, 1024 × 768 and 800 × 560
+(4 of 4 each); `typed-slots`, `control`, `errors`, `structs-enums`,
+`functions-globals`, `editor`, `settings`, `appearance` and `clipboard` at
+1024 × 768 and 800 × 560 (17 of 17 each); `typed-slots` also at the
+default size.
+
+**CI.** On `ad7361e`: CI green; Desktop failed the frontend tests (the
+panels loaded Blockly) and, on Linux, the `typed-slots` and `selection`
+flows, all three fixed in `167de44` and `ee2d2a2`, and the visual diff
+(below). On `ee2d2a2`: running when this was written; the next commit records it.
+
+**Visual diff, for the coordinator to rebaseline** (no baseline was
+updated). *use header* and *check at compile time* are advanced now
+(W4E-1), so the Program flyout loses them and the toolbox shown at start
+changes: `canvas-guessing-game`, `chrome-menu-open`,
+`chrome-toolbox-program` and `chrome-window-smallest`, light and dark, on
+Linux, and expectedly the same on Windows. The C++ mode is off by default
+and toolbox search shows only on demand, so no other scene changes.
+
+**Merge notes.**
+
+* Files outside this contract's list: `apps/desktop/src/app/panels.tsx`
+  (the Problems panel's fixes and bug report), `app/quickFixes.ts` (new),
+  `app/editorPlugins.ts` and `app/features.test.ts` (the two plugins),
+  `e2e/specs/flows/typed-slots.e2e.ts`, `e2e/specs/flows/lib/editor.ts`
+  (`choosePickerType`) and the flows README.
+* `packages/blockly-ext/src/fields/type.ts` changed (the picker; §6.2,
+  §11 row 6); `blocks/layout.ts` and `register.ts` changed (§11 row 3).
+* Expected conflicts: `toolbox/contents.ts` and `toolbox/plugin.ts` if W3
+  or W5 changed them (keep `contextMode`, `withLabelMode`, the mode in
+  `dynamicContentsKey`, and the plugin's definition comparison);
+  `EditorWorkspace.tsx` (the label mode and the portal's children);
+  `gating/table.ts` gains a row or a `BASIC_BLOCKS` entry for every new
+  block.
