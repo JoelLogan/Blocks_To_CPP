@@ -289,6 +289,39 @@ describe('toolbox search', () => {
     expect(flyoutGetters(workspace)).toEqual(['s_total']);
   });
 
+  it('is a labelled search field that passes axe and works with the keyboard', async () => {
+    const workspace = attached();
+    await settle();
+    render(<ToolboxSearch workspace={workspace} />);
+    act(() => {
+      openToolboxSearch(workspace);
+    });
+    const region = screen.getByRole('search', { name: 'Toolbox search' });
+    const field = screen.getByRole('searchbox', { name: 'Search blocks' });
+    expect(document.activeElement).toBe(field);
+    // ArrowDown with nothing typed stays in the field.
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(field);
+    fireEvent.change(field, { target: { value: 'sqrt' } });
+    await act(() => new Promise((resolve) => setTimeout(resolve, SEARCH_DELAY_MS + 50)));
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('1 block');
+    expect(field.getAttribute('aria-describedby')).toBe(status.id);
+    await expectNoAxeViolations(region);
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    expect(Blockly.getFocusManager().getFocusedTree()).toBe(workspace.getToolbox());
+    act(() => {
+      openToolboxSearch(workspace);
+    });
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search blocks' }), {
+      key: 'Escape',
+    });
+    expect(toolboxSearchOpen()).toBeNull();
+    expect(screen.queryByTestId('toolbox-search')).toBeNull();
+    expect(toolboxSearch(workspace)?.query()).toBeNull();
+    expect(Blockly.getFocusManager().getFocusedTree()).toBe(workspace);
+  });
+
   it('updates its status when the results are built again', async () => {
     const workspace = attached();
     await settle();
