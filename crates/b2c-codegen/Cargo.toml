@@ -21,6 +21,9 @@ tempfile.workspace = true
 b2c-model.workspace = true
 b2c-catalog.workspace = true
 b2c-lang.workspace = true
+# W3's multi-module programs (src/lower/w3_tests.rs) are written as project
+# JSON.
+serde_json.workspace = true
 
 [lints]
 workspace = true

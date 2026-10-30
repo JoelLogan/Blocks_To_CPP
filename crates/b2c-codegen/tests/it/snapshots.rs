@@ -931,13 +931,19 @@ fn helpers_compile_under_every_supported_standard() {
     }
 }
 
+/// The helpers' placement follows the module count, not the option
+/// (w3-modules.md §1.2): a single-module program keeps them inline.
 #[test]
-fn header_placement() {
-    let options = CodegenOptions {
+fn header_placement_is_ignored() {
+    let header = CodegenOptions {
         helper_placement: HelperPlacement::Header,
         ..options("Guessing Game")
     };
-    check_with("header_placement", &examples::guessing_game(), &options);
+    let program = examples::guessing_game();
+    assert_eq!(
+        generate_checked(&program, &header),
+        generate_checked(&program, &options("Guessing Game"))
+    );
 }
 
 #[test]
@@ -950,6 +956,9 @@ fn style_options() {
     check_with("style_options", &examples::guessing_game(), &options);
 }
 
+/// From two modules on, the helpers are in `b2c_support.hpp` whatever
+/// `helper_placement` says, and each module's code that is not shared is in
+/// its anonymous namespace (w3-modules.md §1.7).
 #[test]
 fn two_modules_share_the_support_header() {
     let b = Builder::new();

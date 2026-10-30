@@ -11,7 +11,7 @@
 
 use b2c_ir::sast::Origin;
 use b2c_ir::source_map::{MappedRange, Position};
-use b2c_ir::text::{CharLit, Comment, Ident, NumLit, StrLit};
+use b2c_ir::text::{CharLit, Comment, FileStem, Ident, NumLit, StrLit};
 
 /// Builds one generated file.
 #[derive(Debug)]
@@ -105,6 +105,12 @@ impl Printer {
     /// Writes an identifier.
     pub(crate) fn ident(&mut self, ident: &Ident) {
         self.write_raw(ident.as_str());
+    }
+
+    /// Writes a file stem (`[a-z][a-z0-9_-]{0,63}`, never a device name), as
+    /// in `#include "utils.hpp"`.
+    pub(crate) fn stem(&mut self, stem: &FileStem) {
+        self.write_raw(stem.as_str());
     }
 
     /// Writes a string literal through its encoder.

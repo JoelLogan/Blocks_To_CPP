@@ -1072,10 +1072,27 @@ pub(crate) struct CEnum {
     /// `operator<<` (the enum is printed or written) and `to_string` (it is
     /// joined), printed after the definition.
     pub(crate) functions: Vec<CGenerated>,
+    /// The user namespaces it is in, outermost first: `b2c::to_text` is
+    /// printed at global scope and names the enum through them
+    /// (w3-modules.md §1.7). Empty at global scope.
+    pub(crate) scope: Vec<Ident>,
     /// The defining block.
     pub(crate) origin: Origin,
     /// The block's comment.
     pub(crate) comment: Option<Comment>,
+}
+
+impl CEnum {
+    /// The enum's name as code at global scope spells it: through its user
+    /// namespaces (`geo::Colour`), or plainly (`Colour`), also for an enum
+    /// of the anonymous namespace, which the global scope sees.
+    pub(crate) fn qualified_name(&self) -> Vec<Ident> {
+        self.scope
+            .iter()
+            .chain(std::iter::once(&self.name))
+            .cloned()
+            .collect()
+    }
 }
 
 /// A function the generator writes for a user type `T` (types.md §5.2).

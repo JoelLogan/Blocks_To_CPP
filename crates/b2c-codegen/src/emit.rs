@@ -8,21 +8,29 @@
 //! comment, includes, support helpers, user types with their generated
 //! functions, forward declarations, function definitions (sorted by name),
 //! `main`.
+//!
+//! In a project of several modules (w3-modules.md §1.7) the helpers are in
+//! `b2c_support.hpp`, each `.cpp` includes the project headers its layout
+//! lists, and its non-shared declarations and definitions are in the
+//! anonymous namespace, closed and opened again where that changes; a
+//! module that shares something also gets `<stem>.hpp` ([`header_file`]).
+//! Definitions in user namespaces are printed inside `namespace n { … }`
+//! the same way. `main` and every `b2c::to_text` are at global scope.
 
 use std::collections::BTreeSet;
 
 use b2c_ir::headers::Header;
 use b2c_ir::source_map::MappedRange;
-use b2c_ir::text::{Comment, Ident};
+use b2c_ir::text::{Comment, FileStem, Ident};
 
+use crate::CodegenOptions;
 use crate::cast::{
     BinOp, BindingStyle, CBlock, CCase, CCatch, CEnum, CExpr, CExprKind, CFunction, CGenerated, CGlobal,
     CParam, CStmt, CStmtKind, CStruct, CType, CTypeDef, Callee, ForStep, Generated, GeneratedParam, Init,
-    ParamStyle, RangeBinding,
+    ParamStyle, Qualifier, RangeBinding,
 };
 use crate::helpers::{self, Helper};
-use crate::lower::{CDecl, LoweredModule};
-use crate::{CodegenOptions, HelperPlacement};
+use crate::lower::{CDecl, LoweredModule, Placed, Region};
 
 /// Preferred maximum line length (spec §6.8.3).
 const LINE_WIDTH: usize = 100;
@@ -126,57 +134,211 @@ pub(crate) struct SourceFile {
     pub(crate) placeholders: usize,
 }
 
+/// What a module's files include and declare beyond its own code
+/// (w3-modules.md §1.7), from the program's layout.
+pub(crate) struct FilePlan<'a> {
+    /// The module's name, for the header comment.
+    pub(crate) module_name: &'a str,
+    /// Whether the project has several modules: the helpers are then in
+    /// `b2c_support.hpp`, and what is not shared is in the anonymous
+    /// namespace.
+    pub(crate) multi_module: bool,
+    /// The project headers the `.cpp` includes (its own among them when it
+    /// has one), sorted by file name.
+    pub(crate) source_includes: Vec<&'a FileStem>,
+    /// The project headers the `.hpp` includes, sorted by file name.
+    pub(crate) header_includes: Vec<&'a FileStem>,
+    /// The items the `.hpp` declares, by index into `Module::items`, in
+    /// printing order (`ModuleFiles::header_order`); empty without a header.
+    pub(crate) header_order: &'a [usize],
+    /// The types the `.hpp` forward-declares: each one's region, keyword
+    /// (`struct` or `enum class`) and name.
+    pub(crate) forward: Vec<(Region, &'static str, Ident)>,
+}
+
+#[cfg(test)]
+impl<'a> FilePlan<'a> {
+    /// The plan of a single-module program's file: no header, no project
+    /// include.
+    pub(crate) fn single_module(module_name: &'a str) -> Self {
+        FilePlan {
+            module_name,
+            multi_module: false,
+            source_includes: Vec::new(),
+            header_includes: Vec::new(),
+            header_order: &[],
+            forward: Vec::new(),
+        }
+    }
+}
+
+/// Writes `#include "<stem>.hpp"` for each project header, then
+/// `#include "b2c_support.hpp"` when `support`, in one section.
+fn project_includes(p: &mut crate::printer::Printer, stems: &[&FileStem], support: bool) {
+    if stems.is_empty() && !support {
+        return;
+    }
+    p.section();
+    for stem in stems {
+        p.fixed("#include \"");
+        p.stem(stem);
+        p.fixed(".hpp\"");
+        p.newline();
+    }
+    if support {
+        p.fixed("#include \"b2c_support.hpp\"");
+        p.newline();
+    }
+}
+
 /// Prints a module's source file.
-pub(crate) fn source_file(module: &LoweredModule, module_name: &str, options: &CodegenOptions) -> SourceFile {
+pub(crate) fn source_file(
+    module: &LoweredModule,
+    plan: &FilePlan<'_>,
+    options: &CodegenOptions,
+) -> SourceFile {
     let mut p = crate::printer::Printer::new(options.indent_width);
-    file_header(&mut p, options, &Subject::Module(module_name));
+    file_header(&mut p, options, &Subject::Module(plan.module_name));
     let helpers_used = &module.usage.helpers;
-    let inline = options.helper_placement == HelperPlacement::Inline;
+    // Helpers are inline in a single-module project and in
+    // `b2c_support.hpp` from two modules on, for the build and the preview
+    // alike (w3-modules.md §1.2).
+    let inline = !plan.multi_module;
     let mut headers = module.usage.includes.clone();
     if inline {
         headers.extend(helper_headers(helpers_used));
     }
     includes(&mut p, &headers);
-    if !helpers_used.is_empty() {
+    project_includes(&mut p, &plan.source_includes, !inline && !helpers_used.is_empty());
+    if inline && !helpers_used.is_empty() {
         p.section();
-        if inline {
-            p.fixed(helpers::SECTION_START);
-            p.newline();
-            helper_namespace(&mut p, helpers_used);
-            p.fixed(helpers::SECTION_END);
-            p.newline();
-        } else {
-            p.fixed("#include \"b2c_support.hpp\"");
-            p.newline();
-        }
+        p.fixed(helpers::SECTION_START);
+        p.newline();
+        helper_namespace(&mut p, helpers_used);
+        p.fixed(helpers::SECTION_END);
+        p.newline();
     }
-    let mut emitter = Emitter { p };
-    // Each type in a section of its own; a run of function declarations,
-    // or of globals, in one section.
-    let mut last: Option<&CDecl> = None;
-    for decl in &module.decls {
-        let same_run = matches!(
-            (last, decl),
-            (Some(CDecl::Function(_)), CDecl::Function(_)) | (Some(CDecl::Global(_)), CDecl::Global(_))
-        );
+    let mut emitter = Emitter::new(p);
+    // Step 3 of 06 §6.7: each type in a section of its own; a run of
+    // function declarations, or of globals, in one section. What the
+    // module's header declares is not declared again, but a shared global
+    // that is not `constexpr` is defined here.
+    let in_header = |decl: &Placed<CDecl>| {
+        decl.item.is_some_and(|item| plan.header_order.contains(&item))
+            && !matches!(&decl.node, CDecl::Global(global) if global.qualifier != Qualifier::Constexpr)
+    };
+    let mut last: Option<&Placed<CDecl>> = None;
+    for decl in module.decls.iter().filter(|decl| !in_header(decl)) {
+        let same_run = last.is_some_and(|last| {
+            last.region == decl.region
+                && matches!(
+                    (&last.node, &decl.node),
+                    (CDecl::Function(_), CDecl::Function(_)) | (CDecl::Global(_), CDecl::Global(_))
+                )
+        });
+        emitter.enter(&decl.region);
         if !same_run {
             emitter.p.section();
         }
-        match decl {
+        match &decl.node {
             CDecl::Type(def) => emitter.type_def(def),
             CDecl::Global(global) => emitter.global(global),
             CDecl::Function(index) => {
                 if let Some(function) = module.functions.get(*index) {
-                    emitter.declaration(function);
+                    emitter.declaration(&function.node);
                 }
             }
         }
         last = Some(decl);
     }
-    for function in module.functions.iter().chain(&module.mains) {
+    emitter.enter(&Region::default());
+    // Step 4: the definitions, those that are not shared first.
+    let (private, shared): (Vec<_>, Vec<_>) = module.functions.iter().partition(|f| f.region.anonymous);
+    for function in private.into_iter().chain(shared) {
+        emitter.enter(&function.region);
+        emitter.p.section();
+        emitter.definition(&function.node);
+    }
+    emitter.enter(&Region::default());
+    for function in &module.mains {
         emitter.p.section();
         emitter.definition(function);
     }
+    let placeholders = emitter.p.placeholders();
+    let (contents, ranges) = emitter.p.finish();
+    SourceFile {
+        contents,
+        ranges,
+        placeholders,
+    }
+}
+
+/// Prints a module's header, `<stem>.hpp` (w3-modules.md §1.7): the header
+/// comment, `#pragma once`, the standard headers its declarations need, the
+/// project headers it includes, `b2c_support.hpp` when a declaration calls
+/// a helper, the forward declarations, then the items of `header_order` in
+/// their namespaces: a function's declaration with its default values, a
+/// struct's or enum's definition (a shared enum's print support is package
+/// T's), a global's `extern` declaration or a `constexpr` constant's
+/// `inline constexpr` definition. Never a `using` directive.
+pub(crate) fn header_file(
+    module: &LoweredModule,
+    plan: &FilePlan<'_>,
+    options: &CodegenOptions,
+) -> SourceFile {
+    let mut p = crate::printer::Printer::new(options.indent_width);
+    file_header(&mut p, options, &Subject::Module(plan.module_name));
+    p.section();
+    p.fixed("#pragma once");
+    p.newline();
+    let parts = plan
+        .header_order
+        .iter()
+        .filter_map(|item| module.decl_parts.get(item));
+    let headers: BTreeSet<Header> = parts
+        .clone()
+        .flat_map(|part| part.includes.iter().copied())
+        .collect();
+    let support = parts.clone().any(|part| !part.helpers.is_empty());
+    includes(&mut p, &headers);
+    project_includes(&mut p, &plan.header_includes, support);
+    let mut emitter = Emitter::new(p);
+    if !plan.forward.is_empty() {
+        let mut first = true;
+        for (region, keyword, name) in &plan.forward {
+            if emitter.enter(region) || first {
+                emitter.p.section();
+            }
+            first = false;
+            emitter.p.fixed(keyword);
+            emitter.p.fixed(" ");
+            emitter.p.ident(name);
+            emitter.p.fixed(";");
+            emitter.p.newline();
+        }
+        emitter.enter(&Region::default());
+    }
+    for item in plan.header_order {
+        for decl in module.decls.iter().filter(|decl| decl.item == Some(*item)) {
+            let region = Region {
+                anonymous: false,
+                ..decl.region.clone()
+            };
+            emitter.enter(&region);
+            emitter.p.section();
+            match &decl.node {
+                CDecl::Type(CTypeDef::Enum(def)) => emitter.enum_definition(def),
+                CDecl::Type(def) => emitter.type_def(def),
+                CDecl::Global(global) => emitter.global_declaration(global),
+                CDecl::Function(index) => {
+                    if let Some(function) = module.functions.get(*index) {
+                        emitter.declaration(&function.node);
+                    }
+                }
+            }
+        }
+    }
+    emitter.enter(&Region::default());
     let placeholders = emitter.p.placeholders();
     let (contents, ranges) = emitter.p.finish();
     SourceFile {
@@ -203,14 +365,14 @@ pub(crate) fn support_header(used: &BTreeSet<Helper>, options: &CodegenOptions) 
 /// Prints CAST nodes.
 struct Emitter {
     p: crate::printer::Printer,
+    /// The namespaces open where the printer is.
+    region: Region,
 }
 
 /// An expression printed alone, for unit tests.
 #[cfg(test)]
 pub(crate) fn expr_text(expr: &CExpr) -> String {
-    let mut emitter = Emitter {
-        p: crate::printer::Printer::new(4),
-    };
+    let mut emitter = Emitter::new(crate::printer::Printer::new(4));
     emitter.expr(expr);
     emitter.p.finish().0
 }
@@ -218,9 +380,7 @@ pub(crate) fn expr_text(expr: &CExpr) -> String {
 /// A statement printed alone, for unit tests.
 #[cfg(test)]
 pub(crate) fn stmt_text(stmt: &CStmtKind) -> String {
-    let mut emitter = Emitter {
-        p: crate::printer::Printer::new(4),
-    };
+    let mut emitter = Emitter::new(crate::printer::Printer::new(4));
     emitter.stmt_kind(stmt);
     emitter.p.finish().0
 }
@@ -228,9 +388,7 @@ pub(crate) fn stmt_text(stmt: &CStmtKind) -> String {
 /// A global's definition printed alone, for unit tests.
 #[cfg(test)]
 pub(crate) fn global_text(global: &CGlobal) -> String {
-    let mut emitter = Emitter {
-        p: crate::printer::Printer::new(4),
-    };
+    let mut emitter = Emitter::new(crate::printer::Printer::new(4));
     emitter.global(global);
     emitter.p.finish().0
 }
@@ -238,14 +396,76 @@ pub(crate) fn global_text(global: &CGlobal) -> String {
 /// A user type's definition printed alone, for unit tests.
 #[cfg(test)]
 pub(crate) fn type_def_text(def: &CTypeDef) -> String {
-    let mut emitter = Emitter {
-        p: crate::printer::Printer::new(4),
-    };
+    let mut emitter = Emitter::new(crate::printer::Printer::new(4));
     emitter.type_def(def);
     emitter.p.finish().0
 }
 
 impl Emitter {
+    /// An emitter at global scope.
+    fn new(p: crate::printer::Printer) -> Self {
+        Emitter {
+            p,
+            region: Region::default(),
+        }
+    }
+
+    /// Closes and opens namespaces until `target`'s are open: the open ones
+    /// that `target` does not share are closed, innermost first, then
+    /// `target`'s other ones are opened, each `namespace n {` on a line of
+    /// its own, and an empty line before what follows. Whether anything
+    /// changed.
+    fn enter(&mut self, target: &Region) -> bool {
+        if self.region == *target {
+            return false;
+        }
+        let current = std::mem::take(&mut self.region);
+        // The user namespaces both have, from the outermost; the anonymous
+        // one is innermost, so it is kept only when everything else is.
+        let common = current
+            .namespaces
+            .iter()
+            .zip(&target.namespaces)
+            .take_while(|(a, b)| a == b)
+            .count();
+        let keep_anonymous = current.anonymous
+            && target.anonymous
+            && common == current.namespaces.len()
+            && common == target.namespaces.len();
+        // The closing lines, innermost first, after an empty line.
+        let mut closing: Vec<Option<&Ident>> = Vec::new();
+        if current.anonymous && !keep_anonymous {
+            closing.push(None);
+        }
+        closing.extend(current.namespaces[common..].iter().rev().map(Some));
+        if !closing.is_empty() {
+            self.p.section();
+        }
+        for name in closing {
+            self.p.fixed("}  // namespace");
+            if let Some(name) = name {
+                self.p.fixed(" ");
+                self.p.ident(name);
+            }
+            self.p.newline();
+        }
+        if target.namespaces.len() > common || (target.anonymous && !keep_anonymous) {
+            self.p.section();
+            for name in &target.namespaces[common..] {
+                self.p.fixed("namespace ");
+                self.p.ident(name);
+                self.p.fixed(" {");
+                self.p.newline();
+            }
+            if target.anonymous && !keep_anonymous {
+                self.p.fixed("namespace {");
+                self.p.newline();
+            }
+        }
+        self.region = target.clone();
+        true
+    }
+
     /// A type: keywords and library names as generator text, user types as
     /// identifiers joined by `::`, template arguments in `<…>` separated by
     /// `, ` (`std::map<std::string, std::vector<int>>`).
@@ -395,7 +615,7 @@ impl Emitter {
                 self.p.section();
             }
             separate = true;
-            self.generated(friend, &def.name);
+            self.generated(friend, std::slice::from_ref(&def.name));
         }
         self.p.dedent();
         self.p.fixed("};");
@@ -404,8 +624,39 @@ impl Emitter {
     }
 
     /// `enum class E { A, B };`, then its generated functions, each in a
-    /// section of its own.
+    /// section of its own: `operator<<` beside the enum, so that
+    /// argument-dependent lookup finds it, and `b2c::to_text` at global
+    /// scope, with the enclosing namespaces closed before it and opened
+    /// again after it (w3-modules.md §1.7).
+    /// The namespaces closed for `b2c::to_text` are opened again by
+    /// whatever is printed next in them.
     fn enum_def(&mut self, def: &CEnum) {
+        let region = self.region.clone();
+        self.enum_definition(def);
+        for function in &def.functions {
+            if function.kind == Generated::EnumToString {
+                // Beside the decimal helper of that name, in the global
+                // `b2c` namespace (w2.md §2.11).
+                self.enter(&Region::default());
+                self.p.section();
+                self.p.fixed("namespace b2c {");
+                self.p.newline();
+                self.p.section();
+                self.p.fixed("inline ");
+                self.generated(function, &def.qualified_name());
+                self.p.section();
+                self.p.fixed("}  // namespace b2c");
+                self.p.newline();
+            } else {
+                self.enter(&region);
+                self.p.section();
+                self.generated(function, std::slice::from_ref(&def.name));
+            }
+        }
+    }
+
+    /// `enum class E { A, B };` alone, with its comment.
+    fn enum_definition(&mut self, def: &CEnum) {
         let start = self.p.position();
         if let Some(comment) = &def.comment {
             self.p.comment(comment);
@@ -420,28 +671,11 @@ impl Emitter {
         self.p.fixed(if def.values.is_empty() { "};" } else { " };" });
         self.p.map(start, &def.origin);
         self.p.newline();
-        for function in &def.functions {
-            self.p.section();
-            if function.kind == Generated::EnumToString {
-                // Beside the decimal helper of that name, in the global
-                // `b2c` namespace (w2.md §2.11).
-                self.p.fixed("namespace b2c {");
-                self.p.newline();
-                self.p.section();
-                self.p.fixed("inline ");
-                self.generated(function, &def.name);
-                self.p.section();
-                self.p.fixed("}  // namespace b2c");
-                self.p.newline();
-            } else {
-                self.generated(function, &def.name);
-            }
-        }
     }
 
     /// A function generated for the user type `owner`, with its body:
     /// `friend bool operator==(const S& lhs, const S& rhs) { … }`.
-    fn generated(&mut self, function: &CGenerated, owner: &Ident) {
+    fn generated(&mut self, function: &CGenerated, owner: &[Ident]) {
         if function.kind.is_friend() {
             self.p.fixed("friend ");
         }
@@ -461,10 +695,10 @@ impl Emitter {
                 GeneratedParam::Stream => self.p.fixed("std::ostream&"),
                 GeneratedParam::ConstRef => {
                     self.p.fixed("const ");
-                    self.p.ident(owner);
+                    self.qualified(owner);
                     self.p.fixed("&");
                 }
-                GeneratedParam::Value => self.p.ident(owner),
+                GeneratedParam::Value => self.qualified(owner),
             }
             if let Some(Some(name)) = function.params.get(index) {
                 self.p.fixed(" ");
@@ -559,6 +793,35 @@ impl Emitter {
         self.p.fixed(" ");
         self.p.ident(&global.name);
         self.init(&global.init);
+        self.p.fixed(";");
+        self.p.map(start, &global.origin);
+        self.p.newline();
+    }
+
+    /// A shared global as its module's header declares it (w3-modules.md
+    /// §1.7): `extern T name;`, `extern const T name;`, or a `constexpr`
+    /// constant's `inline constexpr T name = value;`.
+    fn global_declaration(&mut self, global: &CGlobal) {
+        let start = self.p.position();
+        if let Some(comment) = &global.comment {
+            self.p.comment(comment);
+        }
+        match global.qualifier {
+            Qualifier::Constexpr => {
+                self.p.fixed("inline constexpr ");
+                self.ty(&global.ty);
+                self.p.fixed(" ");
+                self.p.ident(&global.name);
+                self.init(&global.init);
+            }
+            Qualifier::Const | Qualifier::None => {
+                self.p.fixed("extern ");
+                self.p.fixed(global.qualifier.prefix());
+                self.ty(&global.ty);
+                self.p.fixed(" ");
+                self.p.ident(&global.name);
+            }
+        }
         self.p.fixed(";");
         self.p.map(start, &global.origin);
         self.p.newline();

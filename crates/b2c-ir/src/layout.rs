@@ -4,7 +4,7 @@
 //! The analyser computes a program's [`Layout`] and code generation only
 //! prints it. Until shared definitions arrive, every program has the flat
 //! layout of milestone M2 ([`Layout::flat`]): one `.cpp` per module, no
-//! header and no includes. Code generation does not read it yet.
+//! header and no includes. Code generation names the files by it.
 
 use std::collections::BTreeSet;
 
@@ -27,7 +27,8 @@ pub struct ModuleFiles {
     /// The module.
     pub module: ModuleId,
     /// `FileStem::new(name)`. For a name it refuses (only the `b2c` prefix
-    /// gets past the loader), `module<N>` with N the module's place in the
+    /// gets past the loader) or one an earlier module's stem already is,
+    /// `module<N>` with N the module's place in the
     /// project from 1, plus `_2`, `_3`, … while that clashes. That name is
     /// only ever shown next to `E0221` (types.md §6), which blocks Build,
     /// Run and Export.
@@ -61,12 +62,18 @@ impl Layout {
             .filter_map(|module| FileStem::new(&module.name).ok())
             .map(|stem| stem.as_str().to_owned())
             .collect();
+        // A name an earlier module has (the loader refuses that, but code
+        // generation never trusts it) also takes the fallback.
+        let mut claimed: BTreeSet<String> = BTreeSet::new();
         let modules = modules
             .iter()
             .enumerate()
             .map(|(place, module)| ModuleFiles {
                 module: module.id.clone(),
-                stem: FileStem::new(&module.name).unwrap_or_else(|_| fallback_stem(place + 1, &mut used)),
+                stem: FileStem::new(&module.name)
+                    .ok()
+                    .filter(|stem| claimed.insert(stem.as_str().to_owned()))
+                    .unwrap_or_else(|| fallback_stem(place + 1, &mut used)),
                 header: false,
                 header_includes: Vec::new(),
                 forward: Vec::new(),
@@ -286,5 +293,15 @@ mod tests {
         let stems: Vec<_> = layout.modules.iter().map(|m| m.stem.as_str()).collect();
         assert_eq!(stems, ["main", "module2_3", "module2", "module2_2", "module5"]);
         assert_eq!(Layout::default().modules.len(), 0);
+        // A name an earlier module has is numbered too, so no two modules
+        // share a file.
+        let modules = [
+            module("m1", "main", Vec::new()),
+            module("m2", "main", Vec::new()),
+            module("m3", "module2", Vec::new()),
+        ];
+        let layout = Layout::flat(&modules, &symbols);
+        let stems: Vec<_> = layout.modules.iter().map(|m| m.stem.as_str()).collect();
+        assert_eq!(stems, ["main", "module2_2", "module2"]);
     }
 }

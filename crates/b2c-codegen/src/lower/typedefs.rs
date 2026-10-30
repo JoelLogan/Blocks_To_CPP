@@ -118,6 +118,7 @@ impl Lowerer<'_> {
                 let joined = uses.joined.contains(&def.symbol);
                 if let Some(mut lowered) = self.enum_def(&def.symbol, print, joined) {
                     lowered.comment.clone_from(&item.comment);
+                    lowered.place_in(self.namespace_names(item));
                     defs.push(CTypeDef::Enum(lowered));
                 }
                 printed.insert(def.symbol.clone());
@@ -411,9 +412,37 @@ impl Lowerer<'_> {
             name: symbol.name.clone(),
             values,
             functions,
+            scope: Vec::new(),
             origin: symbol.origin.clone(),
             comment: None,
         })
+    }
+}
+
+impl CEnum {
+    /// Puts the enum into these user namespaces (outermost first): its
+    /// `b2c::to_text`, printed at global scope, then names the enum and its
+    /// enumerators through them (`geo::Colour::Red`, w3-modules.md §1.7).
+    fn place_in(&mut self, scope: Vec<Ident>) {
+        if scope.is_empty() {
+            return;
+        }
+        self.scope = scope;
+        let owner = self.qualified_name();
+        for function in &mut self.functions {
+            if function.kind != Generated::EnumToString {
+                continue;
+            }
+            for stmt in &mut function.body.stmts {
+                if let CStmtKind::Switch { cases, .. } = &mut stmt.kind {
+                    for case in cases {
+                        if let CExprKind::Enumerator { owner: path, .. } = &mut case.label.kind {
+                            path.clone_from(&owner);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

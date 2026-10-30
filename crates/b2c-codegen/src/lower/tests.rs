@@ -19,7 +19,7 @@ use b2c_ir::sast::{
 use b2c_ir::text::{Ident, NumLit, NumType, StrLit};
 use b2c_ir::types::{LibType, Type};
 
-use super::{CDecl, LoweredModule, Lowerer, name_expr};
+use super::{CDecl, LoweredModule, Lowerer, Placed, name_expr};
 use crate::CodegenOptions;
 use crate::cast::{BinOp, CBlock, CExpr, CStmt, CStmtKind, CTypeDef};
 use crate::emit;
@@ -917,20 +917,24 @@ fn forms_program(standard: CppStandard) -> String {
     splice(&mut main.body, extra, true);
     splice(&mut show_fn.body, vec![sizes], false);
 
-    let mut decls: Vec<CDecl> = types.into_iter().map(CDecl::Type).collect();
-    decls.push(CDecl::Function(0));
+    let mut decls: Vec<Placed<CDecl>> = types
+        .into_iter()
+        .map(|def| Placed::global(CDecl::Type(def)))
+        .collect();
+    decls.push(Placed::global(CDecl::Function(0)));
     let module = LoweredModule {
         decls,
-        functions: vec![show_fn],
+        functions: vec![Placed::global(show_fn)],
         mains: vec![main],
         usage: lowerer.usage,
+        decl_parts: std::collections::BTreeMap::new(),
     };
     let options = CodegenOptions {
         project_name: String::from("Forms"),
         app_version: String::from("1.0.0"),
         ..CodegenOptions::default()
     };
-    let source = emit::source_file(&module, "main", &options);
+    let source = emit::source_file(&module, &emit::FilePlan::single_module("main"), &options);
     assert_eq!(source.placeholders, 0, "{}", source.contents);
     source.contents
 }

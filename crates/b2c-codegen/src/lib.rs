@@ -8,9 +8,11 @@
 //! * All user text reaches the output only through `b2c_ir::text` encoders;
 //!   output is re-printed from the AST, never spliced from input strings.
 //! * Deterministic: identical input and options give byte-identical output.
-//! * Output files: `<module>.cpp` per module; support helpers inline in the
-//!   single-module case (spec §3.9). Every file ends with one newline and has
-//!   no trailing whitespace.
+//! * Output files: `<stem>.cpp` per module and `<stem>.hpp` for a module that
+//!   shares something (the program's layout, ADR-0019); support helpers
+//!   inline in the single-module case (spec §3.9), in `b2c_support.hpp`
+//!   otherwise. Every file ends with one newline and has no trailing
+//!   whitespace.
 //!
 //! # Pipeline
 //!
@@ -69,15 +71,23 @@ mod helpers;
 mod lower;
 mod printer;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use b2c_ir::sast::{Module, Program};
+use b2c_ir::ids::{ModuleId, SymbolId};
+use b2c_ir::layout::Layout;
+use b2c_ir::sast::{ItemKind, Program, SymbolKind};
 use b2c_ir::source_map::{FileKind, FileMap, GeneratedFile, GeneratedProject, SourceMap};
+use b2c_ir::text::{FileStem, Ident};
 
 /// The source-map format version this crate writes.
 const SOURCE_MAP_VERSION: u32 = 1;
 
 /// Where support helpers (`b2c::random_int`, `b2c::ask`, …) are emitted.
+///
+/// Ignored since milestone M3's third wave: the module count decides
+/// (inline with one module, `b2c_support.hpp` from two on, for the build
+/// and the preview alike; w3-modules.md §1.2). The field stays until the
+/// callers that set it drop it (w3-modules.md §3.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HelperPlacement {
     /// In a delimited section at the top of the file that uses them.
@@ -98,7 +108,7 @@ pub struct CodegenOptions {
     pub do_not_edit_banner: bool,
     /// Spaces per indentation level.
     pub indent_width: u8,
-    /// Where support helpers go.
+    /// Where support helpers go: ignored, see [`HelperPlacement`].
     pub helper_placement: HelperPlacement,
 }
 
@@ -116,9 +126,12 @@ impl Default for CodegenOptions {
 
 /// Generates C++ files and the source map for a program.
 ///
-/// Files come in project module order (`<module>.cpp`), followed by
-/// `b2c_support.hpp` when helpers are placed in a header and any module uses
-/// one. The source map has one entry per file, in the same order.
+/// Files come in project module order: each module's `<stem>.cpp`, then its
+/// `<stem>.hpp` when it shares something, named by the layout's
+/// [`FileStem`]s (`b2c_ir::layout::ModuleFiles::stem`); last
+/// `b2c_support.hpp` when the project has several modules and any module
+/// uses a helper. The source map has one entry per file, in the same order;
+/// each file and map names its module (none for `b2c_support.hpp`).
 pub fn generate(program: &Program, options: &CodegenOptions) -> GeneratedProject {
     generate_with_report(program, options).project
 }
@@ -140,43 +153,79 @@ pub struct Generation {
 /// placeholders were needed. Build tools use this to refuse output that
 /// would compile but not do what the blocks say.
 pub fn generate_with_report(program: &Program, options: &CodegenOptions) -> Generation {
+    let flat;
+    let layout = if layout_fits(&program.layout, program) {
+        &program.layout
+    } else {
+        // A program built without the analyser: M2's layout.
+        flat = Layout::flat(&program.modules, &program.symbols);
+        &flat
+    };
+    let multi_module = program.modules.len() > 1;
+    let stems: BTreeMap<&ModuleId, &FileStem> = layout
+        .modules
+        .iter()
+        .map(|files| (&files.module, &files.stem))
+        .collect();
+    let stems_of = |modules: &[ModuleId]| -> Vec<&FileStem> {
+        let mut listed: Vec<&FileStem> = modules.iter().filter_map(|id| stems.get(id).copied()).collect();
+        listed.sort();
+        listed.dedup();
+        listed
+    };
     let mut placeholders = 0_usize;
     let mut files = Vec::new();
     let mut maps = Vec::new();
-    let mut used_paths = BTreeSet::new();
     let mut helpers_used = BTreeSet::new();
-    for module in &program.modules {
-        let lowered = lower::lower_module(program, module);
+    let mut push = |path: String, kind: FileKind, module: Option<&ModuleId>, file: emit::SourceFile| {
+        placeholders = placeholders.saturating_add(file.placeholders);
+        maps.push(FileMap {
+            path: path.clone(),
+            module: module.cloned(),
+            ranges: file.ranges,
+        });
+        files.push(GeneratedFile {
+            path,
+            kind,
+            module: module.cloned(),
+            contents: file.contents,
+        });
+    };
+    for (module, module_files) in program.modules.iter().zip(&layout.modules) {
+        let lowered = lower::lower_module(program, module, Some(module_files), multi_module);
         helpers_used.extend(lowered.usage.helpers.iter().copied());
-        let path = source_path(module, &mut used_paths);
-        let source = emit::source_file(&lowered, &module.name, options);
-        placeholders = placeholders.saturating_add(source.placeholders);
-        maps.push(FileMap {
-            path: path.clone(),
-            module: None,
-            ranges: source.ranges,
-        });
-        files.push(GeneratedFile {
-            path,
-            kind: FileKind::Source,
-            module: None,
-            contents: source.contents,
-        });
+        let plan = emit::FilePlan {
+            module_name: &module.name,
+            multi_module,
+            source_includes: stems_of(&module_files.source_includes),
+            header_includes: stems_of(&module_files.header_includes),
+            header_order: if module_files.header {
+                &module_files.header_order
+            } else {
+                &[]
+            },
+            forward: forward_declarations(program, &module_files.forward),
+        };
+        let stem = module_files.stem.as_str();
+        let source = emit::source_file(&lowered, &plan, options);
+        push(format!("{stem}.cpp"), FileKind::Source, Some(&module.id), source);
+        if module_files.header {
+            let header = emit::header_file(&lowered, &plan, options);
+            push(format!("{stem}.hpp"), FileKind::Header, Some(&module.id), header);
+        }
     }
-    if options.helper_placement == HelperPlacement::Header && !helpers_used.is_empty() {
-        let path = String::from(emit::SUPPORT_HEADER);
+    if multi_module && !helpers_used.is_empty() {
         let contents = emit::support_header(&helpers_used, options);
-        maps.push(FileMap {
-            path: path.clone(),
-            module: None,
-            ranges: Vec::new(),
-        });
-        files.push(GeneratedFile {
-            path,
-            kind: FileKind::Header,
-            module: None,
-            contents,
-        });
+        push(
+            String::from(emit::SUPPORT_HEADER),
+            FileKind::Header,
+            None,
+            emit::SourceFile {
+                contents,
+                ranges: Vec::new(),
+                placeholders: 0,
+            },
+        );
     }
     Generation {
         project: GeneratedProject {
@@ -190,41 +239,53 @@ pub fn generate_with_report(program: &Program, options: &CodegenOptions) -> Gene
     }
 }
 
-/// Whether a module name is a valid file stem (`[a-z][a-z0-9_-]{0,63}`).
-fn is_file_stem(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    name.len() <= 64
-        && bytes.next().is_some_and(|b| b.is_ascii_lowercase())
-        && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+/// Whether a layout has one entry per module of the program, in order.
+fn layout_fits(layout: &Layout, program: &Program) -> bool {
+    layout.modules.len() == program.modules.len()
+        && layout
+            .modules
+            .iter()
+            .zip(&program.modules)
+            .all(|(files, module)| files.module == module.id)
 }
 
-/// The source file path for a module: `<name>.cpp`. The loader validates
-/// module names already; if a name is not a valid file stem anyway, or two
-/// modules would share a file (names are unique case-insensitively), the
-/// module ID is used instead, and a number is added as a last resort.
-fn source_path(module: &Module, used: &mut BTreeSet<String>) -> String {
-    let mut stem = if is_file_stem(&module.name) {
-        module.name.clone()
-    } else {
-        module.id.as_str().to_owned()
-    };
-    if used.contains(&stem.to_ascii_lowercase()) {
-        stem = format!("{}_{}", stem, module.id.as_str());
-    }
-    let mut candidate = stem.clone();
-    let mut counter = 2_usize;
-    while used.contains(&candidate.to_ascii_lowercase()) || candidate.eq_ignore_ascii_case("b2c_support") {
-        candidate = format!("{stem}_{counter}");
-        counter += 1;
-    }
-    used.insert(candidate.to_ascii_lowercase());
-    format!("{candidate}.cpp")
+/// The forward declarations of a header (`ModuleFiles::forward`): for each
+/// struct or enum, its user namespaces, its keyword and its name. A symbol
+/// that is not a struct or enum is left out.
+fn forward_declarations(
+    program: &Program,
+    forward: &[SymbolId],
+) -> Vec<(lower::Region, &'static str, Ident)> {
+    forward
+        .iter()
+        .filter_map(|id| {
+            let symbol = program.symbols.get(id)?;
+            let keyword = match symbol.kind {
+                SymbolKind::Struct { .. } => "struct",
+                SymbolKind::Enum { .. } => "enum class",
+                _ => return None,
+            };
+            let item = program
+                .modules
+                .iter()
+                .flat_map(|module| &module.items)
+                .find(|item| {
+                    matches!(&item.kind, ItemKind::Struct(def) if def.symbol == *id)
+                        || matches!(&item.kind, ItemKind::Enum(def) if def.symbol == *id)
+                });
+            let region = item.map_or_else(lower::Region::default, |item| lower::Region {
+                anonymous: false,
+                ..lower::Region::of(item, &program.symbols, false)
+            });
+            Some((region, keyword, symbol.name.clone()))
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use b2c_ir::ids::ModuleId;
-    use b2c_ir::sast::{CppStandard, SymbolTable};
+    use b2c_ir::sast::{CppStandard, Module, SymbolTable};
 
     use super::*;
 
@@ -236,55 +297,65 @@ mod tests {
         }
     }
 
-    #[test]
-    fn file_stems() {
-        for good in ["main", "a", "player_2", "my-game"] {
-            assert!(is_file_stem(good), "{good}");
-        }
-        for bad in [
-            "",
-            "Main",
-            "2d",
-            "../x",
-            "a/b",
-            "a.b",
-            "a b",
-            "con\u{0}",
-            &"a".repeat(65),
-        ] {
-            assert!(!is_file_stem(bad), "{bad}");
+    fn program(modules: Vec<Module>) -> Program {
+        Program {
+            standard: CppStandard::default(),
+            modules,
+            symbols: SymbolTable::default(),
+            layout: Layout::default(),
+            spellings: b2c_ir::spelling::Spellings::default(),
         }
     }
 
+    /// File names come from the layout's stems, never from the module name
+    /// as written: a name the stem refuses, or one an earlier module has,
+    /// gets `module<N>`. Each file and its map name their module.
     #[test]
-    fn source_paths_are_safe_and_unique() {
-        let mut used = BTreeSet::new();
-        assert_eq!(source_path(&module("mod_main", "main"), &mut used), "main.cpp");
+    fn files_are_named_by_the_layout() {
+        let mut program = program(vec![
+            module("mod_main", "main"),
+            module("mod_evil", "../../etc/passwd"),
+            module("mod_dup", "main"),
+            module("mod_b2c", "b2c_support"),
+            module("mod_tools", "tools"),
+        ]);
+        let paths = |project: &GeneratedProject| -> Vec<String> {
+            project.files.iter().map(|file| file.path.clone()).collect()
+        };
+        // Without a layout that fits, M2's flat one.
+        let project = generate(&program, &CodegenOptions::default());
+        let expected = [
+            "main.cpp",
+            "module2.cpp",
+            "module3.cpp",
+            "module4.cpp",
+            "tools.cpp",
+        ];
+        assert_eq!(paths(&project), expected);
+        for (file, map) in project.files.iter().zip(&project.source_map.files) {
+            assert_eq!(file.path, map.path);
+            assert!(file.module.is_some());
+            assert_eq!(file.module, map.module);
+            assert_eq!(file.kind, FileKind::Source);
+        }
+        // The analyser's layout when it fits: its stems are used as given.
+        program.layout = Layout::flat(&program.modules, &program.symbols);
+        program.layout.modules[4].stem = FileStem::new("utils").unwrap();
         assert_eq!(
-            source_path(&module("mod_evil", "../../etc/passwd"), &mut used),
-            "mod_evil.cpp"
+            paths(&generate(&program, &CodegenOptions::default()))[4],
+            "utils.cpp"
         );
+        // A layout for other modules is not used.
+        program.modules.swap(0, 4);
         assert_eq!(
-            source_path(&module("mod_dup", "main"), &mut used),
-            "main_mod_dup.cpp"
-        );
-        assert_eq!(source_path(&module("Main", "\n"), &mut used), "Main_Main.cpp");
-        assert_eq!(
-            source_path(&module("x", "b2c_support"), &mut used),
-            "b2c_support_2.cpp"
+            paths(&generate(&program, &CodegenOptions::default()))[0],
+            "tools.cpp"
         );
     }
 
     #[test]
     fn empty_program() {
-        let program = Program {
-            standard: CppStandard::default(),
-            modules: Vec::new(),
-            symbols: SymbolTable::default(),
-            layout: b2c_ir::layout::Layout::default(),
-            spellings: b2c_ir::spelling::Spellings::default(),
-        };
-        let project = generate(&program, &CodegenOptions::default());
+        let project = generate(&program(Vec::new()), &CodegenOptions::default());
         assert!(project.files.is_empty());
         assert_eq!(project.source_map.version, 1);
     }

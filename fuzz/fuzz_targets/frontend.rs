@@ -191,35 +191,33 @@ fn is_device_name(stem: &str) -> bool {
 }
 
 fn check_file_name(path: &str, kind: FileKind) {
-    match kind {
-        FileKind::Header => assert_eq!(path, "b2c_support.hpp", "unexpected header name"),
-        FileKind::Source => {
-            let Some(stem) = path.strip_suffix(".cpp") else {
-                panic!("the source file {path:?} does not end in .cpp");
-            };
-            let plain = !stem.is_empty()
-                && stem.len() <= 128
-                && stem
-                    .bytes()
-                    .next()
-                    .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
-                && stem
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
-            assert!(
-                plain,
-                "the source file name {path:?} is not a plain generated name"
-            );
-            assert!(
-                !is_device_name(stem),
-                "the source file {path:?} is named like a Windows device"
-            );
-            assert!(
-                !stem.eq_ignore_ascii_case("b2c_support"),
-                "the source file {path:?} would clash with the support header"
-            );
-        }
-    }
+    // `b2c_support.hpp`, or a module's `<stem>.cpp` or `<stem>.hpp`.
+    let (stem, what) = match kind {
+        FileKind::Header if path == "b2c_support.hpp" => return,
+        FileKind::Header => (path.strip_suffix(".hpp"), "header"),
+        FileKind::Source => (path.strip_suffix(".cpp"), "source file"),
+    };
+    let Some(stem) = stem else {
+        panic!("the {what} {path:?} does not end in .cpp or .hpp");
+    };
+    let plain = !stem.is_empty()
+        && stem.len() <= 128
+        && stem
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && stem
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    assert!(plain, "the {what} name {path:?} is not a plain generated name");
+    assert!(
+        !is_device_name(stem),
+        "the {what} {path:?} is named like a Windows device"
+    );
+    assert!(
+        !stem.eq_ignore_ascii_case("b2c_support"),
+        "the {what} {path:?} would clash with the support header"
+    );
 }
 
 fn check_text(path: &str, contents: &str) {

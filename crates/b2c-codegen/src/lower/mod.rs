@@ -34,11 +34,14 @@ mod text;
 mod typedefs;
 #[cfg(test)]
 mod w2_tests;
+#[cfg(test)]
+mod w3_tests;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::headers::{Header, ItemHeaders};
 use b2c_ir::ids::SymbolId;
+use b2c_ir::layout::ModuleFiles;
 use b2c_ir::sast::{
     Block, CppStandard, FunctionDef, Item, ItemKind, MainDef, Module, PassMode, Program, Symbol, SymbolKind,
     SymbolTable,
@@ -66,15 +69,75 @@ pub(crate) struct Usage {
 pub(crate) struct LoweredModule {
     /// The declarations, in the declaration graph's order (06 §6.7 step 3,
     /// modules.md §4): user structs and enums with their generated
-    /// functions, globals, and function declarations.
-    pub(crate) decls: Vec<CDecl>,
+    /// functions, globals, and function declarations, each with the place
+    /// it is printed in.
+    pub(crate) decls: Vec<Placed<CDecl>>,
     /// User functions, sorted by name (then signature, then block ID): their
     /// definitions are printed in this order.
-    pub(crate) functions: Vec<CFunction>,
-    /// `main` (normally exactly one), sorted by block ID.
+    pub(crate) functions: Vec<Placed<CFunction>>,
+    /// `main` (normally exactly one), sorted by block ID, always at global
+    /// scope.
     pub(crate) mains: Vec<CFunction>,
     /// Headers and helpers used.
     pub(crate) usage: Usage,
+    /// What each item's declaration part needs (types.md §5.1), by index
+    /// into `Module::items`: the standard headers and the helpers of the
+    /// code a header prints for it (w3-modules.md §1.7).
+    pub(crate) decl_parts: BTreeMap<usize, Usage>,
+}
+
+/// A declaration or definition with the item it comes from and the
+/// namespaces it is printed in.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Placed<T> {
+    /// The node.
+    pub(crate) node: T,
+    /// The item, by index into `Module::items`; `None` for a forward
+    /// declaration of a type the module does not define.
+    pub(crate) item: Option<usize>,
+    /// Where it is printed.
+    pub(crate) region: Region,
+}
+
+impl<T> Placed<T> {
+    /// A node of no item, at global scope.
+    #[cfg(test)]
+    pub(crate) fn global(node: T) -> Self {
+        Placed {
+            node,
+            item: None,
+            region: Region::default(),
+        }
+    }
+}
+
+/// The namespaces around a declaration or definition (w3-modules.md §1.7,
+/// §2.12): its user namespaces, outermost first, and, inside them, the
+/// anonymous namespace that keeps a non-shared definition of a
+/// multi-module project to its own file. Empty for the global scope, which
+/// every single-module program uses until namespaces arrive.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Region {
+    /// The user namespaces, outermost first.
+    pub(crate) namespaces: Vec<Ident>,
+    /// Whether it is inside the anonymous namespace.
+    pub(crate) anonymous: bool,
+}
+
+impl Region {
+    /// The region of an item: its namespaces, and the anonymous namespace
+    /// when it is not shared in a project of several modules.
+    pub(crate) fn of(item: &Item, symbols: &SymbolTable, multi_module: bool) -> Region {
+        Region {
+            namespaces: symbols
+                .namespace_path(item.namespace.as_ref())
+                .into_iter()
+                .filter_map(|id| symbols.get(id))
+                .map(|symbol| symbol.name.clone())
+                .collect(),
+            anonymous: multi_module && !item.shared,
+        }
+    }
 }
 
 /// One declaration of a module, in printing order.
@@ -88,20 +151,23 @@ pub(crate) enum CDecl {
     Function(usize),
 }
 
-/// Desugars one module of a program.
-pub(crate) fn lower_module(program: &Program, module: &Module) -> LoweredModule {
+/// Desugars one module of a program, whose files are `files` (`None` when
+/// the layout has no entry for it). `multi_module` puts the module's
+/// non-shared definitions into the anonymous namespace (w3-modules.md §1.7).
+pub(crate) fn lower_module(
+    program: &Program,
+    module: &Module,
+    files: Option<&ModuleFiles>,
+    multi_module: bool,
+) -> LoweredModule {
     let mut lowerer = Lowerer::new(program);
     let mut mains = Vec::new();
     // The declarations in the declaration graph's order, which the analysis
     // puts in the module's layout (modules.md §4). A type or global the
     // layout does not list comes first, in item order, and a function it
     // does not list last.
-    let listed = program
-        .layout
-        .modules
-        .iter()
-        .find(|files| files.module == module.id)
-        .map_or(&[][..], |files| files.source_order.as_slice());
+    let listed = files.map_or(&[][..], |files| files.source_order.as_slice());
+    let region = |index: usize| Region::of(&module.items[index], &program.symbols, multi_module);
     let seen: BTreeSet<usize> = listed.iter().copied().collect();
     let is_function = |index: &usize| matches!(module.items[*index].kind, ItemKind::Function(_));
     let unlisted = || (0..module.items.len()).filter(|index| !seen.contains(index));
@@ -112,40 +178,49 @@ pub(crate) fn lower_module(program: &Program, module: &Module) -> LoweredModule 
     let uses = scan::enum_uses(program);
     let mut printed = BTreeSet::new();
     // The structs this module defines, which a function's declaration may
-    // name before their definitions.
-    let structs: BTreeSet<SymbolId> = module
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            ItemKind::Struct(def) => Some(def.symbol.clone()),
-            _ => None,
-        })
-        .collect();
+    // name before their definitions, by symbol and by name.
+    let (structs, struct_items) = module_structs(program, module);
+    let place = |node: CDecl, index: usize| Placed {
+        node,
+        item: Some(index),
+        region: region(index),
+    };
+    // A forward declaration is printed where the struct it declares is.
+    let place_type = |def: CTypeDef, own: usize| {
+        let item = match &def {
+            CTypeDef::Forward(name) => struct_items.get(name.as_str()).copied(),
+            CTypeDef::Struct(_) | CTypeDef::Enum(_) => Some(own),
+        };
+        Placed {
+            node: CDecl::Type(def),
+            item,
+            region: item.map(region).unwrap_or_default(),
+        }
+    };
     let mut decls = Vec::new();
+    let mut decl_parts = BTreeMap::new();
     // Functions by item, sorted for their definitions below.
     let mut functions: Vec<(usize, CFunction)> = Vec::new();
     for index in order {
         let item = &module.items[index];
         match &item.kind {
             ItemKind::Struct(_) | ItemKind::Enum(_) => {
-                decls.extend(
-                    lowerer
-                        .type_item(item, &uses, &mut printed)
-                        .into_iter()
-                        .map(CDecl::Type),
-                );
+                let defs = lowerer.type_item(item, &uses, &mut printed);
+                decls.extend(defs.into_iter().map(|def| place_type(def, index)));
             }
-            ItemKind::Global(def) => decls.extend(lowerer.global_item(def, item).map(CDecl::Global)),
+            ItemKind::Global(def) => decls.extend(
+                lowerer
+                    .global_item(def, item)
+                    .map(|global| place(CDecl::Global(global), index)),
+            ),
             ItemKind::Function(def) => {
                 if let Some(function) = lowerer.function(def, item) {
                     // A struct the declaration names before its definition
                     // is printed needs a forward declaration (modules.md §4).
-                    decls.extend(
-                        lowerer
-                            .signature_forwards(def, &structs, &mut printed)
-                            .map(CDecl::Type),
-                    );
-                    decls.push(CDecl::Function(index));
+                    let forwards: Vec<CTypeDef> =
+                        lowerer.signature_forwards(def, &structs, &mut printed).collect();
+                    decls.extend(forwards.into_iter().map(|def| place_type(def, index)));
+                    decls.push(place(CDecl::Function(index), index));
                     functions.push((index, function));
                 }
             }
@@ -153,47 +228,79 @@ pub(crate) fn lower_module(program: &Program, module: &Module) -> LoweredModule 
             ItemKind::UseHeader { header } => lowerer.use_header(*header, item),
             ItemKind::Main(def) => mains.push(lowerer.main(def, item)),
         }
+        decl_parts.insert(index, std::mem::take(&mut lowerer.decl_part));
     }
     // Functions the layout does not list: declared last, in definition
     // order.
-    let mut rest: Vec<(usize, CFunction)> = unlisted()
+    let mut rest: Vec<(usize, CFunction, Usage)> = unlisted()
         .filter(is_function)
         .filter_map(|index| match &module.items[index].kind {
-            ItemKind::Function(def) => lowerer.function(def, &module.items[index]).map(|f| (index, f)),
+            ItemKind::Function(def) => lowerer
+                .function(def, &module.items[index])
+                .map(|f| (index, f, std::mem::take(&mut lowerer.decl_part))),
             _ => None,
         })
         .collect();
-    rest.sort_by_cached_key(|(_, f)| (f.name.clone(), signature_key(f), f.origin.block.clone()));
-    for (index, function) in rest {
+    rest.sort_by_cached_key(|(_, f, _)| (f.name.clone(), signature_key(f), f.origin.block.clone()));
+    for (index, function, decl_part) in rest {
+        decl_parts.insert(index, decl_part);
         if let ItemKind::Function(def) = &module.items[index].kind {
-            decls.extend(
-                lowerer
-                    .signature_forwards(def, &structs, &mut printed)
-                    .map(CDecl::Type),
-            );
+            let forwards: Vec<CTypeDef> = lowerer.signature_forwards(def, &structs, &mut printed).collect();
+            decls.extend(forwards.into_iter().map(|def| place_type(def, index)));
         }
-        decls.push(CDecl::Function(index));
+        decls.push(place(CDecl::Function(index), index));
         functions.push((index, function));
     }
-    // Definition order never depends on canvas position (spec §6.7).
+    sort_definitions(&mut functions, &mut decls);
+    mains.sort_by(|a, b| a.origin.block.cmp(&b.origin.block));
+    LoweredModule {
+        decls,
+        functions: functions
+            .into_iter()
+            .map(|(index, node)| Placed {
+                node,
+                item: Some(index),
+                region: region(index),
+            })
+            .collect(),
+        mains,
+        usage: lowerer.usage,
+        decl_parts,
+    }
+}
+
+/// Sorts the function definitions (by name, then signature, then block ID:
+/// definition order never depends on canvas position, spec §6.7) and points
+/// each function declaration at its definition's new place.
+fn sort_definitions(functions: &mut [(usize, CFunction)], decls: &mut [Placed<CDecl>]) {
     functions.sort_by_cached_key(|(_, f)| (f.name.clone(), signature_key(f), f.origin.block.clone()));
-    let position: std::collections::BTreeMap<usize, usize> = functions
+    let position: BTreeMap<usize, usize> = functions
         .iter()
         .enumerate()
         .map(|(at, (index, _))| (*index, at))
         .collect();
-    for decl in &mut decls {
-        if let CDecl::Function(index) = decl {
+    for decl in decls {
+        if let CDecl::Function(index) = &mut decl.node {
             *index = position.get(index).copied().unwrap_or(usize::MAX);
         }
     }
-    mains.sort_by(|a, b| a.origin.block.cmp(&b.origin.block));
-    LoweredModule {
-        decls,
-        functions: functions.into_iter().map(|(_, f)| f).collect(),
-        mains,
-        usage: lowerer.usage,
+}
+
+/// The structs a module defines: their symbols, and by name (the first one
+/// for duplicates) each one's item index.
+fn module_structs(program: &Program, module: &Module) -> (BTreeSet<SymbolId>, BTreeMap<String, usize>) {
+    let mut symbols = BTreeSet::new();
+    let mut by_name = BTreeMap::new();
+    for (index, item) in module.items.iter().enumerate() {
+        let ItemKind::Struct(def) = &item.kind else {
+            continue;
+        };
+        symbols.insert(def.symbol.clone());
+        if let Some(symbol) = program.symbols.get(&def.symbol) {
+            by_name.entry(symbol.name.as_str().to_owned()).or_insert(index);
+        }
     }
+    (symbols, by_name)
 }
 
 /// Orders overloads (functions with the same name) by their parameter types:
@@ -246,6 +353,10 @@ struct Lowerer<'a> {
     part: ItemPart,
     /// The headers the current item's own code needs so far, by part.
     item_headers: ItemHeaders,
+    /// The helpers the current item's declaration part calls so far.
+    decl_helpers: BTreeSet<Helper>,
+    /// What the declaration part of the item finished last needs.
+    decl_part: Usage,
     /// Whether the code being lowered is in `main`.
     in_main: bool,
     /// Names declared in the enclosing scopes of the current function,
@@ -283,10 +394,17 @@ impl<'a> Lowerer<'a> {
             usage: Usage::default(),
             part: ItemPart::Body,
             item_headers: ItemHeaders::default(),
+            decl_helpers: BTreeSet::new(),
+            decl_part: Usage::default(),
             in_main: false,
             scopes: Vec::new(),
             depth: 0,
         }
+    }
+
+    /// The names of the user namespaces an item is in, outermost first.
+    fn namespace_names(&self, item: &Item) -> Vec<Ident> {
+        Region::of(item, self.symbols, false).namespaces
     }
 
     /// Looks up a symbol.
@@ -357,6 +475,9 @@ impl<'a> Lowerer<'a> {
 
     /// Records that a support helper is called.
     fn use_helper(&mut self, helper: Helper) {
+        if self.part == ItemPart::Decl {
+            self.decl_helpers.insert(helper);
+        }
         self.usage.helpers.insert(helper);
     }
 
@@ -381,6 +502,7 @@ impl<'a> Lowerer<'a> {
     fn start_item(&mut self) {
         self.part = ItemPart::Decl;
         self.item_headers = ItemHeaders::default();
+        self.decl_helpers.clear();
     }
 
     /// Continues with the code printed only with the item's definition.
@@ -391,9 +513,14 @@ impl<'a> Lowerer<'a> {
     /// Ends an item that is printed: the headers of both its parts, the
     /// generator's and the catalog's (`Item::headers`), go where the parts
     /// are printed. The module's `.cpp` prints the whole item, so both parts
-    /// go there.
+    /// go there; the declaration part's are also kept apart
+    /// (`decl_part`), for a header that declares the item.
     fn finish_item(&mut self, catalog: &ItemHeaders) {
         let own = std::mem::take(&mut self.item_headers);
+        self.decl_part = Usage {
+            includes: own.decl.iter().chain(&catalog.decl).copied().collect(),
+            helpers: std::mem::take(&mut self.decl_helpers),
+        };
         let includes = &mut self.usage.includes;
         includes.extend(own.decl);
         includes.extend(own.body);
