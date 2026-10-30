@@ -558,14 +558,20 @@ default size.
 **CI.** On `ad7361e`: CI green; Desktop failed the frontend tests (the
 panels loaded Blockly) and, on Linux, the `typed-slots` and `selection`
 flows, all three fixed in `167de44` and `ee2d2a2`, and the visual diff
-(below). On `ee2d2a2`: running when this was written; the next commit records it.
+(below). On `ee2d2a2` (the last code change; later commits change this
+contract only, which Desktop does not run for): CI, CodeQL and
+OSV-Scanner green; Desktop green but for the visual-diff step on both
+systems (the frontend tests with coverage, both app builds, and every E2E
+flow: Linux 57 files passed, Windows 56 passed and 1 skipped, 203 tests).
 
 **Visual diff, for the coordinator to rebaseline** (no baseline was
 updated). *use header* and *check at compile time* are advanced now
 (W4E-1), so the Program flyout loses them and the toolbox shown at start
 changes: `canvas-guessing-game`, `chrome-menu-open`,
 `chrome-toolbox-program` and `chrome-window-smallest`, light and dark, on
-Linux, and expectedly the same on Windows. The C++ mode is off by default
+Linux (36,156, 5,221 and 5,060, 13,878 and 13,257, 13,880 and 13,248
+pixels in Desktop run 41059385161), and the four light ones on Windows
+(36,319, 7,257, 15,297 and 15,297 pixels). No other scene differs. The C++ mode is off by default
 and toolbox search shows only on demand, so no other scene changes.
 
 **Merge notes.**
