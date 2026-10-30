@@ -153,11 +153,18 @@ export async function check({
       fix: `install Node.js 22 (${BUILDING}, step 3)`,
     }),
   );
+  // pnpm runs this as `pnpm doctor` and says which version it is. Run on its own, the script
+  // asks pnpm, except on Windows, where pnpm is a .cmd file that only a shell runs.
   const pnpm =
-    /pnpm\/(\S+)/.exec(userAgent)?.[1] ?? exec(exe("pnpm"), ["--version"]);
+    /pnpm\/(\S+)/.exec(userAgent)?.[1] ??
+    (platform === "win32" ? null : exec("pnpm", ["--version"]));
   findings.push(
     versionFinding("pnpm", pnpm, pins.pnpm ?? "0", {
-      fix: "corepack enable (pnpm then comes in the version package.json names)",
+      missing: platform === "win32" ? "warning" : "problem",
+      fix:
+        platform === "win32"
+          ? "run this as pnpm doctor, so pnpm says its version"
+          : "corepack enable (pnpm then comes in the version package.json names)",
     }),
   );
 

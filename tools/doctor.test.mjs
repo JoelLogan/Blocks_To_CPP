@@ -133,3 +133,15 @@ test("reports problems with their fixes, and what is optional as warnings", asyn
   assert.match(text, /^PROBLEM {2}Rust: 1\.80\.0/m);
   assert.match(text, /problems? to fix first/);
 });
+
+test("on Windows, run on its own, asks to be run as pnpm doctor for pnpm", async () => {
+  const findings = await check({
+    exec: () => null,
+    platform: "win32",
+    nodeVersion: "22.14.0",
+    userAgent: "",
+  });
+  const pnpm = findings.find((finding) => finding.name === "pnpm");
+  assert.equal(pnpm?.level, "warning");
+  assert.match(pnpm?.fix ?? "", /pnpm doctor/);
+});
