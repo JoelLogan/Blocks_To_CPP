@@ -16,7 +16,8 @@ import {
 } from '../toolbox/testing';
 import { QUICK_FIX_MENU_ID, quickFixPlugin, quickFixesFor } from './plugin';
 
-// The toolbox the fixes read its symbols from shows its flyout (FLYOUT_TEST_TIMEOUT_MS).
+// The toolbox the fixes read its symbols from shows its flyout (FLYOUT_TEST_TIMEOUT_MS): the
+// slowest took 1.9 s with this file and Quick Insert's alone, under coverage with two workers.
 vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 beforeAll(() => {
