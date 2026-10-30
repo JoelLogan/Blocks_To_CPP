@@ -382,10 +382,15 @@ dependency.
 * **Windows.** Nothing system-specific: the clipboard goes through the
   page's `copy` event as the editor's clipboard does; paths in the bug
   report are replaced for both separators.
-* **Performance at 1,000 blocks.** The relabel reload is the module switch's
-  cost (measured on the 1,000-block fixture in a test); the search index is
-  per mode and dynamic key, not per keystroke; a quick fix touches one
-  block; the toolbox's gate check is per entry, once per rebuild.
+* **Performance at 1,000 blocks.** The relabel reload costs what a module
+  switch costs (one `loadModule` of the shown module with events off, then a
+  rebuild of the block index); neither is measured at 1,000 blocks yet, and
+  no benchmark times a label change (a `webview.relabel-1000` benchmark beside
+  the selection one is a follow-up). The search index is per mode and
+  dynamic key, not per keystroke (the toolbox keeps its entries per contents
+  key, which holds the mode, and a test checks one build for three queries);
+  a quick fix touches one block; the toolbox's gate check is per entry, once
+  per rebuild.
 
 ## 6. Needs from the coordinator
 
@@ -459,9 +464,12 @@ of §2.1 are the values to write. `E0703` (06 §6.10) reads the same keys.
 * **E2E** (at 800 × 560, 1024 × 768 and the default size): the type
   picker (choose *map from string to list of int* with the keyboard; the
   C++ panel shows `std::map<std::string, std::vector<int>>`); Quick Insert
-  (`Ctrl+Space`, type `print`, Enter); a quick fix (delete a `create`,
-  fix *Create variable*, undo); the C++ labels (switch, a block reads
-  `std::cout <<`, back).
+  (with the program block selected, `Ctrl+Space`, type `int total = 5`,
+  Enter; `create total` lands in its body; one `Ctrl+Z` takes it away); a
+  quick fix (delete a `create`, fix *Create variable*, undo); the C++ labels
+  (switch *Block labels* to C++ in Settings, the program block reads
+  `int main(`, back to *when program starts*; the project has no unsaved
+  changes before or after).
 * **Visual diff:** the C++ mode is off by default and the toolbox gains a
   search field: the toolbox scenes change (§10 lists them).
 
@@ -474,6 +482,10 @@ of §2.1 are the values to write. `E0703` (06 §6.10) reads the same keys.
 * 03 §3.14: Quick Insert as built (`Ctrl+Space`, the context-menu item, the
   one-liners read; the rest with expression slots).
 * 04 §4.2: toolbox search; the gated entries hidden.
+* 03 §3.8 item 6 (Search: `Ctrl+F` searches the module's block text,
+  identifiers and comments) and 04 §4.7 (the default shortcuts: `Ctrl+F`
+  Find): `Ctrl+F` on the canvas opens toolbox search until the module's
+  Find lands (M5), per W4E-9.
 * 04 §4.4: the quick fixes; *Copy bug report*.
 * 07 §7.5.3: the friendly rules, where they run (the frontend), and that
   the raw text is kept.
@@ -492,6 +504,7 @@ of §2.1 are the values to write. `E0703` (06 §6.10) reads the same keys.
 | W4E-6 | The bug report's default | Nothing from the project unless ticked; quoted names and paths always replaced |
 | W4E-7 | The type picker's first view | *Common*, *My types*, *Collections*; a search box focused |
 | W4E-8 | Toolbox search's field | Shown on demand (`Ctrl+F`, *Search blocks…*), over the toolbox, rather than always above it (§2.4: Blockly's toolbox DOM and focus, and every canvas scene would move) |
+| W4E-9 | Toolbox search's key, which the spec gives to the module's Find (03 §3.8 item 6, 04 §4.7, M5) | `Ctrl+F` on the canvas opens toolbox search now, since Find does not exist yet; when Find lands in M5, either Find takes `Ctrl+F` back and toolbox search keeps *Search blocks…* (and another key), or one search field finds both blocks to add and blocks on the canvas. The other choice is another key now (keeping `Ctrl+F` free), at the cost of a less familiar key until M5 |
 
 ## 11. Coordination with W3
 
