@@ -4,7 +4,7 @@
  * the editor's mode offers. *change*'s bitwise forms need *Show advanced blocks*. A block that
  * already holds a gated option keeps it and still shows it (blockly-ext's option filter).
  */
-import { setOptionFilter } from '@blocks2cpp/blockly-ext';
+import { setBlockLabelMode, setOptionFilter } from '@blocks2cpp/blockly-ext';
 
 import { type EditorMode, optionGate } from './gate';
 
@@ -16,5 +16,32 @@ export function installOptionGate(mode: () => EditorMode): () => void {
   setOptionFilter((block, field, value) => optionGate(block.type, field, value, mode()).allowed);
   return () => {
     setOptionFilter(null);
+  };
+}
+
+/**
+ * Sets the label mode blocks are built in from the editor's mode now, and again whenever it
+ * changes, then calls `relabel` so that the shown blocks are built again in it (the editor
+ * session's `relabel`; docs/plans/m3-contracts/w4-editor-tools.md §2.1). Returns the function that
+ * stops following it and goes back to the Friendly labels.
+ */
+export function installLabelMode(
+  mode: () => EditorMode,
+  subscribe: (listener: () => void) => () => void,
+  relabel: () => void,
+): () => void {
+  let current = mode().labels;
+  setBlockLabelMode(current);
+  const unsubscribe = subscribe(() => {
+    const next = mode().labels;
+    if (next !== current) {
+      current = next;
+      setBlockLabelMode(next);
+      relabel();
+    }
+  });
+  return () => {
+    unsubscribe();
+    setBlockLabelMode('friendly');
   };
 }

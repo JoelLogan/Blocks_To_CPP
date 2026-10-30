@@ -31,6 +31,7 @@ import {
   toolboxSymbolGroups,
   variableGroups,
   variablesContents,
+  withLabelMode,
   type ContentsContext,
   type ModuleInfo,
 } from './contents';
@@ -42,6 +43,7 @@ import {
   presetBlock,
   type B2cBlockInfo,
 } from './presets';
+import type { EditorMode } from '../gating';
 import {
   disposeTestWorkspaces,
   fakeSymbols,
@@ -216,7 +218,7 @@ describe('the toolbox definition', () => {
       'Functions',
       ...w2.filter((name) => filled.includes(name)),
     ]);
-    const shown = TOOLBOX.filter(isShownCategory);
+    const shown = TOOLBOX.filter((category) => isShownCategory(category));
     for (const [index, category] of categories.entries()) {
       const id = shown[index]?.id;
       expect(category.kind).toBe(B2C_CATEGORY_KIND);
@@ -241,7 +243,9 @@ describe('the toolbox definition', () => {
   it('starts with static categories only, so a workspace can be injected with it', () => {
     const initial = initialToolboxDefinition();
     expect(initial.contents.some((item) => 'custom' in item)).toBe(false);
-    expect(initial.contents).toHaveLength(TOOLBOX.filter(isShownCategory).length);
+    expect(initial.contents).toHaveLength(
+      TOOLBOX.filter((category) => isShownCategory(category)).length,
+    );
   });
 
   it('leaves out a category without entries that the editor does not build (w2.md §2.1)', () => {
@@ -261,7 +265,7 @@ describe('the toolbox definition', () => {
     expect(isShownCategory({ ...empty, id: 'program' })).toBe(true);
     expect(isShownCategory({ ...empty, id: 'variables', dynamic: 'variables' })).toBe(true);
     expect(toolboxDefinition().contents.map((item) => categoryOfDefinition(item))).toEqual(
-      TOOLBOX.filter(isShownCategory).map((category) => category.id),
+      TOOLBOX.filter((category) => isShownCategory(category)).map((category) => category.id),
     );
   });
 
@@ -1137,5 +1141,60 @@ describe('presets', () => {
     expect(declares('variables', 'var.declare')).toEqual({ NAME: 'value' });
     expect(declares('loops', 'control.for_range')).toEqual({ VAR: 'i' });
     expect(declares('functions', 'func.define')).toEqual({ NAME: 'myFunction' });
+  });
+});
+
+describe('the gated toolbox (w4-editor-tools.md §2.1)', () => {
+  const basic: EditorMode = {
+    labels: 'friendly',
+    showAdvanced: false,
+    standard: 'c++20',
+    toolchain: null,
+  };
+  const advanced: EditorMode = { ...basic, showAdvanced: true };
+
+  it('leaves the advanced blocks out until Show advanced blocks is on', () => {
+    const items = (mode: EditorMode) => programContents({ ...context(), mode: () => mode });
+    expect(typesOf(items(basic))).toEqual(['program.exit']);
+    expect(typesOf(items(advanced))).toEqual([
+      'program.exit',
+      'program.use_header',
+      'program.check',
+    ]);
+    expect(typesOf(staticCategoryContents('control', basic))).not.toContain('control.fallthrough');
+    expect(typesOf(staticCategoryContents('control', advanced))).toContain('control.fallthrough');
+  });
+
+  it('offers everything without a mode', () => {
+    expect(typesOf(staticCategoryContents('control'))).toContain('control.fallthrough');
+  });
+
+  it('puts the mode in the dynamic contents key, so a mode change rebuilds the categories', () => {
+    const shared = context();
+    const key = (mode: EditorMode) => dynamicContentsKey({ ...shared, mode: () => mode });
+    expect(key(basic)).not.toBe(key(advanced));
+    expect(key(basic)).not.toBe(key({ ...basic, labels: 'cpp' }));
+    expect(key(basic)).toBe(key({ ...basic }));
+  });
+
+  it('marks blocks with the C++ label mode, so the flyout builds them again', () => {
+    const items = staticCategoryContents('math', { ...basic, labels: 'cpp' });
+    expect(blocksOf(items).every((block) => (block as { labels?: string }).labels === 'cpp')).toBe(
+      true,
+    );
+    expect(blocksOf(staticCategoryContents('math', basic)).some((block) => 'labels' in block)).toBe(
+      false,
+    );
+    const label: Item = { kind: 'label', text: 'x' };
+    expect(withLabelMode([label], { ...basic, labels: 'cpp' })).toEqual([label]);
+  });
+
+  it('shows the categories the mode offers in the definition', () => {
+    const shown = (mode: EditorMode | null) =>
+      toolboxDefinition(mode).contents.map((item) => categoryOfDefinition(item));
+    expect(shown(basic)).toEqual(shown(null));
+    expect(TOOLBOX.filter((category) => isShownCategory(category, advanced))).toHaveLength(
+      TOOLBOX.filter((category) => isShownCategory(category)).length,
+    );
   });
 });

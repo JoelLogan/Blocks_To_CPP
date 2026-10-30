@@ -101,6 +101,24 @@ export function noteCreatedFromToolbox(original: Blockly.Block, created: Blockly
   ORIGINS.set(created, { group: Blockly.Events.getGroup(), defaults, retarget });
 }
 
+/**
+ * Takes note that `created` was just made on the canvas from the toolbox item `info` itself, not
+ * from a flyout block (Quick Insert, ../quick-insert/insert.ts): its declarations still have the
+ * item's names and its reference the item's variable, so it is settled where it goes as a block
+ * dragged from the toolbox is ({@link settleDroppedBlock}, in the same event group).
+ */
+export function noteCreatedFromItem(created: Blockly.Block, info: B2cBlockInfo): void {
+  const defaults = Object.keys(info.declares ?? {}).flatMap((field) => {
+    const kind = defaultNameKind(info.type, field);
+    return kind === undefined ? [] : [{ field, kind }];
+  });
+  ORIGINS.set(created, {
+    group: Blockly.Events.getGroup(),
+    defaults,
+    retarget: info.retarget ?? null,
+  });
+}
+
 /** The type of symbol `symId` in the latest analysis, or `null` when it does not know it. */
 export function symbolType(source: SymbolSource, symId: string | null): TypeJson | null {
   if (symId === null) {

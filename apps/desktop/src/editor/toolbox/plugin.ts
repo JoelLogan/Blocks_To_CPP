@@ -26,9 +26,12 @@ import * as Blockly from 'blockly/core';
 import { dialogs as appDialogs } from '../../app/dialogs/instance';
 import type { DialogService, DialogTextOptions } from '../../app/dialogs/service';
 import type { EditorContext, EditorPlugin } from '../../app/editor-types';
+import { editorMode, modeKey } from '../gating';
+import { searchBlocks, searchEntries } from '../search';
 import { analysisScope } from '../services/symbols';
 import { handleBlockDrops } from '../sync/drag';
 import {
+  B2C_CATEGORY_KIND,
   MAKE_VARIABLE_BUTTON,
   MY_BLOCKS_CATEGORY,
   PROGRAM_CATEGORY,
@@ -41,6 +44,7 @@ import {
   toolboxDefinition,
   toolboxSymbolGroups,
   variablesContents,
+  withLabelMode,
   type ContentsContext,
   type ModuleInfo,
 } from './contents';
@@ -140,15 +144,18 @@ function withBlocklyFocus(dialogs: ToolboxDialogs): ToolboxDialogs {
   };
 }
 
-/** Builds a dynamic category, showing a short note instead of failing the whole flyout. */
+/**
+ * Builds a dynamic category, its blocks marked with the label mode ({@link withLabelMode}), showing
+ * a short note instead of failing the whole flyout.
+ */
 function guarded(
   name: string,
-  build: (context: ContentsContext) => Blockly.utils.toolbox.FlyoutItemInfoArray,
+  build: (context: ContentsContext) => Blockly.utils.toolbox.FlyoutItemInfo[],
   context: ContentsContext,
 ): () => Blockly.utils.toolbox.FlyoutItemInfoArray {
   return () => {
     try {
-      return build(context);
+      return withLabelMode(build(context), context.mode?.() ?? null);
     } catch (error: unknown) {
       console.error(`The toolbox category ${name} could not be built`, error);
       return failedCategoryNote();
@@ -181,12 +188,54 @@ function setToolbox(
 const DYNAMIC_CATEGORIES: readonly {
   readonly key: string;
   readonly name: string;
-  readonly build: (context: ContentsContext) => Blockly.utils.toolbox.FlyoutItemInfoArray;
+  readonly build: (context: ContentsContext) => Blockly.utils.toolbox.FlyoutItemInfo[];
 }[] = [
   { key: PROGRAM_CATEGORY, name: 'Program', build: programContents },
   { key: VARIABLES_CATEGORY, name: 'Variables', build: variablesContents },
   { key: MY_BLOCKS_CATEGORY, name: 'Functions', build: functionsContents },
 ];
+
+/** The contents context of each workspace with the toolbox attached (search, Quick Insert). */
+const CONTEXTS = new WeakMap<Blockly.Workspace, ContentsContext>();
+
+/**
+ * What the toolbox of `workspace` builds its categories from (the module shown, its symbols, the
+ * mode), while the toolbox is attached; `null` otherwise. Quick Insert and toolbox search read the
+ * same blocks the toolbox offers through it (../search/index.ts).
+ */
+export function toolboxContentsContext(workspace: Blockly.Workspace): ContentsContext | null {
+  return CONTEXTS.get(workspace) ?? null;
+}
+
+/** The toolbox search of each workspace with the toolbox attached ({@link ToolboxSearch}). */
+const SEARCHES = new WeakMap<Blockly.Workspace, ToolboxSearch>();
+
+/**
+ * Toolbox search (docs/spec/04-user-interface.md §4.2, docs/plans/m3-contracts/w4-editor-tools.md
+ * §2.4): while a query is set, the toolbox shows one category, *Search results*, with the blocks
+ * that match it, best first (the toolbox's own items, so they are dragged out as from their
+ * category); without one, its categories again.
+ */
+export interface ToolboxSearch {
+  /** Shows the blocks that match `query`, or with `null` the categories again. */
+  setQuery(query: string | null): void;
+  /** The query shown, or `null`. */
+  query(): string | null;
+  /** How many blocks the results show (0 without a query). */
+  resultCount(): number;
+}
+
+/** The toolbox search of `workspace`, while its toolbox is attached. */
+export function toolboxSearch(workspace: Blockly.Workspace): ToolboxSearch | null {
+  return SEARCHES.get(workspace) ?? null;
+}
+
+/** The name of the category that shows the search results. */
+export const SEARCH_RESULTS_NAME = 'Search results';
+/** What the results say when no block matches. */
+export const NO_RESULTS_NOTE = 'No block matches.';
+/** The most blocks the results show. */
+export const MAX_SEARCH_RESULTS = 40;
 
 /** Attaches the toolbox to the editor's workspace; returns the function that detaches it. */
 function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): () => void {
@@ -201,7 +250,9 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     modules: () => modulesOf(store),
     activeModuleId: () => context.activeModuleId(),
     programModuleId: () => programModule(store, workspace, context.activeModuleId()),
+    mode: () => editorMode(store.getState()),
   };
+  CONTEXTS.set(workspace, contentsContext);
   /** What the dynamic categories show depends on, now; never throws. */
   const contentsKey = (): string | null => {
     try {
@@ -322,7 +373,41 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   if (toolbox instanceof B2cContinuousToolbox) {
     toolbox.setContentsKey(() => dynamicContentsKey(contentsContext));
   }
-  const installed = setToolbox(workspace, toolboxDefinition());
+  /** The mode the toolbox definition was installed for (`modeKey`). */
+  let installedMode = modeKey(editorMode(store.getState()));
+  /** The toolbox definition installed last, serialised. */
+  let installedDefinition = '';
+  /** The toolbox search's query, or `null`. */
+  let searchQuery: string | null = null;
+  let searchCount = 0;
+  /** The definition with the search results for `query`. */
+  const resultsDefinition = (query: string): Blockly.utils.toolbox.ToolboxInfo => {
+    const found = searchBlocks(searchEntries(contentsContext), query, MAX_SEARCH_RESULTS);
+    searchCount = found.length;
+    const contents: Blockly.utils.toolbox.FlyoutItemInfo[] =
+      found.length === 0
+        ? [{ kind: 'label', text: NO_RESULTS_NOTE, id: undefined }]
+        : found.map((entry) => entry.item);
+    const category = {
+      kind: B2C_CATEGORY_KIND,
+      name: SEARCH_RESULTS_NAME,
+      id: undefined,
+      categorystyle: undefined,
+      colour: undefined,
+      cssconfig: undefined,
+      hidden: undefined,
+      contents,
+    };
+    return { kind: 'categoryToolbox', contents: [category] };
+  };
+  /** The definition the toolbox shows now: the search results, or the categories of the mode. */
+  const currentDefinition = (): Blockly.utils.toolbox.ToolboxInfo =>
+    searchQuery === null
+      ? toolboxDefinition(editorMode(store.getState()))
+      : resultsDefinition(searchQuery);
+  const firstDefinition = toolboxDefinition(editorMode(store.getState()));
+  installedDefinition = JSON.stringify(firstDefinition);
+  const installed = setToolbox(workspace, firstDefinition);
   if (installed) {
     builtKey = contentsKey();
     refresh();
@@ -344,7 +429,60 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     }
   };
   workspace.addChangeListener(onEvent);
+  /**
+   * The editor's mode changed (the label or advanced settings, the project's standard or options,
+   * the toolchain): the static categories' blocks and the categories shown may change, so the
+   * toolbox definition is installed again when it differs from the one installed (a toolchain
+   * found after the project opened changes the mode but, with no gated block, nothing shown; a
+   * definition installed again would build every flyout block again); the dynamic categories follow
+   * through their contents key, which holds the mode.
+   */
+  const followMode = (): void => {
+    const mode = editorMode(store.getState());
+    const key = modeKey(mode);
+    if (key === installedMode || !installed) {
+      return;
+    }
+    installedMode = key;
+    const definition = currentDefinition();
+    const serialised = JSON.stringify(definition);
+    if (serialised === installedDefinition) {
+      return;
+    }
+    installedDefinition = serialised;
+    if (setToolbox(workspace, definition)) {
+      builtKey = contentsKey();
+      refresh();
+    }
+  };
+  SEARCHES.set(workspace, {
+    setQuery(query) {
+      const next = query === null || query.trim() === '' ? null : query;
+      if (next === searchQuery || detached) {
+        return;
+      }
+      searchQuery = next;
+      if (next === null) {
+        searchCount = 0;
+      }
+      const definition = currentDefinition();
+      installedDefinition = JSON.stringify(definition);
+      if (installed && setToolbox(workspace, definition)) {
+        builtKey = contentsKey();
+        refresh();
+      }
+    },
+    query: () => searchQuery,
+    resultCount: () => searchCount,
+  });
   const unsubscribe = store.subscribe((state, previous) => {
+    if (
+      state.settings !== previous.settings ||
+      state.toolchains !== previous.toolchains ||
+      state.project?.document.project !== previous.project?.document.project
+    ) {
+      followMode();
+    }
     // A new analysis, a notice that none is coming (the canvas did not load, the core failed),
     // other modules, or another module shown.
     if (
@@ -359,6 +497,8 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
 
   return () => {
     detached = true;
+    CONTEXTS.delete(workspace);
+    SEARCHES.delete(workspace);
     if (refreshTimer !== null) {
       clearTimeout(refreshTimer);
       refreshTimer = null;

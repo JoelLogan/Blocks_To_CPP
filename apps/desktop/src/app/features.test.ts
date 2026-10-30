@@ -90,6 +90,8 @@ describe('the lists later waves extend', () => {
       'diagnostics',
       'clipboard',
       'menus',
+      'quick-insert',
+      'quick-fixes',
       'keyboard',
       'dialog-popups',
     ]);

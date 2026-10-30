@@ -23,9 +23,10 @@ import {
 } from '../app/editor-types';
 import { EDITOR_PLUGINS } from '../app/editorPlugins';
 import { useAppStore } from '../app/store';
-import { editorMode, installOptionGate } from './gating';
+import { editorMode, installLabelMode, installOptionGate } from './gating';
 import { BLOCKLY_MEDIA_DIR } from './media';
 import { ModuleSwitcher } from './modules/ModuleSwitcher';
+import { QuickInsert, ToolboxSearch } from './quick-insert';
 import { appCoreHost, type CoreHost } from './preview/coreHost';
 import type { PreviewService } from './preview/service';
 import { appWorkerPreviewService } from './preview/worker/spawn';
@@ -130,6 +131,16 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
   // Dropdown menus list only the options the editor's mode offers (W4's gating; *change*'s bitwise
   // forms need *Show advanced blocks*, w2.md §1.9).
   const uninstallOptionGate = installOptionGate(() => editorMode(deps.store.getState()));
+  // Blocks are built in the label mode of the settings (Friendly or C++), from the first document
+  // on; a change builds the shown blocks again, without an undo step (w4-editor-tools.md §2.1).
+  let relabel: () => void = () => undefined;
+  const uninstallLabelMode = installLabelMode(
+    () => editorMode(deps.store.getState()),
+    (listener) => deps.store.subscribe(listener),
+    () => {
+      relabel();
+    },
+  );
   const session = new EditorSession({
     workspace,
     store: deps.store,
@@ -137,6 +148,9 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
     hooks: servicesSessionHooks(services, workspace),
     ...(deps.service === undefined ? {} : { service: deps.service }),
   });
+  relabel = () => {
+    session.relabel();
+  };
   const handle: EditorHandle = {
     loadDocument: (doc, options) => {
       session.loadDocument(doc, options);
@@ -204,6 +218,7 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
       session.dispose();
       uninstallServices();
       uninstallOptionGate();
+      uninstallLabelMode();
     },
   };
 }
@@ -231,8 +246,8 @@ export function EditorWorkspace() {
     registerEditorBlocks();
     // The theme in use (the Appearance setting, on <html>, ../app/appearance), followed below.
     const workspace = Blockly.inject(element, editorInjectOptions(b2cTheme(documentTheme())));
-    // The preview worker only in builds made with B2C_PREVIEW_WORKER=1 (ADR-0016; off until the
-    // integration after W2, docs/plans/m3-contracts/w5-worker.md §4).
+    // The preview worker in every build but one made with B2C_PREVIEW_WORKER=0 (ADR-0016, on by
+    // default since docs/plans/m3-contracts/w5-performance.md §2.4).
     const service = previewWorkerEnabled() ? appWorkerPreviewService(appCoreHost()) : null;
     const editor = attachEditor(workspace, {
       store: useAppStore,
@@ -274,7 +289,14 @@ export function EditorWorkspace() {
       <ModuleSwitcher />
       <div ref={host} className="blockly-host" />
       {canvas !== null &&
-        createPortal(<CanvasControls workspace={canvas.workspace} />, canvas.host)}
+        createPortal(
+          <>
+            <CanvasControls workspace={canvas.workspace} />
+            <ToolboxSearch workspace={canvas.workspace} />
+            <QuickInsert workspace={canvas.workspace} />
+          </>,
+          canvas.host,
+        )}
     </>
   );
 }

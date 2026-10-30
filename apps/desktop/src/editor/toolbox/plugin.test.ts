@@ -20,8 +20,9 @@ import {
   type DialogService,
 } from '../../app/dialogs';
 import { resetAppStore, useAppStore } from '../../app/store';
-import { documentFixture } from '../../app/testing/fixtures';
+import { documentFixture, settingsFixture, toolchainFixture } from '../../app/testing/fixtures';
 import { latestTimings, resetTimings } from '../../lib/timing';
+import { setBlockLabelMode } from '@blocks2cpp/blockly-ext';
 import { createSymbolServices, installEditorServices, servicesSessionHooks } from '../services';
 import { ICON_CLASS, CATEGORY_CLASS } from './category';
 import {
@@ -1056,5 +1057,64 @@ describe('the analysis symbol source', () => {
     };
     expect(analysisSymbolSource(useAppStore, () => trapped).symbolsAt('x', null)).toEqual([]);
     expect(analysisSymbolSource(useAppStore, () => null).symbolsAt('x', null)).toEqual([]);
+  });
+});
+
+describe('the toolbox and the editor mode (w4-editor-tools.md §2.1)', () => {
+  afterEach(() => {
+    setBlockLabelMode('friendly');
+  });
+
+  /** Puts the editor settings in the store. */
+  function setEditorSettings(editor: { blockLabels: 'friendly' | 'cpp'; showAdvanced: boolean }) {
+    useAppStore.setState({ settings: { value: settingsFixture({ editor }), notices: [] } });
+  }
+
+  it('shows the advanced blocks once Show advanced blocks is on, and hides them again', async () => {
+    setEditorSettings({ blockLabels: 'friendly', showAdvanced: false });
+    const workspace = attached('continuous');
+    await settle();
+    const types = () => flyoutBlocks(workspace).map((block) => block.type);
+    expect(types()).not.toContain('control.fallthrough');
+    expect(types()).not.toContain('program.check');
+    setEditorSettings({ blockLabels: 'friendly', showAdvanced: true });
+    await settle();
+    expect(types()).toContain('control.fallthrough');
+    expect(types()).toContain('program.check');
+    setEditorSettings({ blockLabels: 'friendly', showAdvanced: false });
+    await settle();
+    expect(types()).not.toContain('control.fallthrough');
+  });
+
+  it('builds its blocks again in the C++ labels when the label mode changes', async () => {
+    setEditorSettings({ blockLabels: 'friendly', showAdvanced: false });
+    const workspace = attached('continuous');
+    await settle();
+    const firstText = () =>
+      flyoutBlocks(workspace)
+        .find((block) => block.type === 'coll.add')
+        ?.inputList[0]?.fieldRow[0]?.getText();
+    expect(firstText()).toBe('add');
+    // The editor sets the blocks' mode first (gating's installLabelMode), then the store changes.
+    setBlockLabelMode('cpp');
+    setEditorSettings({ blockLabels: 'cpp', showAdvanced: false });
+    await settle();
+    expect(firstText()).not.toBe('add');
+  });
+
+  it('keeps its blocks when a toolchain is found and nothing it shows changes', async () => {
+    setEditorSettings({ blockLabels: 'friendly', showAdvanced: false });
+    const workspace = attached('continuous');
+    await settle();
+    const ids = () => flyoutBlocks(workspace).map((block) => block.id);
+    const before = ids();
+    useAppStore.setState((state) => ({
+      toolchains: {
+        ...state.toolchains,
+        list: [toolchainFixture({ selected: true, usable: true })],
+      },
+    }));
+    await settle();
+    expect(ids()).toEqual(before);
   });
 });

@@ -21,7 +21,7 @@
  *   field or input) are hidden: the block keeps the field's value, but W2 does not show it, as
  *   multi-module projects, where it means something, come with W3 (w2.md §2.1, modules.md §7.1).
  */
-import type { BlockDefJson } from '../generated/catalog';
+import type { BlockDefJson, LabelPart } from '../generated/catalog';
 import { REPEAT_ANCHOR } from './mutators';
 
 /**
@@ -60,8 +60,15 @@ export function rowName(index: number): string {
   return `b2c_row${String(index)}`;
 }
 
-/** Computes the layout of a block (see the module comment). */
-export function blockLayout(def: BlockDefJson): BlockLayout {
+/**
+ * Computes the layout of a block (see the module comment) from its label's parts: the Friendly
+ * label's by default, or the parts of the label of another mode (./labels.ts, `blockLabelParts`).
+ * The parts only order and word the inputs; every field and input is created in either mode.
+ */
+export function blockLayout(
+  def: BlockDefJson,
+  parts: readonly LabelPart[] = def.labelParts,
+): BlockLayout {
   const fieldNames = new Set(def.fields.map((field) => field.name));
   const valueInputs = new Map(def.inputs.map((input) => [input.name, input]));
   const statements = new Map(def.statements.map((statement) => [statement.name, statement]));
@@ -97,7 +104,7 @@ export function blockLayout(def: BlockDefJson): BlockLayout {
     }
   };
 
-  for (const part of def.labelParts) {
+  for (const part of parts) {
     if ('repeat' in part) {
       // The `…` closes the repeated group (opening it first if no part of it came before).
       if (!inGroup) {

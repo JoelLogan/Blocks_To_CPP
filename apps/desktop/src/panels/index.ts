@@ -36,6 +36,7 @@ export { MIN_WRITE_INTERVAL_MS } from './console/outputScheduler';
 export {
   MAX_RAW_DISPLAY_CHARS,
   ProblemsPanel,
+  type ProblemFix,
   type ProblemItem,
   type ProblemsPanelProps,
 } from './problems/ProblemsPanel';

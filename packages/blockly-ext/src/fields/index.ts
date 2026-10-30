@@ -22,6 +22,7 @@ export {
 export { B2cTextField, type TextFieldConfig } from './text';
 export { B2cTextInputBase, MAX_FIELD_DISPLAY_CHARS, type TextEntryConfig } from './text-input-base';
 export { B2cTypeField, NO_TYPE_LABEL, type TypeFieldConfig } from './type';
+export * from './type-picker';
 export {
   FIELD_TYPE,
   MAX_NAME_CHARS,

@@ -33,6 +33,8 @@ import {
 } from '../editor/diagnostics/inputs';
 import { buildProblemItems } from '../editor/diagnostics/problemItems';
 import { selectBlockFromCode, selectBlockFromProblem } from '../editor/highlight/reveal';
+import { BugReportDialog, type BugReportInput } from '../features/bug-report';
+import { GENERATOR_BUG_LABEL } from '../features/build-run/buildOutput';
 import { consoleBridge } from '../features/build-run/consoleBridge';
 import { consoleHeaderFrom } from '../features/build-run/consoleHeader';
 import { ipc } from '../lib/ipc';
@@ -43,6 +45,7 @@ import {
   ConsolePanel,
   DEFAULT_SCROLLBACK_LINES,
   isHiddenFile,
+  type ProblemFix,
   type ProblemItem,
   ProblemsPanel,
 } from '../panels';
@@ -50,7 +53,9 @@ import { useResolvedTheme } from './appearance';
 import { triggerCommand } from './commands';
 import { dialogs } from './dialogs/instance';
 import { getEditorHandle } from './editor-types';
+import { quickFixesOf } from './quickFixes';
 import { type AppState, useAppStore } from './store';
+import { selectedToolchain } from './store/selectors';
 import { useAppStoreWhileShown } from './store/whileShown';
 
 /** The content of each dock slot. */
@@ -204,7 +209,32 @@ function activateProblem(item: ProblemItem): void {
 
 /** Revealing a compiler message changes nothing else: the panel shows the text itself. */
 function showRawMessage(): void {
-  // Nothing to do in M2; quick fixes (M3) may react here.
+  // Nothing to do: the panel shows the text, and a generator bug's row offers its report.
+}
+
+/** A live row's quick fix on the canvas shown (w4-editor-tools.md §2.5), or `null`. */
+function fixOfProblem(item: ProblemItem): ProblemFix | null {
+  return item.origin === 'live' ? (quickFixesOf(item.diagnostic)[0] ?? null) : null;
+}
+
+/** Whether a row is a generator bug, which offers *Copy bug report…* (07 §7.5.3). */
+function reportsBug(item: ProblemItem): boolean {
+  return item.diagnostic.message.includes(GENERATOR_BUG_LABEL);
+}
+
+/** What the bug report of a row is made from, now. */
+function bugReportInput(item: ProblemItem): BugReportInput {
+  const state = useAppStore.getState();
+  const project = state.project?.document ?? null;
+  return {
+    appInfo: state.appInfo,
+    toolchain: selectedToolchain(state),
+    standard: project?.project.language.standard ?? null,
+    configuration: state.build.config,
+    diagnostic: item.diagnostic,
+    document: project,
+    files: state.analysis.preview?.files ?? [],
+  };
 }
 
 /**
@@ -228,16 +258,33 @@ export function ConnectedProblemsPanel() {
     [document, inputs, catalog],
   );
 
+  const [report, setReport] = useState<BugReportInput | null>(null);
+
   if (document === null) {
     return <EmptyPanel>Problems in your blocks will be listed here.</EmptyPanel>;
   }
   return (
-    <ProblemsPanel
-      items={items}
-      onActivate={activateProblem}
-      onShowRaw={showRawMessage}
-      onLearnMore={openDiagnosticsReference}
-    />
+    <>
+      <ProblemsPanel
+        items={items}
+        onActivate={activateProblem}
+        onShowRaw={showRawMessage}
+        onLearnMore={openDiagnosticsReference}
+        fixOf={fixOfProblem}
+        reportsBug={reportsBug}
+        onCopyBugReport={(item) => {
+          setReport(bugReportInput(item));
+        }}
+      />
+      {report !== null && (
+        <BugReportDialog
+          input={report}
+          onClose={() => {
+            setReport(null);
+          }}
+        />
+      )}
+    </>
   );
 }
 

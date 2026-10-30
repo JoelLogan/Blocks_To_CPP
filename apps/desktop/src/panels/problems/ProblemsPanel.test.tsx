@@ -255,4 +255,25 @@ describe('ProblemsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show C++ compiler message' }));
     await expectNoAxeViolations(container);
   });
+
+  it('offers a row’s quick fix in its Details cell, and applies it', async () => {
+    const apply = vi.fn(() => true);
+    renderPanel({
+      fixOf: (row) => (row.key === 'b2' ? { title: 'Create variable “Alpha”', apply } : null),
+    });
+    const fix = screen.getByRole('button', { name: 'Fix: Create variable “Alpha”' });
+    fireEvent.click(fix);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole('button', { name: /^Fix:/u })).toHaveLength(1);
+    await expectNoAxeViolations(screen.getByTestId('problems-panel'));
+  });
+
+  it('offers Copy bug report… with a generator bug’s compiler message', () => {
+    const onCopyBugReport = vi.fn();
+    renderPanel({ reportsBug: (row) => row.key === 'b4', onCopyBugReport });
+    expect(screen.queryByRole('button', { name: 'Copy bug report…' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show C++ compiler message' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy bug report…' }));
+    expect(onCopyBugReport).toHaveBeenCalledWith(expect.objectContaining({ key: 'b4' }));
+  });
 });

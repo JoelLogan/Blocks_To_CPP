@@ -15,6 +15,19 @@ export {
   type LayoutItem,
 } from './layout';
 export {
+  blockLabelParts,
+  CPP_OPTION_LABELS,
+  hasCppLayout,
+  hasFullCppLabel,
+  labelParts,
+  labelTemplate,
+  optionLabel,
+  partsMissingFromCppLabel,
+  type LabelMode,
+  type LabelPartsOptions,
+} from './labels';
+export { blockLabelMode, setBlockLabelMode } from './labelMode';
+export {
   MUTATOR_FOR_BLOCK,
   MUTATOR_NAME,
   REPEAT_ANCHOR,

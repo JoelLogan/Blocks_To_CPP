@@ -2,6 +2,8 @@
  * Field value shapes as a project file stores them (docs/spec/05-project-format.md §5.4–5.5), and
  * the rules a field applies to them.
  */
+import { blockLabelMode } from '../blocks/labelMode';
+import type { LabelMode } from '../blocks/labels';
 import { isProjectId } from '../ids';
 import { codePointCount, isCleanFieldText } from '../text';
 import {
@@ -96,13 +98,19 @@ export function isSymbolRefValue(value: unknown): value is SymbolRefValue {
  * The labels type dropdowns show (docs/spec/03-block-language.md §3.5.2): `std::string` reads
  * `string`, and a template, stored by its term's key (`{"std::vector":"int"}`), reads as its
  * friendly label (`list of int`, docs/plans/m3-contracts/types.md §1.1); a user type reads as its
- * name from `facts` (`list of Student`), or `unknown type` when they do not know it.
+ * name from `facts` (`list of Student`), or `unknown type` when they do not know it. In the C++
+ * label mode (the blocks' mode by default, ../blocks/labelMode.ts) a type reads as C++ instead:
+ * `std::string`, `std::vector<int>`, `std::vector<Student>`.
  */
-export function displayTypeName(type: string, facts: TypeFactsTs = NO_FACTS): string {
+export function displayTypeName(
+  type: string,
+  facts: TypeFactsTs = NO_FACTS,
+  mode: LabelMode = blockLabelMode(),
+): string {
   if (type.startsWith('{')) {
     const term = termFromKey(type);
     const parsed = term === null ? null : typeFromTerm(term);
-    return parsed === null ? type : typeLabel(parsed, facts, 'friendly');
+    return parsed === null ? type : typeLabel(parsed, facts, mode);
   }
-  return type === 'std::string' ? 'string' : type;
+  return type === 'std::string' && mode === 'friendly' ? 'string' : type;
 }

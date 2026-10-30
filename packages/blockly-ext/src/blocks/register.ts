@@ -16,6 +16,8 @@ import { visibleInvisibles } from '../text';
 import { blockStyleFor } from '../theme/themes';
 import { catalogFieldOptions } from './catalog';
 import { registerB2cCss } from './css';
+import { blockLabelMode } from './labelMode';
+import { blockLabelParts, optionLabel, type LabelMode } from './labels';
 import { blockLayout, type BlockLayout, type LayoutItem } from './layout';
 import { MUTATOR_FOR_BLOCK } from './mutators';
 import { registerPlaceholderBlock } from './placeholder';
@@ -47,14 +49,28 @@ export function registerB2cBlocks(): void {
   registerPlaceholderBlock();
 }
 
-/** The Blockly definition (`init`) of one catalog block. */
+/**
+ * The Blockly definition (`init`) of one catalog block. A block is laid out in the label mode in
+ * effect when it is built (./labelMode.ts): in the C++ mode from its C++ template when that names
+ * every part, with its menus' C++ option texts (./labels.ts). Both layouts have the same fields and
+ * inputs, so a block's state does not depend on the mode.
+ */
 export function blockDefinition(def: BlockDefJson): { init: (this: Blockly.Block) => void } {
-  const layout = blockLayout(def);
+  const layouts = new Map<LabelMode, BlockLayout>();
+  const layoutIn = (mode: LabelMode): BlockLayout => {
+    let layout = layouts.get(mode);
+    if (layout === undefined) {
+      layout = blockLayout(def, blockLabelParts(def, mode));
+      layouts.set(mode, layout);
+    }
+    return layout;
+  };
   const mutator = MUTATOR_FOR_BLOCK[def.id];
   const tooltip = visibleInvisibles(def.help);
   return {
     init(this: Blockly.Block): void {
-      buildInputs(this, def, layout);
+      const mode = blockLabelMode();
+      buildInputs(this, def, layoutIn(mode), mode);
       applyShownWhileTicked(this);
       applyShape(this, def.shape);
       this.setStyle(blockStyleFor(def.category, def.shape));
@@ -72,7 +88,12 @@ export function blockDefinition(def: BlockDefJson): { init: (this: Blockly.Block
   };
 }
 
-function buildInputs(block: Blockly.Block, def: BlockDefJson, layout: BlockLayout): void {
+function buildInputs(
+  block: Blockly.Block,
+  def: BlockDefJson,
+  layout: BlockLayout,
+  mode: LabelMode,
+): void {
   for (const input of layout.inputs) {
     let created: Blockly.Input;
     switch (input.kind) {
@@ -88,7 +109,7 @@ function buildInputs(block: Blockly.Block, def: BlockDefJson, layout: BlockLayou
         break;
     }
     for (const item of input.items) {
-      appendItem(block, created, def, item);
+      appendItem(block, created, def, item, mode);
     }
   }
 }
@@ -98,6 +119,7 @@ function appendItem(
   input: Blockly.Input,
   def: BlockDefJson,
   item: LayoutItem,
+  mode: LabelMode,
 ): void {
   if (item.kind === 'label') {
     const label = new Blockly.FieldLabel(item.text);
@@ -111,7 +133,17 @@ function appendItem(
   if (fieldDef === undefined) {
     throw new BlockRegistrationError(`The block ${def.id} has no field ${item.name}.`);
   }
-  const field = createCatalogField(fieldDef, catalogFieldOptions(block.type, fieldDef.name));
+  const shown =
+    mode === 'cpp' && fieldDef.kind === 'dropdown'
+      ? {
+          ...fieldDef,
+          options: fieldDef.options.map(
+            ([label, value]) =>
+              [optionLabel(def.id, fieldDef.name, value, label, mode), value] as const,
+          ),
+        }
+      : fieldDef;
+  const field = createCatalogField(shown, catalogFieldOptions(block.type, fieldDef.name));
   input.appendField(field, fieldDef.name);
   if (item.hidden === true) {
     // Kept with its value, not shown (the SHARED field, w2.md §2.1).
