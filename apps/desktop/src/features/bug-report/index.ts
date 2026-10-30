@@ -7,6 +7,7 @@ export {
   bugReport,
   sanitisedMessage,
   topBlockOf,
+  withoutFileNames,
   withoutPaths,
   withoutQuotedNames,
   type BugReportInput,

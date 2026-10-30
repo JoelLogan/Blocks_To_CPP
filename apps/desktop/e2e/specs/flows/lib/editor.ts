@@ -249,3 +249,22 @@ export async function closeMenu(driver: WebDriver): Promise<void> {
     { timeout: EDITOR_TIMEOUT_MS, message: 'the dropdown menu to close' },
   );
 }
+
+/**
+ * Clicks the type labelled `label` in the open type picker (a type field's popover,
+ * docs/plans/m3-contracts/w4-editor-tools.md §2.2), once it lists it.
+ */
+export async function choosePickerType(driver: WebDriver, label: string): Promise<void> {
+  const option = await waitFor(
+    async () => {
+      for (const item of await driver.findElements(By.css('.b2c-type-picker [role="option"]'))) {
+        if ((await item.isDisplayed()) && (await textContent(driver, item)) === label) {
+          return item;
+        }
+      }
+      return null;
+    },
+    { timeout: EDITOR_TIMEOUT_MS, message: `the type picker's option ${label}` },
+  );
+  await clickMiddle(driver, option);
+}

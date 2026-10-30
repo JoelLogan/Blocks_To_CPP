@@ -4,8 +4,9 @@
  * step.
  *
  * The place, in order: the connection the keyboard cursor is on, when the block fits it; after the
- * selected statement block (a statement), or into the selected block's first empty value input it
- * fits (a value); otherwise loose on the canvas, near the top left of the view. The block is created
+ * selected statement block, or at the start of the body of a selected block that has nothing after
+ * it (*when program starts*, *define*), for a statement; into the selected block's first empty value
+ * input it fits, for a value; otherwise loose on the canvas, near the top left of the view. The block is created
  * from its toolbox item and settled where it goes as a block dragged from the toolbox is (free
  * names, its variable, start values: ../toolbox/landing.ts), all in one Blockly event group, so one
  * Undo takes it away. It is then selected.
@@ -20,7 +21,7 @@ import type { SymbolSource } from '../toolbox/scope';
 const VIEW_MARGIN = 40;
 
 /** Where a block was inserted. */
-export type InsertedAt = 'cursor' | 'after' | 'input' | 'canvas';
+export type InsertedAt = 'cursor' | 'after' | 'body' | 'input' | 'canvas';
 
 /** What an insertion did. */
 export interface Inserted {
@@ -72,6 +73,11 @@ function connectAt(
   return true;
 }
 
+/** Whether a block can have one after it (Blockly types its next connection as always there). */
+function hasNext(block: Blockly.Block): boolean {
+  return (block as { readonly nextConnection: Blockly.Connection | null }).nextConnection !== null;
+}
+
 /** Connects `block` after or into `selected`; where, or `null`. */
 function connectToSelected(
   workspace: Blockly.WorkspaceSvg,
@@ -81,6 +87,17 @@ function connectToSelected(
   // The checker refuses a connection of the wrong kind (a value after a statement).
   if (connectAt(workspace, block, selected.nextConnection)) {
     return 'after';
+  }
+  // A block with nothing after it (*when program starts*, *define*): at the start of its body.
+  if (!hasNext(selected)) {
+    for (const input of selected.inputList) {
+      if (
+        input instanceof Blockly.inputs.StatementInput &&
+        connectAt(workspace, block, input.connection)
+      ) {
+        return 'body';
+      }
+    }
   }
   for (const input of selected.inputList) {
     if (

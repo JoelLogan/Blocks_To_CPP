@@ -139,6 +139,22 @@ describe('Quick Insert', () => {
     expect(next?.getFieldValue('OP')).toBe('add');
   });
 
+  it('inserts at the start of the body of a selected block with nothing after it', async () => {
+    const workspace = attached();
+    await settle();
+    const main = workspace.getBlockById('main');
+    if (!(main instanceof Blockly.BlockSvg)) {
+      throw new Error('no main block');
+    }
+    Blockly.common.setSelected(main);
+    const box = openAndType(workspace, 'int total = 5');
+    fireEvent.keyDown(box, { key: 'Enter' });
+    const first = main.getInputTargetBlock('BODY');
+    expect(first?.type).toBe('var.declare');
+    expect(first?.getFieldValue('NAME')).toBe('total');
+    expect(first?.getNextBlock()?.id).toBe('decl');
+  });
+
   it('says it reads simple lines only, moves with the arrows and closes on Escape', async () => {
     const workspace = attached();
     await settle();

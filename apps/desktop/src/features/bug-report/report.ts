@@ -7,7 +7,8 @@
  * Always in it: the app's and the catalog's versions, the platform, the toolchain's flavour,
  * version, target and capabilities (never its path), the project's C++ standard and build
  * configuration, and the diagnostic's code and source, with g++'s message in which every quoted
- * name and every path is replaced and the lines that quote source code are left out.
+ * name, every path and every file name is replaced and the lines that quote source code are left
+ * out.
  *
  * With the project's text (the user ticks it): also g++'s whole message (paths still replaced),
  * the blocks of the diagnostic's block (its top block, as the project file stores it) and the
@@ -41,9 +42,21 @@ export const MAX_REPORT_CPP_CHARS = 64 * 1024;
 /** The longest message a report holds, in characters. */
 export const MAX_REPORT_MESSAGE_CHARS = 16 * 1024;
 
-/** Replaces paths: absolute ones and `~`-ones, Windows and POSIX, by `<path>`. */
+/**
+ * Replaces paths: absolute ones and `~`-ones, Windows and POSIX, by `<path>`, and the folders of a
+ * place g++ names at the start of a line (`/home/a b/x/main.cpp:7:5`, spaces included) by
+ * `<path>/`.
+ */
 export function withoutPaths(text: string): string {
   return text
+    .split('\n')
+    .map((line) =>
+      line.replace(
+        /^((?:In file included from |\s+from )?)(?:[A-Za-z]:)?[\\/~].*[\\/](?=[^\\/\s]+:(?:\d|\s))/u,
+        '$1<path>/',
+      ),
+    )
+    .join('\n')
     .replace(/[A-Za-z]:[\\/][^\s:'"‘’`]*/gu, '<path>')
     .replace(/\\\\[^\s:'"‘’`]+/gu, '<path>')
     .replace(/(^|[\s(`'"‘])(?:~|\/)[^\s:'"‘’`)]*\/[^\s:'"‘’`)]*/gu, '$1<path>');
@@ -59,12 +72,20 @@ function isSourceLine(line: string): boolean {
   return /^\s*\d*\s*\|/u.test(line);
 }
 
+/**
+ * Replaces source and object file names (`Game.cpp:7:5`, `main.o`) by `<file>`: the generated
+ * files are named after the project's modules.
+ */
+export function withoutFileNames(text: string): string {
+  return text.replace(/[^\s:'"‘’`()<>]+\.(?:cpp|hpp|h|o|obj|exe)\b/gu, '<file>');
+}
+
 /** g++'s message as a report holds it without the project's text. */
 export function sanitisedMessage(raw: string): string {
   return raw
     .split('\n')
     .filter((line) => !isSourceLine(line))
-    .map((line) => withoutQuotedNames(withoutPaths(line)))
+    .map((line) => withoutQuotedNames(withoutFileNames(withoutPaths(line))))
     .join('\n');
 }
 

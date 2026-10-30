@@ -4,7 +4,7 @@
  * - **Create.** A text block taken from the toolbox towards `create [int] n`'s value does not
  *   snap: `n` keeps its `0` and the text lies loose beside it. Taken towards `create [string] s`'s
  *   value, it snaps.
- * - **Start values.** Choosing `double` in `n`'s type menu swaps its start value `0` for `0.0`, and
+ * - **Start values.** Choosing `double` in `n`'s type picker swaps its start value `0` for `0.0`, and
  *   one Ctrl+Z restores both the type and the `0` (one undo step); Ctrl+Y does both again.
  * - **Call arguments.** In the factorial example, a text block taken towards the argument of
  *   `factorial (i)` does not snap, where a number does; and the keyboard mover (`M`) does not offer
@@ -14,7 +14,7 @@
  * canvas holds is read from the test hook's document, and the mover's places from its screen-reader
  * announcements (src/editor/keyboard/mover.ts: `… “block” …, k of N.`).
  */
-import { By, Key, type WebDriver } from 'selenium-webdriver';
+import { Key, type WebDriver } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -32,9 +32,9 @@ import {
   foldCodePanel,
   waitForDelivery,
 } from '../../support/editor';
-import { clickMiddle, pressKey, textContent } from '../../support/ui';
+import { clickMiddle, pressKey } from '../../support/ui';
 import { waitFor } from '../../support/wait';
-import { dragValueFromToolbox, dropOnCanvas, menuLabels } from './lib/editor';
+import { choosePickerType, dragValueFromToolbox, dropOnCanvas } from './lib/editor';
 import { type FlowApp, startFlow } from './lib/launch';
 import { copyExample, declare, newEmptyProject, openFromStartPage } from './lib/project';
 import { pressCtrl, UI_TIMEOUT_MS } from './lib/ui';
@@ -86,18 +86,6 @@ function waitForType(app: FlowApp, id: string, type: string): Promise<true> {
     async () => (nodeOf(await currentDocument(app), id)?.fields?.['TYPE'] === type ? true : null),
     { timeout: UI_TIMEOUT_MS, message: `the type of ${id} to be ${type}` },
   );
-}
-
-/** Clicks the item labelled `label` of Blockly's open dropdown menu. */
-async function chooseMenuItem(driver: WebDriver, label: string): Promise<void> {
-  expect(await menuLabels(driver)).toContain(label);
-  for (const item of await driver.findElements(By.css('.blocklyDropDownDiv .blocklyMenuItem'))) {
-    if ((await item.isDisplayed()) && (await textContent(driver, item)) === label) {
-      await clickMiddle(driver, item);
-      return;
-    }
-  }
-  throw new Error(`The open menu has no item "${label}"`);
 }
 
 /** The ID of the one top-level block of `type` that is not in `known`. */
@@ -214,9 +202,9 @@ describe('Typed slots', () => {
     );
     expect(taken.type).toBe('text.literal');
 
-    // double chosen in n's type menu: the start value follows, and one Ctrl+Z restores both.
+    // double chosen in n's type picker: the start value follows, and one Ctrl+Z restores both.
     await clickMiddle(app.driver, await fieldOf(app, n.id, 'TYPE'));
-    await chooseMenuItem(app.driver, 'double');
+    await choosePickerType(app.driver, 'double');
     await waitForType(app, n.id, 'double');
     await waitForInput(app, n.id, 'VALUE', { expr: [{ num: '0.0' }] }, 'the start value 0.0');
     await waitForDelivery(app.driver);

@@ -33,6 +33,9 @@ export const QUICK_INSERT_MENU_TEXT = 'Insert a block…';
 /** The text of the canvas menu's item that opens toolbox search. */
 export const TOOLBOX_SEARCH_MENU_TEXT = 'Search blocks…';
 
+/** The popup's widest, in pixels (26rem and the canvas's margin, quickInsert.css). */
+const POPUP_WIDTH = 26 * 16 + 16;
+
 /** The canvases with the plugin attached. */
 const attached = new Set<Blockly.WorkspaceSvg>();
 
@@ -66,7 +69,10 @@ function anchorOf(
   try {
     const host = workspace.getInjectionDiv().getBoundingClientRect();
     const box = block.getSvgRoot().getBoundingClientRect();
-    return { x: Math.max(0, box.left - host.left), y: Math.max(0, box.bottom - host.top + 4) };
+    // Kept inside the canvas: the popup is at most 26rem wide and needs room for a few results.
+    const x = Math.min(Math.max(0, box.left - host.left), Math.max(0, host.width - POPUP_WIDTH));
+    const y = Math.min(Math.max(0, box.bottom - host.top + 4), Math.max(0, host.height - 200));
+    return { x, y };
   } catch {
     return null;
   }

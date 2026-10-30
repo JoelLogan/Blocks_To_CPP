@@ -93,14 +93,16 @@ describe('the report', () => {
     expect(text).not.toContain('/home/ada');
     expect(text).not.toContain('C:\\Users');
     expect(text).not.toContain('Secret Game');
+    expect(text).not.toContain('Game/');
+    expect(text).toContain('<path>/main.cpp:7:5');
   });
 
   it('replaces paths and quoted names, and drops source lines', () => {
     expect(withoutPaths('see /usr/include/c++/13/vector:12 and D:\\x\\y.cpp')).toBe(
       'see <path>:12 and <path>',
     );
-    expect(sanitisedMessage("main.cpp:1:1: error: ‘x’ and 'y'\n    1 | int x;\n      | ^")).toBe(
-      'main.cpp:1:1: error: ‘…’ and ‘…’',
+    expect(sanitisedMessage("Game.cpp:1:1: error: ‘x’ and 'y'\n    1 | int x;\n      | ^")).toBe(
+      '<file>:1:1: error: ‘…’ and ‘…’',
     );
   });
 
