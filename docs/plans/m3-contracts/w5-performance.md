@@ -444,19 +444,24 @@ carries every other position.
 ## 6. M3-9: the small-program budgets measured and gated
 
 * **Gated (regressions, 10 %, as every gated metric):**
-  `webview.guessing-game.edit.max-task`,
-  `webview.guessing-game.select.max-task`,
   `webview.declare-variable.toolbox-refresh` and
   `webview.declare-variable-1000.toolbox-refresh` (`gate: true` in the
-  benchmarks that write them). `bench-compare.py` compares a newly gated
-  metric only once it has five baselines, so gating them now fails nothing
-  until the nightly has run five times.
+  benchmark that writes them). The nightly's history keeps every metric's
+  median whatever its gate, so a metric is compared with the gate as soon
+  as it has five baselines there, and the A/B job compares it at once. These
+  two are new on `main` (written since `7da099b`), so the nightly reports
+  them until it has kept five baselines; the A/B job gates them from its
+  first run.
 * **The budget (N12: no task over 50 ms while a program of up to 200 blocks
   is edited).** The guessing-game benchmark fails when the median of a
   metric's samples is over 50 ms (`webview.guessing-game.edit.max-task`
-  and `.select.max-task`), as an absolute check beside the regression gate.
-  Measured on the runners (next steps §3.8: Windows 8.15–9.15 ms for the
-  edit) and locally (§13), so the budget has a margin of about five.
+  and `.select.max-task`). Measured on the runners (next steps §3.8: Windows
+  8.15–9.15 ms for the edit) and locally (§13), so the budget has a margin
+  of about five. These two are **not regression-gated** (decision 8): each
+  sample is the longest of a few tasks, about 8 ms, which moves by a
+  millisecond from run to run (A/B run 40733079892 saw Windows' edit go from
+  8.15 to 9.15 ms, +12 %, with no change to the guessing game); a 10 % gate,
+  which the A/B job applies at once, would fail on that.
 * The A/B job (`bench-ab.yml`) is the coordinator's to dispatch; §13 says
   what to run.
 
@@ -534,6 +539,11 @@ and that a missing section, clone step or start step fails.
 7. **The weekly `BUILDING.md` job is a new workflow** (§8), not a job of
    `weekly.yml`. _Recommendation:_ yes; it fails for other reasons (the
    distributions' mirrors) and is easier to read and re-run on its own.
+8. **The guessing game's two longest-task metrics have the absolute budget
+   only, not the 10 % regression gate** (§6). _Recommendation:_ yes; at
+   about 8 ms one millisecond of noise is over 10 % (run 40733079892), and
+   the requirement is N12's 50 ms. Gate them only if A/B runs on both
+   systems show a spread well under 10 %.
 
 ## 10. Needs from the coordinator, and from W4
 
@@ -859,8 +869,9 @@ _create_ block to be built again) were fixed in `cb0d243` and `b5cc373`.
 branch against `8a3d8ec`, all metric groups, both systems; and a manual
 `webview.cold-start` comparison (worker.md §9). Expected: `preview-1000.p95`
 much better (the worker), `declare-variable*.toolbox-refresh` about half,
-the rest unchanged; the newly gated metrics of §6 need five nightly
-baselines before they gate.
+the rest unchanged. The A/B job gates every gated metric at once; the
+nightly gates a metric once its history has five baselines, which the
+`declare-variable` metrics, new on `main`, do not have yet (§6).
 
 **Merge notes for the coordinator:**
 

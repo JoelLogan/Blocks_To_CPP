@@ -16,9 +16,11 @@
  *   preview, the C++ panel and the toolbox). The print is deleted again with the keyboard, outside
  *   the timing.
  *
- * Both are gated (M3-9, docs/plans/m3-contracts/w5-performance.md §6): a regression of more than
- * the gate's 10% fails the nightly, and so does a median over N12's budget of 50 ms
- * ({@link SMALL_PROGRAM_BUDGET_MS}), checked here.
+ * Both are checked against N12's budget (M3-9, docs/plans/m3-contracts/w5-performance.md §6): a
+ * median over 50 ms ({@link SMALL_PROGRAM_BUDGET_MS}) fails the benchmark, checked here. They are
+ * not regression-gated: on the runners they are about 8 ms, the longest of a few tasks, and they
+ * move by a millisecond from run to run (next-steps.md §3.8: Windows' edit went from 8.15 to
+ * 9.15 ms, +12 %, with no change to the guessing game), which a 10 % gate would call a regression.
  */
 import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -105,12 +107,12 @@ describe('webview benchmark: the guessing game', () => {
         await deleteBlock(app, timed.id, marker, true);
       }
 
-      const per = `one per sample, C++ panel shown; gated, and its median at most ${String(SMALL_PROGRAM_BUDGET_MS)} ms (N12)`;
+      const per = `one per sample, C++ panel shown; its median at most ${String(SMALL_PROGRAM_BUDGET_MS)} ms (N12), not regression-gated`;
       writeMetric({
         name: 'webview.guessing-game.select.max-task',
         unit: 'ms',
         better: 'lower',
-        gate: true,
+        gate: false,
         description: `Guessing game: longest main-thread task after clicking a block in another scope; ${per}`,
         samples: select,
       });
@@ -118,7 +120,7 @@ describe('webview benchmark: the guessing game', () => {
         name: 'webview.guessing-game.edit.max-task',
         unit: 'ms',
         better: 'lower',
-        gate: true,
+        gate: false,
         description: `Guessing game: longest main-thread task after adding a print to main; ${per}`,
         samples: edit,
       });
