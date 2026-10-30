@@ -15,6 +15,8 @@
  * Every key is pressed as a person presses it; what the canvas holds is read from the test hook's
  * document.
  */
+import path from 'node:path';
+
 import { By, Key, type WebDriver } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
@@ -32,7 +34,7 @@ import { clickMiddle, testIdText, textContent } from '../../support/ui';
 import { waitFor } from '../../support/wait';
 import { clickBlock } from './lib/editor';
 import { type FlowApp, startFlow } from './lib/launch';
-import { newEmptyProject } from './lib/project';
+import { newEmptyProject, waitForWrite } from './lib/project';
 import { backToEditor, openSettings, pressCtrl, UI_TIMEOUT_MS } from './lib/ui';
 
 /** The blocks of `main`'s body, from the canvas. */
@@ -194,7 +196,8 @@ describe('the editor tools', () => {
 
   it('show the blocks in C++ labels and back', async (context) => {
     const flow = startFlow(context);
-    const app = await flow.launch();
+    const file = path.join(flow.folders.projects, 'Labels.b2c');
+    const app = await flow.launch({ dialogs: { saveAs: [file] } });
     const main = await newEmptyProject(app);
     const label = async () => {
       const group = await app.hook.blockElement(main);
@@ -203,9 +206,12 @@ describe('the editor tools', () => {
     expect(await label()).toContain('when program starts');
     /** Whether the title shows unsaved changes (its `•`). */
     const unsaved = async () => (await testIdText(app.driver, 'project-name')).includes('•');
+    // Saved first, so any later change would show.
+    await pressCtrl(app.driver, 's');
+    await waitForWrite(file, null);
     await waitFor(async () => !(await unsaved()), {
       timeout: UI_TIMEOUT_MS,
-      message: 'the new project to have no unsaved changes',
+      message: 'the project to have no unsaved changes',
     });
     for (const [mode, expected] of [
       ['cpp', 'int main('],
