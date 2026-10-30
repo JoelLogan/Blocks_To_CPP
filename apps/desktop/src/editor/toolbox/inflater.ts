@@ -10,10 +10,13 @@
  * - a block is kept from one showing of the flyout to the next when the next showing has an equal
  *   item, so showing the flyout again builds and draws only the blocks whose items changed
  *   (drawing a block is most of the cost of a showing). Everything a block shows comes from its
- *   item, so a kept block is the block its item would build. These are built again instead: a
- *   block that declares something ({@link declaresSymbols}: each showing declares new symbols),
- *   and a block the user changed in the flyout (a number typed in, a variable chosen), which is
- *   told by comparing its serialised state with the state it was built with;
+ *   item, so a kept block is the block its item would build. A kept block that declares something
+ *   ({@link declaresSymbols}) gets a new symbol ID for each of its declarations, with the same
+ *   name, as building it again would give it (each showing declares new symbols); the name it
+ *   shows does not change, so nothing is drawn again (docs/plans/m3-contracts/w5-performance.md
+ *   §3). A block the user changed in the flyout (a number typed in, a variable chosen, a name
+ *   given) is built again instead, which is told by comparing its serialised state with the state
+ *   it was built with;
  * - each block remembers the item it was built from, so a block dragged out of it can be settled
  *   where it lands (./landing.ts);
  * - Blockly's listener that disables flyout blocks when the canvas reaches a block limit is added
@@ -24,7 +27,7 @@
  * the flyout lays out its new contents ({@link B2cBlockInflater.sweep}, called from
  * `B2cContinuousFlyout.layout_`); a parked block no item claimed by then is disposed of.
  */
-import { B2cSymbolDeclField } from '@blocks2cpp/blockly-ext';
+import { B2cSymbolDeclField, newId } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
 import { rememberToolboxItem } from './landing';
@@ -77,6 +80,27 @@ export function declaresSymbols(block: Blockly.Block): boolean {
 }
 
 /**
+ * Gives every declaration of `block` and of the blocks in it a new symbol ID with the same name,
+ * as a new build of the block would: the declarations of a toolbox block are new at each showing.
+ * Returns how many it renewed.
+ */
+export function renewDeclarations(block: Blockly.Block): number {
+  let renewed = 0;
+  for (const part of block.getDescendants(false)) {
+    for (const input of part.inputList) {
+      for (const field of input.fieldRow) {
+        const decl = field instanceof B2cSymbolDeclField ? field.getDecl() : null;
+        if (field instanceof B2cSymbolDeclField && decl !== null) {
+          field.setDecl({ sym: newId('sym'), name: decl.name });
+          renewed += 1;
+        }
+      }
+    }
+  }
+  return renewed;
+}
+
+/**
  * The state a block of the flyout is built with, without IDs, to tell whether the user changed it
  * there; `null` when it cannot be read (the block is then never kept).
  */
@@ -114,28 +138,43 @@ export class B2cBlockInflater extends Blockly.BlockFlyoutInflater {
   private capacityListened = false;
   /** The key of the item `load` is loading, for `createBlock`, or `null`. */
   private pendingKey: string | null = null;
+  /** Whether `createBlock` gave `load` a kept block. */
+  private pendingReused = false;
   private created = 0;
   private reused = 0;
   private disposed = 0;
 
   override load(state: object, flyout: Blockly.IFlyout): Blockly.FlyoutItem {
     const info = isB2cBlockInfo(state) ? state : null;
-    const key =
-      this.reuse && info !== null && info.declares === undefined ? JSON.stringify(info) : null;
+    // The item has no symbol IDs (a declaration's comes when a block is built), so equal items
+    // have equal keys whether or not they declare something.
+    const key = this.reuse && info !== null ? JSON.stringify(info) : null;
     this.pendingKey = key;
+    this.pendingReused = false;
     let block: Blockly.IBoundedElement & Blockly.IFocusableNode;
+    let reused: boolean;
     try {
       block = super.load(info === null ? state : plainBlockInfo(info), flyout).getElement();
     } finally {
       this.pendingKey = null;
+      reused = this.takeReused();
     }
     if (info !== null && block instanceof Blockly.BlockSvg) {
       rememberToolboxItem(block, info);
       if (info.argLabels !== undefined) {
         applyArgLabels(block, info.argLabels);
       }
-      // A kept block has its key and state from when it was built.
-      if (key !== null && !this.keys.has(block) && !declaresSymbols(block)) {
+      if (reused && declaresSymbols(block)) {
+        // New symbols for this showing; the state to compare with is the block's with them.
+        renewDeclarations(block);
+        const renewed = fingerprint(block);
+        if (renewed === null) {
+          this.keys.delete(block);
+        } else {
+          this.fingerprints.set(block, renewed);
+        }
+      } else if (key !== null && !this.keys.has(block)) {
+        // A kept block has its key and state from when it was built.
         const built = fingerprint(block);
         if (built !== null) {
           this.keys.set(block, key);
@@ -144,6 +183,13 @@ export class B2cBlockInflater extends Blockly.BlockFlyoutInflater {
       }
     }
     return new Blockly.FlyoutItem(block, B2C_BLOCK_KIND);
+  }
+
+  /** Whether `createBlock` gave the `load` that ends now a kept block (read once). */
+  private takeReused(): boolean {
+    const reused = this.pendingReused;
+    this.pendingReused = false;
+    return reused;
   }
 
   /** A parked block for the item being loaded, when there is one, else a new block. */
@@ -157,6 +203,7 @@ export class B2cBlockInflater extends Blockly.BlockFlyoutInflater {
       const block = blocks.pop();
       if (block !== undefined && !block.isDeadOrDying() && block.workspace === workspace) {
         this.reused += 1;
+        this.pendingReused = true;
         return block;
       }
     }

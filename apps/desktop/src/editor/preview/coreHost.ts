@@ -3,10 +3,18 @@
  * The editor starts it once, publishes it with the shell's `setCore` (features read it through
  * `FeatureContext.core()`), and replaces it after a trap (`CoreTrap`): the trapped instance is never
  * called again.
+ *
+ * While the preview runs in its worker (ADR-0016), the main instance no longer previews, so its
+ * own scope query would answer about a document it has not seen. The preview pipeline then gives
+ * the host the scope index of the preview it applied ({@link CoreHost.applyScope}), and the
+ * editor's instance ({@link CoreHost.current}) answers `symbolsInScope` from it
+ * (docs/plans/m3-contracts/w5-performance.md §2.2). Without an index (a preview made on the main
+ * thread, whose instance holds that very analysis) the instance answers itself, as in M2.
  */
 import {
   CoreError,
   type CoreWasm,
+  type ScopeIndex,
   initCore as packageInitCore,
   resetCore as packageResetCore,
 } from '@blocks2cpp/b2c-core-wasm';
@@ -15,7 +23,10 @@ import { getCore, setCore } from '../../app/core';
 
 /** Where the editor gets the compiler core. */
 export interface CoreHost {
-  /** The running core, or `null` before it has started. */
+  /**
+   * The running core, or `null` before it has started. While a scope index is applied, its
+   * `symbolsInScope` answers from that index; every other call is the instance's.
+   */
   current(): CoreWasm | null;
   /**
    * The running core, starting it on first use.
@@ -29,6 +40,11 @@ export interface CoreHost {
    * @throws CoreError (`init`) when no new instance can be started.
    */
   restart(): Promise<CoreWasm>;
+  /**
+   * Makes `scope` the index the scope query answers from (the applied preview's, made in the
+   * worker), or with `null` lets the instance answer (a preview made on the main thread).
+   */
+  applyScope?(scope: ScopeIndex | null): void;
 }
 
 /** What a {@link CoreHost} is built from (replaceable in tests). */
@@ -49,6 +65,29 @@ const PACKAGE_DEPS: CoreHostDeps = {
 /** A core host over `deps` (by default the package's `initCore` and the shell's `setCore`). */
 export function createCoreHost(deps: CoreHostDeps = PACKAGE_DEPS): CoreHost {
   let starting: Promise<CoreWasm> | null = null;
+  let scope: ScopeIndex | null = null;
+  /** The view of each instance that answers the scope query from the applied index. */
+  const views = new WeakMap<CoreWasm, CoreWasm>();
+
+  const viewOf = (core: CoreWasm): CoreWasm => {
+    let view = views.get(core);
+    if (view === undefined) {
+      view = {
+        version: () => core.version(),
+        load: (bytes) => core.load(bytes),
+        canonical: (documentJson) => core.canonical(documentJson),
+        update: (documentJson, options) => core.update(documentJson, options),
+        symbolsInScope: (blockId, input) =>
+          scope === null ? core.symbolsInScope(blockId, input) : scope.symbolsAt(blockId, input),
+        conversionTable: () => core.conversionTable(),
+        clipboardMake: (documentJson, blockIds) => core.clipboardMake(documentJson, blockIds),
+        pastePrepare: (clipboardText, documentJson, target, seedHex) =>
+          core.pastePrepare(clipboardText, documentJson, target, seedHex),
+      };
+      views.set(core, view);
+    }
+    return view;
+  };
 
   function start(): Promise<CoreWasm> {
     const running = deps.getCore();
@@ -79,13 +118,19 @@ export function createCoreHost(deps: CoreHostDeps = PACKAGE_DEPS): CoreHost {
   }
 
   return {
-    current: () => deps.getCore(),
+    current: () => {
+      const core = deps.getCore();
+      return core === null || scope === null ? core : viewOf(core);
+    },
     start,
     restart: () => {
       deps.resetCore();
       deps.setCore(null);
       starting = null;
       return start();
+    },
+    applyScope: (index) => {
+      scope = index;
     },
   };
 }

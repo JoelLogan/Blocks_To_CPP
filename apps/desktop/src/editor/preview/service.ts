@@ -3,7 +3,7 @@
  * main thread; the preview worker (`workerService.ts`) takes over behind the same interface, so
  * the pipeline does not need to know where `update()` ran.
  */
-import type { PreviewOptions, UpdateResult } from '@blocks2cpp/b2c-core-wasm';
+import type { PreviewOptions, ScopeIndex, UpdateResult } from '@blocks2cpp/b2c-core-wasm';
 
 import type { CoreHost } from './coreHost';
 
@@ -22,10 +22,11 @@ export interface PreviewAnswer {
   /** The preview of the document, with the hash of its canonical text. */
   readonly result: UpdateResult;
   /**
-   * What the core's `scope_index()` returned, unparsed, or null: there is no index yet
-   * (docs/plans/m3-contracts/worker.md §4 makes it a `ScopeIndex`).
+   * The scope index of the instance that made the preview, when that is not the main instance
+   * (the worker's; docs/plans/m3-contracts/worker.md §4), or `null`: the main instance made it and
+   * answers the scope query itself, or the document did not load.
    */
-  readonly scopeJson: string | null;
+  readonly scope: ScopeIndex | null;
   readonly timing: PreviewTiming;
 }
 
@@ -62,7 +63,7 @@ export function mainThreadPreviewService(
       const result = core.update(documentJson, options);
       return {
         result,
-        scopeJson: null,
+        scope: null,
         timing: { startedAt, updateMs: now() - startedAt, indexMs: 0 },
       };
     },

@@ -486,6 +486,7 @@ function fakeInstances() {
         load: () => '{}',
         canonical: () => '{}',
         symbols_in_scope: () => 'null',
+        scope_index: () => '{"index":1}',
         conversion_table: () => '[]',
         clipboard_make: () => '{}',
         paste_prepare: () => '{}',
@@ -551,7 +552,7 @@ describe('the host', () => {
     const fake = fakeInstances();
     const clock = {
       timeOrigin: 1_000_000,
-      now: vi.fn().mockReturnValueOnce(10).mockReturnValueOnce(52),
+      now: vi.fn().mockReturnValueOnce(10).mockReturnValueOnce(52).mockReturnValueOnce(55),
     };
     const { port, other, next } = hostOn({ instantiate: fake.make, clock });
     channels.push(port, other);
@@ -577,10 +578,10 @@ describe('the host', () => {
         documentJson: '{"x":1}',
         optionsJson: '{"indentWidth":2}',
       }),
-      scopeJson: null,
+      scopeJson: '{"index":1}',
       startedAt: 1_000_010,
       updateMs: 42,
-      indexMs: 0,
+      indexMs: 3,
     });
   });
 

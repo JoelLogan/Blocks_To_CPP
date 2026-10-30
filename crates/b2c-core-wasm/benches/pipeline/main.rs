@@ -39,7 +39,7 @@ use std::io::Write as _;
 use std::process::ExitCode;
 
 use b2c_codegen::{CodegenOptions, HelperPlacement};
-use b2c_core_wasm::{APP_VERSION, PreviewOptions, preview_document};
+use b2c_core_wasm::{APP_VERSION, PreviewOptions, Session, preview_document};
 use criterion::{Criterion, SamplingMode};
 
 use crate::document::{Shape, Units, count_blocks, generate};
@@ -151,6 +151,10 @@ fn bench_pipeline(criterion: &mut Criterion, documents: &Documents) -> Result<()
     group.bench_function("preview-language", |b| {
         b.iter(|| preview_document(black_box(&documents.language), &preview_options));
     });
+    // The scope index the preview worker sends with each preview (reported, not gated).
+    let mut session = Session::new();
+    session.update(text, &preview_options);
+    group.bench_function("scope-index", |b| b.iter(|| black_box(&session).scope_index()));
     group.finish();
     Ok(())
 }

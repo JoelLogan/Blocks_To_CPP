@@ -10,7 +10,12 @@
  *   - `b2c:preview:read`: reading the document from the canvas and serialising it;
  *   - `b2c:preview:update`: the compiler core's `update()`, which loads, hashes, analyses and
  *     generates once (before it existed, `b2c:preview:canonical` and `b2c:preview:analyse` timed
- *     the core's `canonical()` and `preview()`, each of which loaded the document);
+ *     the core's `canonical()` and `preview()`, each of which loaded the document), placed on the
+ *     page's timeline where it ran: on the main thread, or in the preview worker (ADR-0016);
+ *   - `b2c:preview:index`: the core's `scope_index()` after it, in the worker only;
+ *   - `b2c:preview:wait`: from asking for the update until its answer is back on the page (in
+ *     the worker's case the main thread is free meanwhile);
+ *   - `b2c:preview:receive`: reading the worker's scope index on the page;
  *   - `b2c:preview:commit`: storing the edit, with what the store's subscribers do at once;
  *   - `b2c:preview:publish`: storing the preview and relabelling the canvas, with what the
  *     store's subscribers do at once.
@@ -38,6 +43,9 @@ export const TIMING_SPANS = [
   'b2c:preview',
   'b2c:preview:read',
   'b2c:preview:update',
+  'b2c:preview:index',
+  'b2c:preview:wait',
+  'b2c:preview:receive',
   'b2c:preview:commit',
   'b2c:preview:publish',
   'b2c:toolbox-refresh',
@@ -88,6 +96,16 @@ export function startSpan(name: TimingSpan): SpanTimer {
       }
     },
   };
+}
+
+/**
+ * Records span `name` as having run from `start` to `end` on the page's clock (milliseconds since
+ * its time origin): work timed elsewhere, such as the preview worker's `update()`.
+ */
+export function recordSpan(name: TimingSpan, start: number, end: number): void {
+  if (Number.isFinite(start) && Number.isFinite(end) && end >= start) {
+    record(name, start, end);
+  }
 }
 
 /**

@@ -3,7 +3,7 @@
  * the diagnostics, and selects blocks on a click; Problems lists the live and build diagnostics
  * with block paths, selects and centres blocks, and opens the diagnostics reference.
  */
-import type { PreviewResult } from '@blocks2cpp/b2c-core-wasm';
+import { compactSourceMap, type PreviewResult } from '@blocks2cpp/b2c-core-wasm';
 import type { Diagnostic, MappedRange } from '@blocks2cpp/ipc-types';
 import { EditorView } from '@codemirror/view';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
@@ -64,7 +64,7 @@ function preview(diagnostics: Diagnostic[] = []): PreviewResult {
       { path: 'main.cpp', kind: 'source', contents: MAIN_CPP },
       { path: 'ide/b2c_ide_init.cpp', kind: 'source', contents: '// IDE\n' },
     ],
-    sourceMap: {
+    sourceMap: compactSourceMap({
       version: 1,
       files: [
         {
@@ -77,7 +77,7 @@ function preview(diagnostics: Diagnostic[] = []): PreviewResult {
           ],
         },
       ],
-    },
+    }),
     buildable: true,
   };
 }

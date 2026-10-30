@@ -16,7 +16,9 @@
  *   preview, the C++ panel and the toolbox). The print is deleted again with the keyboard, outside
  *   the timing.
  *
- * Both are reported, not gated: absolute budgets on small programs are gated from M3.
+ * Both are gated (M3-9, docs/plans/m3-contracts/w5-performance.md §6): a regression of more than
+ * the gate's 10% fails the nightly, and so does a median over N12's budget of 50 ms
+ * ({@link SMALL_PROGRAM_BUDGET_MS}), checked here.
  */
 import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -44,6 +46,9 @@ import { GUESSING_MAIN_ID, GUESSING_TARGETS, targetAt } from './targets';
 
 /** How long opening the example may take. */
 const OPEN_TIMEOUT_MS = 60_000;
+
+/** N12: no main-thread task over 50 ms while a program of up to 200 blocks is edited. */
+export const SMALL_PROGRAM_BUDGET_MS = 50;
 
 /** How long the whole benchmark may take. */
 const TEST_TIMEOUT_MS = 900_000;
@@ -100,12 +105,12 @@ describe('webview benchmark: the guessing game', () => {
         await deleteBlock(app, timed.id, marker, true);
       }
 
-      const per = 'one per sample, C++ panel shown; report-only (N12)';
+      const per = `one per sample, C++ panel shown; gated, and its median at most ${String(SMALL_PROGRAM_BUDGET_MS)} ms (N12)`;
       writeMetric({
         name: 'webview.guessing-game.select.max-task',
         unit: 'ms',
         better: 'lower',
-        gate: false,
+        gate: true,
         description: `Guessing game: longest main-thread task after clicking a block in another scope; ${per}`,
         samples: select,
       });
@@ -113,7 +118,7 @@ describe('webview benchmark: the guessing game', () => {
         name: 'webview.guessing-game.edit.max-task',
         unit: 'ms',
         better: 'lower',
-        gate: false,
+        gate: true,
         description: `Guessing game: longest main-thread task after adding a print to main; ${per}`,
         samples: edit,
       });
@@ -125,6 +130,14 @@ describe('webview benchmark: the guessing game', () => {
       );
       expect(select).toHaveLength(samples);
       expect(edit).toHaveLength(samples);
+      // The small-program budget (N12), checked after the results are written so a run over it
+      // still leaves them for the comparison.
+      expect(median(select), 'the median longest task after a selection').toBeLessThanOrEqual(
+        SMALL_PROGRAM_BUDGET_MS,
+      );
+      expect(median(edit), 'the median longest task after an edit').toBeLessThanOrEqual(
+        SMALL_PROGRAM_BUDGET_MS,
+      );
     },
     TEST_TIMEOUT_MS,
   );

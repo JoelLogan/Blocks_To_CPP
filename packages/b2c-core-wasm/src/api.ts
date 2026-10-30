@@ -5,7 +5,7 @@
  * types, so the preview and the backend can never disagree about them.
  */
 
-import type { Diagnostic, GeneratedFile, SourceMap, SymbolInfo } from '@blocks2cpp/ipc-types';
+import type { Diagnostic, GeneratedFile, Part, SymbolInfo } from '@blocks2cpp/ipc-types';
 
 import type { BdmBlock, BdmDocument, TypeJson } from './bdm';
 
@@ -17,8 +17,32 @@ export interface CoreVersion {
   catalog: string;
   /** The project format version this core reads and writes. */
   formatVersion: number;
-  /** The source-map format version of `PreviewResult.sourceMap`. */
+  /** The source-map format version of `PreviewResult.sourceMap` (2, {@link CompactSourceMap}). */
   sourceMapVersion: number;
+}
+
+/**
+ * The preview's source map (06 §6.9) in its compact form, version 2 (M3-5,
+ * docs/plans/m3-contracts/w5-performance.md §4.1): the ranges of the IR's map (`SourceMap`,
+ * version 1, which a build writes), seven numbers each, so that an answer parses quickly.
+ * `expandSourceMap` gives the form of version 1.
+ */
+export interface CompactSourceMap {
+  readonly version: 2;
+  /** The module IDs, block IDs and parts the ranges use, each once, in first use. */
+  readonly modules: readonly string[];
+  readonly blocks: readonly string[];
+  readonly parts: readonly Part[];
+  /**
+   * Per generated file: its path, its module when the IR's file has one, and seven numbers per
+   * range in the IR's order: start line, start column, end line, end column (1-based, columns in
+   * UTF-8 bytes, the end exclusive), then the indexes of its module, block and part.
+   */
+  readonly files: readonly {
+    readonly path: string;
+    readonly module?: string;
+    readonly ranges: readonly number[];
+  }[];
 }
 
 /**
@@ -68,8 +92,8 @@ export interface PreviewResult {
    * errors (with `/* error *\/` placeholders), so this is empty only when loading failed.
    */
   files: GeneratedFile[];
-  /** `null` only when loading failed. */
-  sourceMap: SourceMap | null;
+  /** The compact source map; `null` only when loading failed. */
+  sourceMap: CompactSourceMap | null;
   /** Whether a build would accept this code: no error diagnostics and no placeholders. */
   buildable: boolean;
   /** How many error placeholders the files contain. */

@@ -45,6 +45,11 @@ export interface RawCore {
    * (bounded), and the core refuses options it does not know; see {@link previewOptionsJson}.
    */
   update(documentJson: string, optionsJson: string): string;
+  /**
+   * `scope_index()`'s JSON text: the scope index of the last update whose document loaded, or
+   * `null` (docs/plans/m3-contracts/worker.md §4; parsed with `ScopeIndex.parse`).
+   */
+  scopeIndex(): string;
 }
 
 /** A core and the state the loader needs to know about it. */
@@ -187,6 +192,7 @@ export function createCore(glue: GlueFunctions): CoreHandle {
       const options = boundText(optionsJson);
       return call('update', () => glue.update(bounded, options));
     },
+    scopeIndex: () => call('scopeIndex', () => glue.scope_index()),
   };
 
   const core: CoreWasm = {

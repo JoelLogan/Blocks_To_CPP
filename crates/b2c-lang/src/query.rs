@@ -456,6 +456,131 @@ fn shared_symbols(program: &Program) -> BTreeSet<&SymbolId> {
         .collect()
 }
 
+/// A position of the scope index ([`ScopeIndexParts`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScopePoint {
+    /// The trail node there (`None`: no local symbol).
+    pub node: Option<usize>,
+    /// The index of the module whose functions are visible.
+    pub module: usize,
+}
+
+impl From<Point> for ScopePoint {
+    fn from(point: Point) -> Self {
+        Self {
+            node: point.node,
+            module: point.module,
+        }
+    }
+}
+
+/// The positions recorded for one block ([`ScopeIndexParts::blocks`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopeBlock<'a> {
+    /// The block.
+    pub id: &'a BlockId,
+    /// The position at the block, if one was recorded there.
+    pub at: Option<ScopePoint>,
+    /// The position of each statement list or value input recorded under
+    /// its own name, sorted by name.
+    pub inputs: Vec<(&'a str, ScopePoint)>,
+}
+
+/// A read-only view of the scope index behind [`Analysis::scope_at`], for an
+/// encoder that answers the same questions elsewhere (the editor's preview
+/// worker, docs/plans/m3-contracts/worker.md §4). A lookup over these parts
+/// that walks the trail as [`Analysis::scope_at`] does (each name counted
+/// once, a parent followed only when it is smaller than its node, then the
+/// module's functions whose names were not seen, then each struct's and
+/// enum's [`Self::members`]) gives exactly its answers.
+#[derive(Debug, Clone, Copy)]
+pub struct ScopeIndexParts<'a> {
+    analysis: &'a Analysis,
+}
+
+impl<'a> ScopeIndexParts<'a> {
+    /// The trail, in order: each node's parent (always a smaller index in an
+    /// index the lowering made), the name C++ sees, and the symbol it names
+    /// (`None` for a hidden name).
+    pub fn trail(self) -> impl Iterator<Item = (Option<usize>, &'a str, Option<&'a SymbolId>)> + 'a {
+        self.analysis
+            .index
+            .trail
+            .iter()
+            .map(|node| (node.parent, node.name.as_str(), node.sym.as_ref()))
+    }
+
+    /// Every recorded block, sorted by ID, with its recorded positions.
+    pub fn blocks(self) -> impl Iterator<Item = ScopeBlock<'a>> + 'a {
+        self.analysis.index.blocks.iter().map(|(id, points)| ScopeBlock {
+            id,
+            at: points.at.map(ScopePoint::from),
+            inputs: points
+                .inputs
+                .iter()
+                .map(|(name, point)| (name.as_str(), ScopePoint::from(*point)))
+                .collect(),
+        })
+    }
+
+    /// The modules, by module index: what [`Analysis::parked_scope`] is asked
+    /// about by ID.
+    pub fn modules(self) -> impl Iterator<Item = &'a ModuleId> + 'a {
+        self.analysis.program.modules.iter().map(|module| &module.id)
+    }
+
+    /// The functions that calls in each module can use, by module index:
+    /// `(C++ name, symbol)`, in symbol order.
+    pub fn functions(self) -> impl Iterator<Item = &'a [(String, SymbolId)]> + 'a {
+        self.analysis.index.functions.iter().map(Vec::as_slice)
+    }
+
+    /// The parked point of each module, by module index (the modules of
+    /// [`Self::modules`]): the trail node at the end of its first lowered
+    /// `main` body, or `None` when its parked scope is its functions alone.
+    pub fn parked(self) -> impl Iterator<Item = Option<usize>> + 'a {
+        let index = &self.analysis.index;
+        (0..self.analysis.program.modules.len()).map(move |module| index.parked_point(module).node)
+    }
+
+    /// Each struct and enum of the table with the members a scope answer
+    /// lists after it, in that order (its fields or enumerators whose owner
+    /// it is); sorted by the owner's ID, those without members left out.
+    pub fn members(self) -> impl Iterator<Item = (&'a SymbolId, Vec<&'a SymbolId>)> + 'a {
+        let analysis = self.analysis;
+        analysis.program.symbols.symbols.keys().filter_map(move |id| {
+            let members = analysis.with_members(vec![id]);
+            (members.len() > 1).then(|| (id, members[1..].to_vec()))
+        })
+    }
+
+    /// The variable each block creates that [`Analysis::scope_after`] adds
+    /// after it, sorted by block ID (blocks that create none are left out).
+    pub fn created(self) -> Vec<(&'a BlockId, &'a SymbolId)> {
+        let analysis = self.analysis;
+        let mut created: BTreeMap<&'a BlockId, &'a SymbolId> = BTreeMap::new();
+        for (id, symbol) in &analysis.program.symbols.symbols {
+            if matches!(symbol.kind, SymbolKind::Variable { .. })
+                && !analysis.index.part_variables.contains(id)
+            {
+                // The first in ID order, as `scope_after` finds it.
+                created.entry(&symbol.origin.block).or_insert(id);
+            }
+        }
+        created.into_iter().collect()
+    }
+}
+
+impl Analysis {
+    /// The scope index behind [`Self::scope_at`], [`Self::scope_after`] and
+    /// [`Self::parked_scope`], read-only, for an encoder: the editor's
+    /// preview worker sends it with each preview
+    /// (docs/plans/m3-contracts/worker.md §4).
+    pub fn scope_index_parts(&self) -> ScopeIndexParts<'_> {
+        ScopeIndexParts { analysis: self }
+    }
+}
+
 /// Whether a record is a field or an enumerator: a member of a user type.
 fn is_member(info: &SymbolInfo) -> bool {
     matches!(
@@ -913,5 +1038,110 @@ mod tests {
                 stmts.extend(body.stmts);
             }
         }
+    }
+
+    /// What [`Analysis::scope_at`] answers, worked out from
+    /// [`Analysis::scope_index_parts`] alone, as the editor's lookup does.
+    fn lookup(analysis: &Analysis, at: Option<ScopePoint>) -> Option<Vec<String>> {
+        let parts = analysis.scope_index_parts();
+        let ScopePoint { node: start, module } = at?;
+        let trail: Vec<_> = parts.trail().collect();
+        let mut names = BTreeSet::new();
+        let mut found: Vec<&SymbolId> = Vec::new();
+        let mut node = start;
+        while let Some(index) = node {
+            let Some(&(parent, name, sym)) = trail.get(index) else {
+                break;
+            };
+            if names.insert(name) {
+                found.extend(sym);
+            }
+            node = parent.filter(|parent| *parent < index);
+        }
+        if let Some(functions) = parts.functions().nth(module) {
+            found.extend(
+                functions
+                    .iter()
+                    .filter(|(name, _)| !names.contains(name.as_str()))
+                    .map(|(_, sym)| sym),
+            );
+        }
+        let members: BTreeMap<_, _> = parts.members().collect();
+        let mut out: Vec<&SymbolId> = Vec::new();
+        for id in found {
+            out.push(id);
+            out.extend(members.get(id).into_iter().flatten());
+        }
+        let mut infos: Vec<SymbolInfo> = analysis.symbol_infos();
+        infos.retain(|info| out.contains(&&info.id));
+        Some(infos.iter().map(|info| info.id.to_string()).collect())
+    }
+
+    /// The parts give exactly the scope query's answers: at every recorded
+    /// block and input, in a parked scope, and after a block.
+    #[test]
+    fn the_parts_answer_as_the_scope_query_does() {
+        let analysis = with_user_types();
+        let parts = analysis.scope_index_parts();
+        let mut asked = 0;
+        for ScopeBlock { id, at, inputs } in parts.blocks() {
+            assert_eq!(
+                lookup(&analysis, at),
+                analysis.scope_at(id, None).map(|found| listed(&found))
+            );
+            for (name, point) in inputs {
+                assert_eq!(
+                    lookup(&analysis, Some(point)),
+                    analysis.scope_at(id, Some(name)).map(|found| listed(&found))
+                );
+            }
+            asked += 1;
+        }
+        assert_eq!(asked, 2);
+        let modules: Vec<_> = parts.modules().collect();
+        let parked: Vec<_> = parts.parked().collect();
+        assert_eq!(modules.len(), 1);
+        assert_eq!(parked, [Some(0)]);
+        assert_eq!(
+            lookup(
+                &analysis,
+                Some(ScopePoint {
+                    node: parked[0],
+                    module: 0
+                })
+            ),
+            Some(listed(&analysis.parked_scope(modules[0])))
+        );
+        for (node, (parent, _, _)) in parts.trail().enumerate() {
+            assert!(parent.is_none_or(|parent| parent < node));
+        }
+        let members: Vec<_> = parts
+            .members()
+            .map(|(owner, members)| {
+                (
+                    owner.to_string(),
+                    members.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            members,
+            [
+                (String::from("s_col"), vec![String::from("e_red")]),
+                (
+                    String::from("s_pt"),
+                    vec![String::from("f_x"), String::from("f_y")]
+                )
+            ]
+        );
+        let created: Vec<_> = parts
+            .created()
+            .into_iter()
+            .map(|(block, sym)| (block.to_string(), sym.to_string()))
+            .collect();
+        assert!(
+            created.contains(&(String::from("b1"), String::from("s_y"))),
+            "{created:?}"
+        );
     }
 }

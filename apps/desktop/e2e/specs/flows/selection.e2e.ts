@@ -97,8 +97,9 @@ describe('Selecting blocks with the mouse', () => {
       );
     }
 
-    // A new variable is listed: the flyout is shown again (a new *create* block), with its getter,
-    // and keeps the getters whose items did not change.
+    // A new variable is listed: the flyout is shown again, with its getter, and keeps the blocks
+    // whose items did not change: the getters, and the *create* block too, which a showing gives
+    // a new symbol instead of building it again (docs/plans/m3-contracts/w5-performance.md §3).
     await app.hook.insertBlocks(MAIN, 'BODY', [
       declareInt(new NodeIds('select'), 's_e2e_tries', 'tries', 0),
     ]);
@@ -110,6 +111,6 @@ describe('Selecting blocks with the mouse', () => {
       { timeout: UI_TIMEOUT_MS, message: 'the getter of the new variable in the toolbox' },
     );
     expect(after.slice(0, 2)).toEqual(shown.slice(0, 2));
-    expect(after[3]).not.toBe(shown[2]);
+    expect(after[3]).toBe(shown[2]);
   }, 120_000);
 });

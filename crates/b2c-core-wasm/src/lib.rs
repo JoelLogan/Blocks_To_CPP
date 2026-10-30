@@ -63,11 +63,13 @@
 
 pub mod args;
 pub mod clipboard;
+pub mod compact;
 mod cut;
 pub mod error;
 pub mod facade;
 pub mod options;
 pub mod scope;
+mod scope_index;
 mod session;
 mod tree;
 mod wire;
@@ -78,6 +80,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 pub use args::PasteTarget;
 pub use clipboard::{NOT_DECLARED, Unresolved};
+pub use compact::PREVIEW_SOURCE_MAP_VERSION;
 pub use error::{FacadeError, Failure};
 pub use facade::{
     APP_VERSION, Canonical, GENERATOR_INCOMPLETE, Loaded, Preview, SOURCE_MAP_VERSION, Stage, Update,
@@ -86,6 +89,7 @@ pub use facade::{
 };
 pub use options::{IndentWidth, MAX_OPTIONS_BYTES, PreviewOptions};
 pub use scope::{ConversionRow, STATIC_TYPES};
+pub use scope_index::SCOPE_INDEX_VERSION;
 pub use session::{ClipboardMade, Pasted, Session};
 
 thread_local! {
@@ -114,7 +118,7 @@ fn with_session(call: impl FnOnce(&mut Session) -> String) -> String {
 
 /// The versions of the app, the catalog, the newest project format and the
 /// source map format this core implements:
-/// `{"app": "0.1.0", "catalog": "1.3.0", "formatVersion": 2, "sourceMapVersion": 1}`.
+/// `{"app": "0.1.0", "catalog": "1.3.0", "formatVersion": 2, "sourceMapVersion": 2}`.
 #[wasm_bindgen]
 pub fn version() -> String {
     wire::version(&version_info())
@@ -200,6 +204,15 @@ pub fn update(document_json: &str, options_json: &str) -> String {
 )]
 pub fn symbols_in_scope(block_id: &str, input: Option<String>) -> String {
     with_session(|session| wire::symbols(session.symbols_in_scope(block_id, input.as_deref()).as_deref()))
+}
+
+/// The scope index of the last update whose document loaded
+/// ([`Session::scope_index`]; the format is in `scope_index.rs`), or `null`
+/// before one: what the editor answers the scope query from while the
+/// preview runs in its worker (docs/plans/m3-contracts/worker.md §4).
+#[wasm_bindgen]
+pub fn scope_index() -> String {
+    with_session(|session| session.scope_index().unwrap_or_else(|| String::from("null")))
 }
 
 /// The analyser's conversion rule ([`b2c_lang::conversion`]) for every

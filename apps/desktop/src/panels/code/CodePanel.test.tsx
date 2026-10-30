@@ -363,6 +363,76 @@ describe('CodePanel', () => {
   });
 });
 
+describe('CodePanel while it cannot be seen (M3-5)', () => {
+  /**
+   * A stand-in IntersectionObserver whose reports the test sends; CodeMirror makes some of its
+   * own, so `panel` is the one watching the panel.
+   */
+  class Observer {
+    static panel: Observer | null = null;
+    readonly report: (entries: { isIntersecting: boolean }[]) => void;
+    constructor(report: (entries: { isIntersecting: boolean }[]) => void) {
+      this.report = report;
+    }
+    observe(target: Element): void {
+      if (target.classList.contains('b2c-code-panel')) {
+        Observer.panel = this;
+      }
+    }
+    disconnect(): void {
+      if (Observer.panel === this) {
+        Observer.panel = null;
+      }
+    }
+    unobserve(): void {
+      // Nothing to stop.
+    }
+    show(shown: boolean): void {
+      act(() => {
+        this.report([{ isIntersecting: shown }]);
+      });
+    }
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('IntersectionObserver', Observer);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('pauses while hidden and takes the latest code, in one update, when shown again', () => {
+    const { view, rerender, props } = renderPanel();
+    const observer = Observer.panel;
+    expect(observer).not.toBeNull();
+    observer?.show(false);
+    const dispatch = vi.spyOn(view, 'dispatch');
+    for (const value of ['1', '2', '3']) {
+      rerender(
+        <CodePanel
+          {...props}
+          files={[{ path: 'main.cpp', kind: 'source', contents: MAIN_CPP.replace('42', value) }]}
+        />,
+      );
+    }
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(view.state.doc.toString()).toBe(MAIN_CPP);
+    observer?.show(true);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(view.state.doc.toString()).toBe(MAIN_CPP.replace('42', '3'));
+  });
+
+  it('scrolls to a highlight set while hidden once it is shown', () => {
+    const { view, rerender, props } = renderPanel();
+    Observer.panel?.show(false);
+    rerender(<CodePanel {...props} highlightBlockId="b_print" />);
+    const dispatch = vi.spyOn(view, 'dispatch');
+    Observer.panel?.show(true);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(view.dom.querySelectorAll('.cm-b2c-block-highlight').length).toBeGreaterThan(0);
+  });
+});
+
 describe('textChange', () => {
   it('replaces only what differs', () => {
     expect(textChange('abc', 'abc')).toBeUndefined();

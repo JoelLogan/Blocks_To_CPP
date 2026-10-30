@@ -271,6 +271,9 @@ fn check_all_exports(bytes: &[u8]) -> Result<(), TestCaseError> {
     let canonical = parse(&b2c_core_wasm::canonical(&text));
     let result = update(&text, 2);
     assert_update_matches(&text, 2, &result, "generated input");
+    // The scope index of whatever the session kept: JSON, `null` or an object.
+    let index: Value = serde_json::from_str(&b2c_core_wasm::scope_index()).unwrap();
+    prop_assert!(index.is_null() || index.is_object());
     let ok = loaded["ok"].as_bool().unwrap();
     prop_assert_eq!(ok, loaded.get("document").is_some());
     if ok {

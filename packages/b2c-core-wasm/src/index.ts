@@ -22,6 +22,7 @@
 export type {
   CanonicalResult,
   ClipboardMakeResult,
+  CompactSourceMap,
   ConversionRow,
   CoreVersion,
   CoreWasm,
@@ -73,6 +74,8 @@ export { MAX_DOCUMENT_BYTES } from './core';
 export { CoreError, type CoreErrorKind, CoreTrap } from './errors';
 export { coreModule, initCore, initCoreFromBytes, resetCore } from './loader';
 export { randomSeedHex, type RandomSource, SEED_BYTES } from './seed';
+export { SCOPE_INDEX_VERSION, ScopeIndex, type ScopeIndexData } from './scopeIndex';
+export { COMPACT_RANGE_STRIDE, compactSourceMap, expandSourceMap } from './sourceMap';
 /**
  * The pipeline's shared shapes, generated from the Rust types into `@blocks2cpp/ipc-types` (the
  * same JSON as `b2c check --format json`). Re-exported so that users of the core need only this

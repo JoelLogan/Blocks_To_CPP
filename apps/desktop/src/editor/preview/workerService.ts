@@ -8,13 +8,14 @@
  * failed starts, or a webview that cannot post a `Module`) is logged once, with no banner; the
  * preview then works as in M2.
  *
- * The editor uses this service only in builds made with `B2C_PREVIEW_WORKER=1`
- * ({@link previewWorkerEnabled}), until the integration step after W2 makes it the default
- * (docs/plans/m3-contracts/w5-worker.md §4).
+ * The editor uses this service in every build but one made with `B2C_PREVIEW_WORKER=0`
+ * ({@link previewWorkerEnabled}), the off switch kept for measuring the main-thread path
+ * (docs/plans/m3-contracts/w5-performance.md §2.4).
  */
-import { CoreError, CoreTrap } from '@blocks2cpp/b2c-core-wasm';
+import { CoreError, CoreTrap, ScopeIndex, type UpdateResult } from '@blocks2cpp/b2c-core-wasm';
 import type { CoreWorkerClient } from '@blocks2cpp/b2c-core-wasm/worker';
 
+import { timed } from '../../lib/timing';
 import type { CoreHost } from './coreHost';
 import {
   mainThreadPreviewService,
@@ -23,9 +24,35 @@ import {
   type PreviewThread,
 } from './service';
 
-/** Whether this build previews in the worker: `B2C_PREVIEW_WORKER=1` at build time (vite.config.ts). */
+/**
+ * Whether this build previews in the worker: always, unless it was made with
+ * `B2C_PREVIEW_WORKER=0` (vite.config.ts), which keeps the preview on the main thread.
+ */
 export function previewWorkerEnabled(): boolean {
-  return import.meta.env['B2C_PREVIEW_WORKER'] === '1';
+  return import.meta.env['B2C_PREVIEW_WORKER'] !== '0';
+}
+
+/**
+ * The worker's scope index for its preview, or `null` when the document did not load (the index is
+ * then the last loaded document's, which the pipeline does not apply either) or the index cannot
+ * be read, which is logged: the menus then ask the main instance, as before the worker.
+ */
+function scopeOf(
+  json: string | null,
+  result: UpdateResult,
+  log: (message: string) => void,
+): ScopeIndex | null {
+  if (json === null || result.contentHash === null) {
+    return null;
+  }
+  try {
+    return ScopeIndex.parse(json, result);
+  } catch (error: unknown) {
+    log(
+      `The preview worker's scope index could not be read: ${error instanceof Error ? error.message : 'unknown error'}`,
+    );
+    return null;
+  }
 }
 
 /** What {@link workerPreviewService} needs. */
@@ -108,7 +135,9 @@ export function workerPreviewService(options: WorkerPreviewServiceOptions): Work
           ? null
           : {
               result: answer.result,
-              scopeJson: answer.scopeJson,
+              scope: timed('b2c:preview:receive', () =>
+                scopeOf(answer.scopeJson, answer.result, log),
+              ),
               timing: {
                 startedAt: answer.startedAt,
                 updateMs: answer.updateMs,

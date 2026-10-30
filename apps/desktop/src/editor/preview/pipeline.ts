@@ -16,10 +16,18 @@
  * User Timing span (`b2c:preview`, `b2c:preview:read`, `b2c:preview:update`, …,
  * src/lib/timing.ts).
  *
- * A sequence number discards results that a newer run has overtaken. An answer is also dropped
- * when something else (a rename, an adopted save) wrote the project's document after the run read
- * the canvas: it was computed for a document the project no longer holds, so the canvas is read again instead (ADR-0016 §5; on the main thread the read, `update()`
- * and the commit are one task and this never happens, with the preview worker it can). When the
+ * Sequence numbers order the runs (docs/plans/m3-contracts/worker.md §6 and w5-performance.md
+ * §2.3). A run that has not read the canvas yet stops when a newer one starts. A run's answer is
+ * applied when no newer run's answer has been, even while a newer run waits for its own: with the
+ * preview worker, edits less than one `update()` apart would otherwise drop every answer until the
+ * typing stops. `invalidate()` (a new document shown) drops every answer of the runs before it.
+ * An answer is also dropped when something else (a rename, an adopted save) wrote the project's
+ * document after the run read the canvas: it was computed for a document the project no longer
+ * holds, so the canvas is read again instead (ADR-0016 §5); a document the pipeline's own last
+ * commit wrote does not count. On the main thread the read, `update()` and the commit are one
+ * task and neither happens; with the worker they can. While a block is dragged (`isBusy`), an
+ * answer that may be applied is held, the newest replacing an older one, and applied once the
+ * drag has ended (checked every animation frame), by the same rules. When the
  * core traps, the service gets a fresh instance (`PreviewService.recover`), the run is tried once
  * more on it, and the analysis gets the notice `trapRecovered`. When the update fails even so (the
  * new instance trapped too, or the core failed in another way), the document is still made the
@@ -44,7 +52,7 @@ import {
 } from '@blocks2cpp/b2c-core-wasm';
 
 import type { AnalysisNotice, useAppStore } from '../../app/store';
-import { startSpan, timed } from '../../lib/timing';
+import { recordSpan, startSpan, timed } from '../../lib/timing';
 import type { CoreHost } from './coreHost';
 import { mainThreadPreviewService, type PreviewAnswer, type PreviewService } from './service';
 
@@ -66,6 +74,11 @@ export interface PreviewPipelineOptions {
   readonly onCommitted?: (doc: BdmDocument) => void;
   /** Called after a preview has been put in the store. */
   readonly onPreviewed?: (result: PreviewResult) => void;
+  /**
+   * Whether answers must wait (a block is being dragged); never by default. A held answer is
+   * applied once this is false again, checked every animation frame.
+   */
+  readonly isBusy?: () => boolean;
   /** The debounce delay, in milliseconds. */
   readonly debounceMs?: number;
 }
@@ -91,6 +104,26 @@ interface ReadDocument {
   readonly base: BdmDocument | null;
 }
 
+/** An answer that may be applied, waiting for the end of a drag. */
+interface HeldAnswer {
+  readonly seq: number;
+  readonly apply: () => void;
+}
+
+/** Calls `callback` at the next animation frame, or after about one frame without them. */
+function nextFrame(callback: () => void): () => void {
+  if (typeof requestAnimationFrame === 'function') {
+    const id = requestAnimationFrame(callback);
+    return () => {
+      cancelAnimationFrame(id);
+    };
+  }
+  const id = setTimeout(callback, 16);
+  return () => {
+    clearTimeout(id);
+  };
+}
+
 /** The hashes of an update whose document loaded, or `null` when it did not load. */
 function hashesOf(result: UpdateResult): DocumentHashes | null {
   if (result.stage === 'load' || result.textHash === null || result.contentHash === null) {
@@ -108,6 +141,19 @@ export class PreviewPipeline {
   private latest = 0;
   /** The sequence number of the run whose read of the canvas was committed last; -1 before any. */
   private committed = -1;
+  /**
+   * The sequence number of the newest run whose answer was applied (committed, or reported as a
+   * canvas that does not load); an older answer is never applied after it. -1 before any.
+   */
+  private settled = -1;
+  /** The document the pipeline's own last commit wrote, or `null`. */
+  private written: BdmDocument | null = null;
+  /** Bumped by `invalidate()`: answers of runs before it are dropped. */
+  private epoch = 0;
+  /** The answer held while `isBusy()`, or `null`. */
+  private held: HeldAnswer | null = null;
+  /** Cancels the frame callback that looks at the held answer again, or `null`. */
+  private cancelHold: (() => void) | null = null;
   private disposed = false;
   private readonly unsubscribe: () => void;
 
@@ -139,7 +185,7 @@ export class PreviewPipeline {
    * (`syncFailed`) is never idle.
    */
   isIdle(): boolean {
-    return this.timer === null && this.committed === this.latest;
+    return this.timer === null && this.committed === this.latest && this.held === null;
   }
 
   /** Runs after the debounce delay; another call before then restarts the delay. */
@@ -172,6 +218,9 @@ export class PreviewPipeline {
   invalidate(): void {
     this.cancel();
     this.latest += 1;
+    this.epoch += 1;
+    this.dropHeld();
+    this.options.host.applyScope?.(null);
   }
 
   /** Stops for good. */
@@ -181,19 +230,63 @@ export class PreviewPipeline {
     this.unsubscribe();
   }
 
+  private dropHeld(): void {
+    this.held = null;
+    this.cancelHold?.();
+    this.cancelHold = null;
+  }
+
+  /** Holds `answer` while `isBusy()`, replacing an older held one; applies it once not busy. */
+  private hold(answer: HeldAnswer): void {
+    if (this.held !== null && this.held.seq > answer.seq) {
+      return;
+    }
+    this.held = answer;
+    if (this.cancelHold !== null) {
+      return;
+    }
+    const look = (): void => {
+      this.cancelHold = null;
+      const held = this.held;
+      if (held === null || this.disposed) {
+        return;
+      }
+      if (this.options.isBusy?.() === true) {
+        this.cancelHold = nextFrame(look);
+        return;
+      }
+      this.held = null;
+      held.apply();
+    };
+    this.cancelHold = nextFrame(look);
+  }
+
   private async run(): Promise<void> {
     if (this.disposed) {
       return;
     }
     const seq = ++this.latest;
+    const epoch = this.epoch;
     const handle = this.options.store.getState().project?.handle;
     if (handle === undefined) {
       return;
     }
+    /** Before the read and before a retry: stop when a newer run has started. */
     const check = (): void => {
       if (
         this.disposed ||
         seq !== this.latest ||
+        this.options.store.getState().project?.handle !== handle
+      ) {
+        throw new Abandoned();
+      }
+    };
+    /** Before applying an answer: stop when it can no longer be applied. */
+    const checkApply = (): void => {
+      if (
+        this.disposed ||
+        epoch !== this.epoch ||
+        seq <= this.settled ||
         this.options.store.getState().project?.handle !== handle
       ) {
         throw new Abandoned();
@@ -217,7 +310,7 @@ export class PreviewPipeline {
       reading.end();
 
       const previewOptions: PreviewOptions = { indentWidth: this.indentWidth() };
-      const update = startSpan('b2c:preview:update');
+      const wait = startSpan('b2c:preview:wait');
       let answer: PreviewAnswer | null;
       try {
         answer = await this.service.update(json, previewOptions);
@@ -234,31 +327,40 @@ export class PreviewPipeline {
         // A newer run's request replaced this one.
         throw new Abandoned();
       }
-      const result: UpdateResult = answer.result;
-      check();
+      wait.end();
+      const { timing } = answer;
+      recordSpan('b2c:preview:update', timing.startedAt, timing.startedAt + timing.updateMs);
+      if (answer.scope !== null) {
+        const indexed = timing.startedAt + timing.updateMs;
+        recordSpan('b2c:preview:index', indexed, indexed + timing.indexMs);
+      }
+      checkApply();
       this.checkBase(seq, read);
-      update.end();
-      const hashes = hashesOf(result);
-      if (hashes === null) {
-        this.syncFailed(result.diagnostics);
+      const accepted = answer;
+      const readDoc = read;
+      const apply = (): void => {
+        if (this.applyAnswer(seq, readDoc, accepted, trapped)) {
+          run.end();
+        }
+      };
+      if (this.options.isBusy?.() === true) {
+        this.hold({
+          seq,
+          apply: () => {
+            try {
+              checkApply();
+              this.checkBase(seq, readDoc);
+              apply();
+            } catch (error: unknown) {
+              if (!(error instanceof Abandoned)) {
+                console.error('The live preview failed', error);
+              }
+            }
+          },
+        });
         return;
       }
-      timed('b2c:preview:commit', () => {
-        this.commit(seq, doc, hashes);
-      });
-      timed('b2c:preview:publish', () => {
-        const { analysis, actions } = this.options.store.getState();
-        actions.setAnalysis({
-          preview: result,
-          notice: trapped
-            ? 'trapRecovered'
-            : analysis.notice === 'syncFailed'
-              ? null
-              : analysis.notice,
-        });
-        this.options.onPreviewed?.(result);
-      });
-      run.end();
+      apply();
     } catch (error: unknown) {
       if (error instanceof Abandoned) {
         return;
@@ -279,6 +381,43 @@ export class PreviewPipeline {
         await this.commitWithoutPreview(seq, read, check);
       }
     }
+  }
+
+  /**
+   * Applies an answer that passed the checks: commits its document and publishes its preview.
+   * Returns whether there was a preview (a document that does not load has none).
+   */
+  private applyAnswer(
+    seq: number,
+    read: ReadDocument,
+    answer: PreviewAnswer,
+    trapped: boolean,
+  ): boolean {
+    const result: UpdateResult = answer.result;
+    const hashes = hashesOf(result);
+    if (hashes === null) {
+      this.settled = seq;
+      this.syncFailed(result.diagnostics);
+      return false;
+    }
+    timed('b2c:preview:commit', () => {
+      this.commit(seq, read.doc, hashes);
+    });
+    timed('b2c:preview:publish', () => {
+      const { analysis, actions } = this.options.store.getState();
+      // The index first, so a subscriber that builds a menu at once reads the new one.
+      this.options.host.applyScope?.(answer.scope);
+      actions.setAnalysis({
+        preview: result,
+        notice: trapped
+          ? 'trapRecovered'
+          : analysis.notice === 'syncFailed'
+            ? null
+            : analysis.notice,
+      });
+      this.options.onPreviewed?.(result);
+    });
+    return true;
   }
 
   /**
@@ -343,6 +482,8 @@ export class PreviewPipeline {
     }
     // Before the store update, whose subscribers may throw after the document is written.
     this.committed = seq;
+    this.settled = Math.max(this.settled, seq);
+    this.written = doc;
     actions.updateProjectAndAnalysis(
       {
         document: doc,
@@ -357,14 +498,15 @@ export class PreviewPipeline {
 
   /**
    * Drops a run's answer (throws {@link Abandoned}) when the project's document is no longer the
-   * one the run read against: something else (a rename, an adopted save) wrote it since, and
+   * one the run read against, nor the one the pipeline's own last commit wrote (an older run's,
+   * applied while this one waited): something else (a rename, an adopted save) wrote it since, and
    * committing the run's document would undo that. When the run is the latest, the canvas is read
    * again. A run's own commit would trip it too, so it is checked only before that commit: a run
    * that fails after committing does not commit again (see the end of `run`).
    */
   private checkBase(seq: number, read: ReadDocument): void {
     const current = this.options.store.getState().project?.document ?? null;
-    if (current === read.base) {
+    if (current === read.base || (current !== null && current === this.written)) {
       return;
     }
     if (seq === this.latest) {

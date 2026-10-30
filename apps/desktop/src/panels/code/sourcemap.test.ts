@@ -1,7 +1,8 @@
+import { compactSourceMap } from '@blocks2cpp/b2c-core-wasm';
 import { describe, expect, it } from 'vitest';
 
 import trickyTextMain from '../../../../../tests/golden/tricky_text/main.cpp?raw';
-import type { GeneratedFile, MappedRange, Part, SourceMap } from '../types';
+import type { CompactSourceMap, GeneratedFile, MappedRange, Part, SourceMap } from '../types';
 import { buildSourceMapIndex, LineTable, MAX_INDEXED_RANGES, samePart } from './sourcemap';
 
 const WHOLE: Part = { kind: 'whole' };
@@ -270,6 +271,78 @@ describe('buildSourceMapIndex', () => {
     expect(index.blockAt('main.cpp', asciiOffset(3, 2))).toBeNull();
     // The limit can be lowered but never raised.
     expect(MAX_INDEXED_RANGES).toBe(1_000_000);
+  });
+});
+
+describe('the compact source map (M3-5)', () => {
+  it('gives the answers of the same map in the IR’s form', () => {
+    let seed = 0x1b873593;
+    const random = (limit: number) => {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      return (seed >>> 0) % limit;
+    };
+    const text = 'aé✓😀 b\n'.repeat(6);
+    const parts: Part[] = [
+      WHOLE,
+      { kind: 'field', name: 'NAME' },
+      { kind: 'input', name: 'VALUE' },
+    ];
+    for (let round = 0; round < 100; round++) {
+      const ranges: MappedRange[] = [];
+      for (let i = 0, count = 1 + random(12); i < count; i++) {
+        const sl = 1 + random(6);
+        ranges.push(
+          range(
+            sl,
+            1 + random(12),
+            sl + random(3),
+            1 + random(12),
+            `b${String(random(5))}`,
+            parts[random(3)],
+          ),
+        );
+      }
+      const map = sourceMap('main.cpp', ranges);
+      const files = [file('main.cpp', text)];
+      const full = buildSourceMapIndex(map, files);
+      const compact = buildSourceMapIndex(compactSourceMap(map), files);
+      for (let offset = 0; offset <= text.length; offset++) {
+        expect(compact.blockAt('main.cpp', offset)).toBe(full.blockAt('main.cpp', offset));
+      }
+      for (let block = 0; block < 5; block++) {
+        const id = `b${String(block)}`;
+        expect(compact.rangesForBlock(id)).toEqual(full.rangesForBlock(id));
+        for (const part of parts) {
+          expect(compact.rangesForPart(id, part)).toEqual(full.rangesForPart(id, part));
+        }
+      }
+    }
+  });
+
+  it('skips malformed ranges and never throws', () => {
+    const files = [file('main.cpp', ASCII_TEXT)];
+    const map: CompactSourceMap = {
+      version: 2,
+      modules: ['mod_main'],
+      blocks: ['b1'],
+      parts: [WHOLE],
+      files: [
+        {
+          path: 'main.cpp',
+          // A good range, one whose block index is out of range, and four numbers too few.
+          ranges: [1, 1, 1, 9, 0, 0, 0, 2, 1, 2, 9, 0, 7, 0, 3, 1, 3, 9],
+        },
+      ],
+    };
+    const index = buildSourceMapIndex(map, files);
+    expect(index.blockAt('main.cpp', asciiOffset(1, 2))).toBe('b1');
+    expect(index.blockAt('main.cpp', asciiOffset(2, 2))).toBeNull();
+    expect(index.blockAt('main.cpp', asciiOffset(3, 2))).toBeNull();
+    expect(index.rangesForBlock('b1')).toHaveLength(1);
+    const unknown = { version: 3, files: [] } as unknown as CompactSourceMap;
+    expect(buildSourceMapIndex(unknown, files).blockAt('main.cpp', 0)).toBeNull();
   });
 });
 

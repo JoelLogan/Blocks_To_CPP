@@ -6,9 +6,11 @@
  * Source-map positions are 1-based, with columns counted in UTF-8 bytes (GCC's unit) and an
  * exclusive end. CodeMirror and JavaScript strings count UTF-16 code units, so every position is
  * converted line by line against the generated file's text. The index is built once per preview;
- * lookups binary-search.
+ * lookups binary-search. The preview's map is in its compact form (`CompactSourceMap`, version 2,
+ * M3-5), which is read as it is, seven numbers per range; the IR's form (`SourceMap`, version 1)
+ * is read too.
  */
-import type { GeneratedFile, MappedRange, Part, Position, SourceMap } from '../types';
+import type { CompactSourceMap, GeneratedFile, Part, SourceMap } from '../types';
 
 /**
  * The most ranges one index holds, over all files. A preview of the largest project the loader
@@ -142,6 +144,80 @@ function utf8Length(codePoint: number): number {
   return codePoint < 0x10000 ? 3 : 4;
 }
 
+/** One range of a source map, as either form gives it. */
+interface RawRange {
+  readonly startLine: number;
+  readonly startColumn: number;
+  readonly endLine: number;
+  readonly endColumn: number;
+  readonly block: string;
+  readonly part: Part;
+}
+
+/** The ranges of one file of a source map, by position in its list. */
+interface RangeList {
+  readonly path: string;
+  readonly length: number;
+  /** The range at `index`, or `null` when it is malformed (an index out of range). */
+  range(index: number): RawRange | null;
+}
+
+/** Numbers per range of the compact form. */
+const STRIDE = 7;
+
+function isCompact(map: SourceMap | CompactSourceMap): map is CompactSourceMap {
+  return map.version === 2;
+}
+
+/** The files of a source map in either form; nothing for a version this panel does not know. */
+function rangeLists(map: SourceMap | CompactSourceMap | null): RangeList[] {
+  if (map === null) {
+    return [];
+  }
+  if (isCompact(map)) {
+    return map.files.map((file) => ({
+      path: file.path,
+      length: Math.floor(file.ranges.length / STRIDE),
+      range(index) {
+        const at = index * STRIDE;
+        const block = map.blocks[file.ranges[at + 5] ?? -1];
+        const part = map.parts[file.ranges[at + 6] ?? -1];
+        if (block === undefined || part === undefined) {
+          return null;
+        }
+        return {
+          startLine: file.ranges[at] ?? 0,
+          startColumn: file.ranges[at + 1] ?? 0,
+          endLine: file.ranges[at + 2] ?? 0,
+          endColumn: file.ranges[at + 3] ?? 0,
+          block,
+          part,
+        };
+      },
+    }));
+  }
+  if (map.version !== 1) {
+    return [];
+  }
+  return map.files.map((file) => ({
+    path: file.path,
+    length: file.ranges.length,
+    range(index) {
+      const range = file.ranges[index];
+      return range === undefined
+        ? null
+        : {
+            startLine: range.start.line,
+            startColumn: range.start.column,
+            endLine: range.end.line,
+            endColumn: range.end.column,
+            block: range.block,
+            part: range.part,
+          };
+    },
+  }));
+}
+
 /** One converted range of a file. */
 interface IndexedRange {
   readonly from: number;
@@ -182,7 +258,7 @@ export interface SourceMapIndexOptions {
  * empty index.
  */
 export function buildSourceMapIndex(
-  map: SourceMap | null,
+  map: SourceMap | CompactSourceMap | null,
   files: readonly GeneratedFile[],
   options: SourceMapIndexOptions = {},
 ): SourceMapIndex {
@@ -198,7 +274,7 @@ export function buildSourceMapIndex(
   const partsByBlock = new Map<string, PartRange[]>();
   let budget = Math.max(0, Math.min(options.maxRanges ?? MAX_INDEXED_RANGES, MAX_INDEXED_RANGES));
 
-  for (const fileMap of map?.files ?? []) {
+  for (const fileMap of rangeLists(map)) {
     const text = contents.get(fileMap.path);
     // Like `SourceMap::lookup`, the first map for a path wins.
     if (text === undefined || byPath.has(fileMap.path)) {
@@ -206,11 +282,12 @@ export function buildSourceMapIndex(
     }
     const table = new LineTable(text);
     const ranges: IndexedRange[] = [];
-    for (const range of fileMap.ranges) {
+    for (let index = 0; index < fileMap.length; index++) {
       if (budget === 0) {
         break;
       }
-      const converted = convertRange(table, range, ranges.length);
+      const range = fileMap.range(index);
+      const converted = range === null ? null : convertRange(table, range, index);
       if (converted !== null) {
         ranges.push(converted);
         budget--;
@@ -220,8 +297,8 @@ export function buildSourceMapIndex(
     byPath.set(fileMap.path, indexFile(ranges));
 
     for (const range of ranges) {
-      const original = fileMap.ranges[range.order];
-      if (original === undefined) {
+      const original = fileMap.range(range.order);
+      if (original === null) {
         continue;
       }
       const codeRange = { path: fileMap.path, from: range.from, to: range.to };
@@ -246,23 +323,21 @@ export function buildSourceMapIndex(
 }
 
 /** The converted range, or `null` when it is malformed or empty. */
-function convertRange(table: LineTable, range: MappedRange, order: number): IndexedRange | null {
-  if (!isPosition(range.start) || !isPosition(range.end)) {
+function convertRange(table: LineTable, range: RawRange, order: number): IndexedRange | null {
+  if (
+    !isPosition(range.startLine, range.startColumn) ||
+    !isPosition(range.endLine, range.endColumn)
+  ) {
     return null;
   }
-  const from = table.offsetAt(range.start.line, range.start.column);
-  const to = table.offsetAt(range.end.line, range.end.column);
+  const from = table.offsetAt(range.startLine, range.startColumn);
+  const to = table.offsetAt(range.endLine, range.endColumn);
   return to > from ? { from, to, block: range.block, order } : null;
 }
 
 /** Whether a position has a positive integer line and column (the map is data, so check it). */
-function isPosition(position: Position): boolean {
-  return (
-    Number.isSafeInteger(position.line) &&
-    position.line >= 1 &&
-    Number.isSafeInteger(position.column) &&
-    position.column >= 1
-  );
+function isPosition(line: number, column: number): boolean {
+  return Number.isSafeInteger(line) && line >= 1 && Number.isSafeInteger(column) && column >= 1;
 }
 
 /** Computes each range's parent and whether the ranges nest properly. */
