@@ -551,8 +551,9 @@ impl<'a> ScopeIndexParts<'a> {
 
 impl Analysis {
     /// The scope index behind [`Self::scope_at`], [`Self::scope_after`] and
-    /// [`Self::parked_scope`], read-only, for an encoder (see
-    /// [`ScopeIndexParts`]).
+    /// [`Self::parked_scope`], read-only, for an encoder: the editor's
+    /// preview worker sends it with each preview
+    /// (docs/plans/m3-contracts/worker.md §4).
     pub fn scope_index_parts(&self) -> ScopeIndexParts<'_> {
         ScopeIndexParts { analysis: self }
     }
