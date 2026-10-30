@@ -5,6 +5,7 @@
 import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
   DEFAULT_EDITOR_SERVICES,
+  hasB2cMutator,
   resetEditorServices,
   setEditorServices,
 } from '@blocks2cpp/blockly-ext';
@@ -64,11 +65,15 @@ function delivered(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 10));
 }
 
-/** Undoes everything on the undo stack. */
-function undoAll(workspace: Blockly.WorkspaceSvg): void {
-  while (workspace.getUndoStack().length > 0) {
-    workspace.undo(false);
-  }
+/**
+ * Undoes the fix with one Undo: the canvas was loaded with events off, so the fix's events are all
+ * there is on the stack, and one step must take all of them.
+ */
+async function undoOnce(workspace: Blockly.WorkspaceSvg): Promise<void> {
+  await delivered();
+  expect(workspace.getUndoStack().length).toBeGreaterThan(0);
+  workspace.undo(false);
+  expect(workspace.getUndoStack()).toHaveLength(0);
 }
 
 describe('which diagnostics', () => {
@@ -121,9 +126,60 @@ describe('B2C-E0201: create the variable again', () => {
     expect((Blockly.common.getSelected() as Blockly.Block | null)?.id).toBe(first?.id);
     // Declared now: no longer offered.
     expect(fixesFor(diagnostic('B2C-E0201', 'get'), context)).toEqual([]);
-    await delivered();
-    undoAll(context.workspace);
+    await undoOnce(context.workspace);
     expect(context.workspace.getBlockById('main')?.getInputTargetBlock('BODY')?.id).toBe('print');
+    expect(context.workspace.getBlocksByType('var.declare', false)).toEqual([]);
+  });
+
+  /** A print of the lost `s_gone` in a body, its getter `getter`. */
+  const printOfGone = (getter: string): Blockly.serialization.blocks.State => ({
+    type: 'io.print',
+    extraState: { itemCount: 1 },
+    inputs: {
+      ITEM0: { block: { type: 'var.get', id: getter, fields: { VAR: { ref: 's_gone' } } } },
+    },
+  });
+
+  it('is not offered when the lost variable is used in two bodies', () => {
+    setEditorServices({
+      ...DEFAULT_EDITOR_SERVICES,
+      symbols: { symbolsAt: () => [], nameOf: (id) => (id === 's_gone' ? 'score' : null) },
+    });
+    const context = canvas([
+      { type: 'program.main', id: 'main', inputs: { BODY: { block: printOfGone('get') } } },
+      {
+        type: 'func.define',
+        id: 'fn',
+        x: 400,
+        fields: { NAME: { sym: 's_fn', name: 'addPoint' }, RETURNS: 'void' },
+        extraState: { params: [] },
+        inputs: { BODY: { block: printOfGone('get2') } },
+      },
+    ]);
+    const field = { kind: 'field', name: 'VAR' } as const;
+    expect(fixesFor(diagnostic('B2C-E0201', 'get', field), context)).toEqual([]);
+    expect(fixesFor(diagnostic('B2C-E0201', 'get2', field), context)).toEqual([]);
+  });
+
+  it('is not offered for a reference outside any body', () => {
+    setEditorServices({
+      ...DEFAULT_EDITOR_SERVICES,
+      symbols: { symbolsAt: () => [], nameOf: (id) => (id === 's_gone' ? 'score' : null) },
+    });
+    const context = canvas([
+      {
+        type: 'var.global',
+        id: 'global',
+        fields: { TYPE: 'int', NAME: { sym: 's_total', name: 'total' } },
+        inputs: {
+          VALUE: { block: { type: 'var.get', id: 'get', fields: { VAR: { ref: 's_gone' } } } },
+        },
+      },
+    ]);
+    expect(
+      fixesFor(diagnostic('B2C-E0201', 'get', { kind: 'field', name: 'VAR' }), context),
+    ).toEqual([]);
+    expect(context.workspace.getBlocksByType('var.declare', false)).toEqual([]);
   });
 
   it('is not offered without a last name, or for a symbol the analysis knows', () => {
@@ -158,12 +214,24 @@ describe('B2C-E0410 and B2C-E0403: returns', () => {
     expect(added?.type).toBe('func.return');
     expect(fixesFor(diagnostic('B2C-E0410', 'fn'), context)).toEqual([]);
     expect(fix?.apply()).toBe(false);
-    await delivered();
-    undoAll(context.workspace);
+    await undoOnce(context.workspace);
     expect(context.workspace.getBlockById('stop')?.getNextBlock()).toBeNull();
   });
 
-  it('gives an empty return the start value of the result type', () => {
+  it('is not offered when the result type has no start value (a list)', () => {
+    const context = canvas([
+      {
+        ...define({ type: 'control.break', id: 'stop' }),
+        fields: { NAME: { sym: 's_fn', name: 'scores' }, RETURNS: '{"std::vector":"int"}' },
+      },
+    ]);
+    expect(context.workspace.getBlockById('fn')?.getFieldValue('RETURNS')).toBe(
+      '{"std::vector":"int"}',
+    );
+    expect(fixesFor(diagnostic('B2C-E0410', 'fn'), context)).toEqual([]);
+  });
+
+  it('gives an empty return the start value of the result type', async () => {
     const context = canvas([define({ type: 'func.return', id: 'ret' })]);
     const [fix] = fixesFor(diagnostic('B2C-E0403', 'ret'), context);
     expect(fix?.title).toBe('Give back a value');
@@ -171,22 +239,109 @@ describe('B2C-E0410 and B2C-E0403: returns', () => {
     const value = context.workspace.getBlockById('ret')?.getInputTargetBlock('VALUE');
     expect(value?.isShadow()).toBe(true);
     expect(fix?.apply()).toBe(false);
+    await undoOnce(context.workspace);
+    expect(context.workspace.getBlockById('ret')?.getInputTargetBlock('VALUE')).toBeNull();
   });
 });
 
 describe('B2C-E0405: the program block', () => {
-  it('adds when program starts while the canvas has none', () => {
+  it('adds when program starts while the canvas has none', async () => {
     const context = canvas([{ type: 'control.break', id: 'stop' }]);
     const [fix] = fixesFor(diagnostic('B2C-E0405'), context);
     expect(fix?.title).toBe('Add “when program starts”');
     expect(fix?.apply()).toBe(true);
     expect(context.workspace.getBlocksByType('program.main', false)).toHaveLength(1);
     expect(fixesFor(diagnostic('B2C-E0405'), context)).toEqual([]);
+    await undoOnce(context.workspace);
+    expect(context.workspace.getBlocksByType('program.main', false)).toHaveLength(0);
   });
 });
 
 describe('B2C-W0508: the missing cases', () => {
-  it('adds a case for each value of the enum the switch does not name', () => {
+  /** An enum `s_e` with `count` values `s_v0`… (named `V0`…), as the editor's type services see it. */
+  function bigEnum(count: number): void {
+    const ids = Array.from({ length: count }, (_, index) => `s_v${String(index)}`);
+    const symbols = [
+      symbolFixture('s_e', 'Big', { kind: 'enum', values: ids, type: { ref: 's_e' } }),
+      ...ids.map((id, index) =>
+        symbolFixture(id, `V${String(index)}`, { kind: 'enumerator', owner: 's_e' }),
+      ),
+    ];
+    const byId = new Map(symbols.map((symbol) => [symbol.id, symbol]));
+    setEditorServices({
+      ...DEFAULT_EDITOR_SERVICES,
+      types: {
+        outputTypeOf: (block) => (block.id === 'value' ? { kind: 'named', id: 's_e' } : null),
+        symbol: (id) => byId.get(id) ?? null,
+      },
+    });
+  }
+
+  /** A switch on a value of `s_e` with `caseCount` cases, `filled[i]` naming case `i` (or empty). */
+  function bigSwitch(
+    caseCount: number,
+    filled: readonly (string | null)[],
+  ): Blockly.serialization.blocks.State {
+    const value = (id: string, sym: string): Blockly.serialization.blocks.State => ({
+      type: 'type.enum_value',
+      id,
+      fields: { ENUM: { ref: 's_e' }, VALUE: { ref: sym } },
+    });
+    const inputs: Record<string, { block: Blockly.serialization.blocks.State }> = {
+      VALUE: { block: value('value', 's_v0') },
+    };
+    filled.forEach((sym, index) => {
+      if (sym !== null) {
+        inputs[`CASE${String(index)}`] = { block: value(`case${String(index)}`, sym) };
+      }
+    });
+    return {
+      type: 'control.switch',
+      id: 'switch',
+      extraState: { caseCount, hasDefault: false },
+      inputs,
+    };
+  }
+
+  /** The enumerators the switch's cases name, in order (`null` for an empty case). */
+  function caseValues(context: FixContext): (string | null)[] {
+    const block = context.workspace.getBlockById('switch');
+    return (block?.inputList ?? [])
+      .filter((input) => /^CASE\d+$/u.test(input.name))
+      .map((input) => {
+        const value = input.connection?.targetBlock()?.getField('VALUE')?.getValue() as
+          { ref?: string } | string | undefined;
+        return (typeof value === 'object' ? value.ref : value) ?? null;
+      });
+  }
+
+  it('fills the empty cases first and never goes past 64, leaving no loose block', async () => {
+    bigEnum(64);
+    const filled = Array.from({ length: 32 }, (_, index) => `s_v${String(index)}`);
+    const context = canvas([bigSwitch(34, [...filled, null, null])]);
+    const [fix] = fixesFor(diagnostic('B2C-W0508', 'switch'), context);
+    expect(fix?.title).toBe('Add cases for V32, V33, V34 and 29 more');
+    expect(fix?.apply()).toBe(true);
+    const values = caseValues(context);
+    expect(values).toHaveLength(64);
+    expect(new Set(values).size).toBe(64);
+    expect(values).not.toContain(null);
+    expect(context.workspace.getTopBlocks(false).map((block) => block.id)).toEqual(['switch']);
+    expect(fixesFor(diagnostic('B2C-W0508', 'switch'), context)).toEqual([]);
+    await undoOnce(context.workspace);
+    expect(caseValues(context)).toEqual([...filled, null, null]);
+    expect(context.workspace.getTopBlocks(false).map((block) => block.id)).toEqual(['switch']);
+  });
+
+  it('is not offered when the switch has 64 cases and none is empty', () => {
+    bigEnum(64);
+    // Case 63 names V0 a second time: V63 is missing, with nowhere to put it.
+    const filled = Array.from({ length: 64 }, (_, index) => `s_v${String(index % 63)}`);
+    const context = canvas([bigSwitch(64, filled)]);
+    expect(fixesFor(diagnostic('B2C-W0508', 'switch'), context)).toEqual([]);
+  });
+
+  it('adds a case for each value of the enum the switch does not name', async () => {
     const action = symbolFixture('s_action', 'Action', {
       kind: 'enum',
       values: ['s_add', 's_quit', 's_list'],
@@ -243,5 +398,11 @@ describe('B2C-W0508: the missing cases', () => {
       's_list',
     ]);
     expect(fixesFor(diagnostic('B2C-W0508', 'switch'), context)).toEqual([]);
+    await undoOnce(context.workspace);
+    if (block === null || !hasB2cMutator(block)) {
+      throw new Error('no switch');
+    }
+    expect(block.b2cGetExtra()['caseCount']).toBe(1);
+    expect(block.getInput('CASE1')).toBeNull();
   });
 });

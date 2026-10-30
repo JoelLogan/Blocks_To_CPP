@@ -248,9 +248,9 @@ get one (W4E-3):
 
 | Code | Fix | How |
 | --- | --- | --- |
-| `B2C-E0201` (a variable reference) | *Create variable `score`* | a `create` with the reference's symbol ID and last-known name, type `int` (the analysis no longer knows its type: a different one is reported on the `create`, where it is changed), at the start of the body that holds the reference (its function or *when program starts*) |
-| `B2C-E0410` | *Add a `return` block at the end* | a `return` with the function's result type's start value, at the end of the function's body |
-| `B2C-W0508` | *Add cases for `List`, `Quit`* | the switch's mutator gains a case per missing enumerator, each set to it |
+| `B2C-E0201` (a variable reference) | *Create variable `score`* | a `create` with the reference's symbol ID and last-known name, type `int` (the analysis no longer knows its type: a different one is reported on the `create`, where it is changed), at the start of the body that holds the reference (its function or *when program starts*). Offered only when every reference to the lost symbol is in that one body: references in two bodies, or one outside any body (a global's start value), have no single place for it |
+| `B2C-E0410` | *Add a `return` block at the end* | a `return` with the function's result type's start value, at the end of the function's body. Offered only for a result type with a start value (`int`, `double`, `bool`, `char`, `std::string`): for a list, a struct or an enum an empty `return` would only give `B2C-E0403` |
+| `B2C-W0508` | *Add cases for `List`, `Quit`* | each missing enumerator goes into an empty case first, then the switch's mutator gains a case for each of the rest, up to its 64 parts (at most 32 per fix); the title names those it adds, and no fix is offered when there is no room |
 | `B2C-E0405` | *Add “when program starts”* | the program block, on the canvas at the view's top left |
 | `B2C-E0403` | *Give back a value* | the start value of the function's result type in the `return`'s input |
 

@@ -4,9 +4,9 @@
  *
  * | Code | Fix |
  * | --- | --- |
- * | `B2C-E0201` (a variable) | *Create variable “score”*: a `create` with the reference's symbol and last-known name, at the start of the body that holds it |
- * | `B2C-E0410` | *Add a “return” at the end*: a `return` with the result type's start value, at the end of the function |
- * | `B2C-W0508` | *Add cases for List, Quit*: a case per missing value of the enum |
+ * | `B2C-E0201` (a variable) | *Create variable “score”*: a `create` with the reference's symbol and last-known name, at the start of the body that holds it; only when every reference to the symbol is in that one body |
+ * | `B2C-E0410` | *Add a “return” at the end*: a `return` with the result type's start value, at the end of the function; only when the result type has a start value |
+ * | `B2C-W0508` | *Add cases for List, Quit*: a case per missing value of the enum, in the empty cases first, up to the switch's 64 parts |
  * | `B2C-E0405` | *Add “when program starts”*: the program block, in the view |
  * | `B2C-E0403` | *Give back a value*: the result type's start value in the `return` |
  *
@@ -20,6 +20,7 @@ import {
   B2cSymbolDeclField,
   B2cSymbolRefField,
   asUndoStep,
+  catalogBlock,
   catalogFieldOptions,
   getEditorServices,
   hasB2cMutator,
@@ -177,12 +178,39 @@ function danglingVariable(
       } catch {
         name = null;
       }
-      if (name !== null && name !== '') {
+      if (name !== null && name !== '' && oneBody(context.workspace, block, sym)) {
         return { sym, name };
       }
     }
   }
   return null;
+}
+
+/**
+ * Whether every reference to `sym` on the canvas is in the body (*when program starts* or a
+ * function) that holds `block`: only then does a `create` at the start of that body cover them
+ * all. A reference outside any body (a global's start value) has no place for one.
+ */
+function oneBody(workspace: Blockly.Workspace, block: Blockly.Block, sym: string): boolean {
+  const body = bodyBlock(block);
+  if (body === null) {
+    return false;
+  }
+  return workspace
+    .getAllBlocks(false)
+    .every(
+      (other) =>
+        !refersTo(other, sym) || (!other.isDeadOrDying() && bodyBlock(other)?.id === body.id),
+    );
+}
+
+/** Whether a reference field of `block` names symbol `sym`. */
+function refersTo(block: Blockly.Block, sym: string): boolean {
+  return block.inputList.some((input) =>
+    input.fieldRow.some(
+      (field) => field instanceof B2cSymbolRefField && field.getRef()?.ref === sym,
+    ),
+  );
 }
 
 function createVariableFix(diagnostic: Diagnostic, context: FixContext): QuickFix | null {
@@ -209,19 +237,16 @@ function createVariableFix(diagnostic: Diagnostic, context: FixContext): QuickFi
         if (made === null) {
           return null;
         }
-        const body = bodyBlock(block);
-        const mouth = body?.getInput('BODY')?.connection ?? null;
+        const mouth = bodyBlock(block)?.getInput('BODY')?.connection ?? null;
         if (
-          mouth !== null &&
-          context.workspace.connectionChecker.canConnect(made.previousConnection, mouth, false)
+          mouth === null ||
+          !context.workspace.connectionChecker.canConnect(made.previousConnection, mouth, false)
         ) {
-          made.previousConnection.connect(mouth);
-        } else {
-          const root = block.getRootBlock();
-          const at = root.getRelativeToSurfaceXY();
-          made.moveTo(new Blockly.utils.Coordinate(at.x, at.y - 60));
-          made.bumpNeighbours();
+          // A loose `create` would declare nothing where the reference is.
+          made.dispose(false);
+          return null;
         }
+        made.previousConnection.connect(mouth);
         return made;
       });
     },
@@ -239,8 +264,12 @@ function resultStart(define: Blockly.Block): readonly TokenJson[] {
 function addReturnFix(diagnostic: Diagnostic, context: FixContext): QuickFix | null {
   const block = blockOf(diagnostic, context);
   const define = block === null ? null : enclosing(block, DEFINE);
+  // A result type with no start value (a list, a struct, an enum) has no obvious value to give
+  // back: an empty `return` would only swap this error for B2C-E0403.
   const applies = (fn: Blockly.Block): boolean =>
-    !fn.isDeadOrDying() && lastStatement(fn, 'BODY')?.type !== 'func.return';
+    !fn.isDeadOrDying() &&
+    lastStatement(fn, 'BODY')?.type !== 'func.return' &&
+    resultStart(fn).length > 0;
   if (define === null || !applies(define)) {
     return null;
   }
@@ -252,11 +281,7 @@ function addReturnFix(diagnostic: Diagnostic, context: FixContext): QuickFix | n
         return false;
       }
       return asOneStep(() => {
-        const start = resultStart(define);
-        const item = presetBlock(
-          'func.return',
-          start.length === 0 ? {} : { inputs: { VALUE: start } },
-        );
+        const item = presetBlock('func.return', { inputs: { VALUE: resultStart(define) } });
         const made = create(context.workspace, blockState(item));
         if (made === null) {
           return null;
@@ -349,8 +374,42 @@ function missingCases(
   return missing.length === 0 ? null : { enumId: enumSymbol.id, missing };
 }
 
-/** The most cases one fix adds (the block's own limit is 64 parts). */
+/** The most cases one fix adds. */
 const MAX_ADDED_CASES = 32;
+
+/** The most cases a switch has (the catalog's limit on its `caseCount`). */
+function maxCases(): number {
+  const limit = catalogBlock('control.switch')?.extra.find(
+    (extra) => extra.name === 'caseCount',
+  )?.max;
+  return typeof limit === 'number' ? limit : 64;
+}
+
+/** The case inputs of `block` that hold no block, in order. */
+function emptyCases(block: Blockly.Block): string[] {
+  return block.inputList
+    .filter((input) => /^CASE\d+$/u.test(input.name) && input.connection?.targetBlock() === null)
+    .map((input) => input.name);
+}
+
+/** The cases a switch has now (its `caseCount`). */
+function caseCount(extra: Readonly<Record<string, unknown>>): number {
+  const count = extra['caseCount'];
+  return typeof count === 'number' ? count : 0;
+}
+
+/**
+ * The enumerators the fix adds now, of `missing`: into the empty cases of `block`, then as new
+ * ones up to the limit (`count` is its `caseCount`).
+ */
+function fitting(
+  block: Blockly.Block,
+  count: number,
+  missing: readonly SymbolInfo[],
+): readonly SymbolInfo[] {
+  const room = emptyCases(block).length + Math.max(0, maxCases() - count);
+  return missing.slice(0, Math.min(MAX_ADDED_CASES, room));
+}
 
 function addCasesFix(diagnostic: Diagnostic, context: FixContext): QuickFix | null {
   const block = blockOf(diagnostic, context);
@@ -358,39 +417,54 @@ function addCasesFix(diagnostic: Diagnostic, context: FixContext): QuickFix | nu
     return null;
   }
   const found = missingCases(block);
-  if (found === null) {
+  // No room left (64 cases, none empty): nothing the fix could add.
+  const adds = found === null ? [] : fitting(block, caseCount(block.b2cGetExtra()), found.missing);
+  if (found === null || adds.length === 0) {
     return null;
   }
-  const names = found.missing.slice(0, 3).map((symbol) => symbol.name);
-  const more = found.missing.length > 3 ? ` and ${String(found.missing.length - 3)} more` : '';
+  const names = adds.slice(0, 3).map((symbol) => symbol.name);
+  const more = adds.length > 3 ? ` and ${String(adds.length - 3)} more` : '';
   return {
     id: `${diagnostic.code}:${block.id}`,
-    title: `Add ${found.missing.length === 1 ? 'a case' : 'cases'} for ${names.join(', ')}${more}`,
+    title: `Add ${adds.length === 1 ? 'a case' : 'cases'} for ${names.join(', ')}${more}`,
     apply() {
       const now = block.isDeadOrDying() ? null : missingCases(block);
       if (now === null || !hasB2cMutator(block)) {
         return false;
       }
+      const adding = fitting(block, caseCount(block.b2cGetExtra()), now.missing);
+      if (adding.length === 0) {
+        return false;
+      }
       return asOneStep(() => {
         const extra = block.b2cGetExtra();
-        const count = typeof extra['caseCount'] === 'number' ? extra['caseCount'] : 0;
-        const adding = now.missing.slice(0, MAX_ADDED_CASES);
-        asUndoStep(
-          block,
-          () => block.b2cGetExtra(),
-          () => {
-            block.b2cSetExtra({ ...extra, caseCount: Math.min(64, count + adding.length) });
-          },
-        );
+        const count = caseCount(extra);
+        const empty = emptyCases(block);
+        const added = Math.max(0, adding.length - empty.length);
+        if (added > 0) {
+          asUndoStep(
+            block,
+            () => block.b2cGetExtra(),
+            () => {
+              block.b2cSetExtra({ ...extra, caseCount: count + added });
+            },
+          );
+        }
+        // The empty cases first, then the new ones.
+        const places = [
+          ...empty,
+          ...Array.from({ length: added }, (_, index) => `CASE${String(count + index)}`),
+        ];
         adding.forEach((symbol, index) => {
-          const input = block.getInput(`CASE${String(count + index)}`);
+          const input = block.getInput(places[index] ?? '');
+          if (input?.connection == null) {
+            return;
+          }
           const made = create(context.workspace, {
             type: 'type.enum_value',
             fields: { ENUM: { ref: now.enumId }, VALUE: { ref: symbol.id } },
           });
-          if (input?.connection != null && made !== null) {
-            made.outputConnection.connect(input.connection);
-          }
+          made?.outputConnection.connect(input.connection);
         });
         return block;
       });
