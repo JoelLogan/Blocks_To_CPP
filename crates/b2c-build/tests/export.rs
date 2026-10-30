@@ -916,9 +916,9 @@ fn an_older_manifest_without_hashes_keeps_every_listed_file() {
 
 /// A manifest is untrusted: a format 3 entry without its object shape, a
 /// hash that is not 64 lower-case hex digits, an earlier hash without a
-/// hash, an unknown key, a path that is
-/// not an export's, a path listed twice (also in another case) or an entry
-/// without a path make the folder one Blocks2Cpp did not make.
+/// hash, an unknown key, a path that is not an export's, a path listed twice
+/// (also in another case), an entry without a path, more than 1,024 entries
+/// or more than 256 KiB make the folder one Blocks2Cpp did not make.
 #[test]
 fn a_malformed_manifest_is_not_an_export() {
     let dir = tempfile::tempdir().unwrap();
@@ -959,6 +959,105 @@ fn a_malformed_manifest_is_not_an_export() {
     // As written, it is an export.
     std::fs::write(folder.join(EXPORT_MANIFEST), &original).unwrap();
     assert_eq!(export::folder_state(&folder), FolderState::EarlierExport);
+    // At most 1,024 entries: one more and it is not an export. (On one line,
+    // 1,025 entries are well under the size limit.)
+    for (count, state) in [(1024, FolderState::EarlierExport), (1025, FolderState::Other)] {
+        let mut value: serde_json::Value = serde_json::from_str(&original).unwrap();
+        value["files"] = (0..count)
+            .map(|index| serde_json::json!({"path": format!("src/f{index:04}.cpp"), "sha256": hash}))
+            .collect();
+        let text = value.to_string();
+        assert!(text.len() < 200 * 1024, "{}", text.len());
+        std::fs::write(folder.join(EXPORT_MANIFEST), text).unwrap();
+        assert_eq!(export::folder_state(&folder), state, "{count} entries");
+    }
+    assert!(matches!(
+        export::write(&folder, &export, ExportMode::Replace),
+        Err(export::ExportError::NoEarlierExport)
+    ));
+    // At most 256 KiB: the manifest as written, padded with spaces (which
+    // JSON allows) to one byte past it, is not an export.
+    for (size, state) in [
+        (256 * 1024, FolderState::EarlierExport),
+        (256 * 1024 + 1, FolderState::Other),
+    ] {
+        let padded = format!("{original}{}", " ".repeat(size - original.len()));
+        std::fs::write(folder.join(EXPORT_MANIFEST), padded).unwrap();
+        assert_eq!(export::folder_state(&folder), state, "{size} bytes");
+    }
+}
+
+/// A file of a hand-made export.
+fn export_file(path: &str, contents: &str) -> export::ExportFile {
+    export::ExportFile {
+        path: path.to_owned(),
+        contents: contents.to_owned(),
+    }
+}
+
+/// A manifest lists at most 1,024 files. A Replace that writes its files
+/// and keeps more files of earlier exports than fit lists the files it
+/// wrote and as many kept ones as fit, so the next Replace still takes the
+/// folder as an export.
+#[test]
+fn the_kept_files_past_the_manifest_limit_are_no_longer_listed() {
+    const LIMIT: usize = 1024;
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("export");
+    let export_of = |files: Vec<export::ExportFile>| export::Export {
+        name: String::from("main"),
+        folder_name: String::from("main"),
+        project_id: String::from("prj_limit"),
+        files,
+    };
+    let first = export_of(vec![
+        export_file("src/main.cpp", "main A\n"),
+        export_file("CMakeLists.txt", "cmake A\n"),
+        export_file("Makefile", "make A\n"),
+        export_file("README.md", "readme\n"),
+    ]);
+    export::write(&folder, &first, ExportMode::New).unwrap();
+    // An earlier export listed as many more files as fit, each since edited
+    // by the student, so each is kept.
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(folder.join(EXPORT_MANIFEST)).unwrap()).unwrap();
+    let files = manifest["files"].as_array_mut().unwrap();
+    let extra = LIMIT - files.len();
+    for index in 0..extra {
+        let path = format!("src/k{index:04}.cpp");
+        std::fs::write(folder.join(&path), "edited\n").unwrap();
+        files.push(serde_json::json!({"path": path, "sha256": sha256("old\n")}));
+    }
+    std::fs::write(folder.join(EXPORT_MANIFEST), manifest.to_string()).unwrap();
+    assert_eq!(export::folder_state(&folder), FolderState::EarlierExport);
+
+    // One more module: the files written and the kept ones no longer fit.
+    let second = export_of(vec![
+        export_file("src/main.cpp", "main B\n"),
+        export_file("src/extra.cpp", "extra B\n"),
+        export_file("CMakeLists.txt", "cmake B\n"),
+        export_file("Makefile", "make B\n"),
+        export_file("README.md", "readme\n"),
+    ]);
+    let written = export::write(&folder, &second, ExportMode::Replace).unwrap();
+    assert_eq!(written.kept.len(), extra);
+    assert_eq!(export::folder_state(&folder), FolderState::EarlierExport);
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(folder.join(EXPORT_MANIFEST)).unwrap()).unwrap();
+    let listed: Vec<&str> = manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(listed.len(), LIMIT);
+    for file in &second.files {
+        assert!(listed.contains(&file.path.as_str()), "{}", file.path);
+    }
+    // The next Replace takes the folder as an export and keeps the listed
+    // edited files again.
+    let again = export::write(&folder, &second, ExportMode::Replace).unwrap();
+    assert_eq!(again.kept.len(), LIMIT - second.files.len());
 }
 
 /// `hello_world` with `count` more, empty modules named by `name`.
