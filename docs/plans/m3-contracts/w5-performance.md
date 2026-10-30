@@ -246,9 +246,10 @@ taught (w5-worker.md §5.4):
   answer is applied (a hold included); `b2c:preview:update` now the
   `update()` alone, placed on the page's timeline from the answer's
   `startedAt` and `updateMs` (where it ran); new `b2c:preview:index` likewise,
-  `b2c:preview:receive` (parsing the answer and the index on the page), and
-  `b2c:preview:wait` (posting until the answer, less nothing: the time the
-  main thread was free). `read`, `commit` and `publish` as now.
+  `b2c:preview:receive` (reading the worker's index on the page), and
+  `b2c:preview:wait` (from asking for the update until its answer is back:
+  with the worker, time the main thread is free). `read`, `commit` and
+  `publish` as now.
 
 ### 2.4 Measure first, then the default
 
@@ -478,11 +479,11 @@ Windows (paths through `node:path`, commands through `spawnSync` without a
 shell, `.exe` on Windows). It reads files and runs version commands only;
 it changes nothing and sends nothing anywhere. Tests:
 `tools/doctor.test.mjs` with `node --test` (each check's parsing on sample
-outputs, the exit code), run from the root `test:tools` script and CI's
-frontend job is not changed (§10.5 asks the coordinator to add it there, or
-it runs in `pnpm -r test` through a workspace package; see §9).
-`BUILDING.md`'s _Troubleshooting_ gains one line pointing to it (an additive
-line in a file the coordinator does not own; `check-build-docs.py` is run).
+outputs, the exit code, Windows without pnpm's user agent), run by the root
+`test:tools` script; CI's jobs are not changed (§10.5 asks the coordinator
+whether to add it). `BUILDING.md`'s _Troubleshooting_ gains a paragraph
+pointing to it (additive, in a file the coordinator does not own;
+`check-build-docs.py` passes).
 
 ## 8. M3-7: a weekly job that follows `BUILDING.md`
 
@@ -498,9 +499,10 @@ then starts `./target/release/blocks2cpp-desktop` under `xvfb-run` for 20 s
 and fails if the app exits before that (as `desktop.yml`'s start check
 does). Permissions `contents: read`; actions pinned by commit as in the
 other workflows; no secrets, no cache (a cache would hide a missing step).
-`tools/building-steps.py` has a test (`tools/test_building_steps.py`): the
-blocks it finds in the current `BUILDING.md`, the substitutions, and a
-section that is missing fails.
+`tools/building-steps.py --self-test` (the repository's convention for its
+Python tools, run by the job before it extracts the steps) checks the
+extraction on a sample and on the current `BUILDING.md`: the substitutions,
+and that a missing section, clone step or start step fails.
 
 ## 9. Decisions for the owner
 
@@ -771,3 +773,105 @@ On this slower machine the guessing game's medians are about 50 ms, so the
 new 50 ms budget of §6 fails here whatever the build; on CI's runners the
 same metrics were 8–9 ms (next steps §3.8), and the nightly's runners are
 what the budget is for.
+
+## 14. Status
+
+As of 2026-10-30, branch `m3/w5-performance`, from `8a3d8ec`.
+
+**Done:**
+
+* **M3-1's second part: the preview worker is on by default** (§2,
+  `c43241a`), after measuring both builds (§13.1: the page's preview task at
+  1,000 blocks 103 → 21 ms, p95). The scope index (`b2c-lang`'s
+  `Analysis::scope_index_parts()`, the only change in that crate; the core's
+  `scope_index()` export; `ScopeIndex` in the package) answers the editor's
+  menus while the worker previews, through the core host (§2.2); the
+  pipeline applies an older answer while a newer run waits, can hold answers
+  while busy, and records the worker's `update()` and index as spans (§2.3).
+  `B2C_PREVIEW_WORKER=0` keeps the main thread for measurements (§2.4).
+* **The toolbox flyout's cost per block** (§3, `b9f569c`): profiled; the
+  12 declaring blocks are kept between showings with new symbols, which
+  halves the refresh after a declaration in WebKitGTK (§13.3).
+* **M3-5** (§4, `f9b4372`): the preview's compact source map (version 2;
+  the answer at 1,000 blocks 466,399 → 150,198 characters) and a C++ panel
+  that pauses while hidden.
+* **M3-9** (§6, `af78e67`): the guessing game's selection and edit and the
+  toolbox refreshes gated, with N12's 50 ms budget checked in the benchmark.
+* **M3-6** (§7, `2cc52c5`, `c3f5537`): `pnpm doctor`.
+* **M3-7** (§8, `fb41735`): `.github/workflows/building.yml` and
+  `tools/building-steps.py` (zizmor clean, `--self-test` passes). It has not
+  run yet: it runs weekly and on dispatch, which is the coordinator's.
+* **M3-4** (§5, §10.1): an exact proposal for the coordinator.
+* **W3's boundary rows** (§10.6): all five agreed.
+
+**Not done, and why:**
+
+* **The clipboard arguments** (§1, §10.2): a copy, paste or duplicate costs
+  one analysis on the main thread while the worker previews; they wait for
+  `webview.copy-1000` and its siblings, which come with them.
+* **The hold's wiring** (§10.4): one line in W4's `sync/session.ts`; until
+  it is there an answer may be applied during a drag (correct, §2.3).
+* **The redefined `webview.preview-1000.p95` and the new
+  `update-p95` metric of worker.md §9**: the benchmark's existing metric
+  (the page's longest preview task) is kept, so the nightly compares like
+  with like; the spans give the worker's `update()` (§2.3). For the
+  coordinator's docs step with 09 §9.2.
+* **E2E additions of §2.5 beyond the flow's own**: each assignment's golden
+  C++ through the worker is checked by the package's worker test for every
+  example (the ten assignments are examples), not by a new E2E flow; the
+  M2 exit flow covers the menus with the worker on.
+* **Lazy drawing of the first showing** (§3, §13.3): cold start did not need
+  it.
+* **The specification** (§12): the coordinator's.
+* **RD-15**: not in this brief.
+
+**Checks** (before the last code push): Rust: `cargo fmt`, clippy of the
+crates changed, `cargo doc -D warnings` of `b2c-lang` and `b2c-core-wasm`,
+`b2c-core-wasm`'s tests (with the new `scope_index.rs`) and `b2c-lang`'s;
+the workspace's tests, both clippy targets and the coverage gates in CI.
+TypeScript: every package's typecheck, lint and format check; the package's
+350 tests with the real core (`B2C_REQUIRE_WASM=1`); the desktop suite
+(2,283 tests); `node --test tools/` and `building-steps.py --self-test`;
+the four `tools/check-*.py`; markdownlint. E2E on Linux locally with the
+toolbox build: the whole suite at the default size (56 files, 215 passed,
+1 skipped) and the flows this branch touches (the worker, the M2 exit flow,
+editor, structs and enums, functions and globals, collections, control,
+typed slots, layout, chrome) at 800 × 560 and 1024 × 768 (10 files, 29
+passed each).
+
+**CI on the branch:** pending on `b5cc373` when this was written; the result follows below.
+
+**The A/B job to dispatch** (the coordinator's): `bench-ab.yml` on this
+branch against `8a3d8ec`, all metric groups, both systems; and a manual
+`webview.cold-start` comparison (worker.md §9). Expected: `preview-1000.p95`
+much better (the worker), `declare-variable*.toolbox-refresh` about half,
+the rest unchanged; the newly gated metrics of §6 need five nightly
+baselines before they gate.
+
+**Merge notes for the coordinator:**
+
+* No file of the coordinator's list is changed except
+  `crates/b2c-lang/src/query.rs` (additive: `ScopePoint`, `ScopeBlock`,
+  `ScopeIndexParts`, `Analysis::scope_index_parts()` and one test; no
+  `lib.rs` change). Expected conflict there: none textual unless W3's
+  package F edits the end of the `impl Analysis` block or the test module's
+  end, both of which this branch appends to.
+* Files outside this branch's own list: `apps/desktop/src/editor/sync/drag.test.ts`
+  (its stand-in answer's `scope` key), `apps/desktop/src/lib/timing.ts`
+  (three spans and `recordSpan`), `apps/desktop/src/app/panels.test.tsx`
+  and `src/panels/types.ts` (the compact map; `panels/` is this branch's
+  for M3-5), `apps/desktop/src/e2e/{contract,index}.ts` and
+  `vite.config.ts` (the flag's wording), `apps/desktop/e2e/specs/flows/{selection.e2e.ts,README.md}`
+  (the kept _create_ block; the flows table), the root `package.json`
+  (`doctor`, `test:tools`) and `BUILDING.md` (a paragraph in
+  Troubleshooting).
+* W4's `EditorWorkspace.tsx` still says, in a comment, that the worker is
+  used only with `B2C_PREVIEW_WORKER=1`; the code is right (it calls
+  `previewWorkerEnabled()`); W4 or the coordinator corrects the comment.
+* The preview's `sourceMap` is the compact form now and `version()` reports
+  `sourceMapVersion: 2`; any new reader of `PreviewResult.sourceMap` uses
+  `expandSourceMap` or reads the arrays. W3's multi-module work keeps each
+  file's `module` (§10.6, row 4).
+* Visual scenes: none changed by this branch (the C++ panel shows the same
+  code; the toolbox draws the same blocks). Desktop runs on this branch
+  passed the visual diff on both systems.
