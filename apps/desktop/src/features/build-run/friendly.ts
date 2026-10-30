@@ -30,6 +30,11 @@ interface Rule {
   /** The text, from the pattern's match (or `null`) and the quoted names of the message. */
   readonly text: (match: RegExpExecArray | null, quoted: readonly string[]) => string;
   readonly notGeneratorBug?: true;
+  /**
+   * Only for g++'s own messages about a place in a file (`main.cpp:1:10: …`): not the linker's,
+   * nor the driver's messages without a place, which a pattern could read wrongly.
+   */
+  readonly compilerAtPlace?: true;
 }
 
 /** The first quoted name, or a fallback. */
@@ -40,10 +45,14 @@ function first(quoted: readonly string[], fallback: string): string {
 /** The rules, in the order they are tried: patterns first, then options. */
 const RULES: readonly Rule[] = [
   {
-    pattern: /^(?:fatal error: )?(.+?): No such file or directory$/u,
+    // An `#include` g++ cannot find (`main.cpp:1:10: x.h: No such file or directory`); a header
+    // name has no spaces. The linker's `cannot find -lx: No such file or directory` and the
+    // driver's `main.cpp: No such file or directory` are not this.
+    pattern: /^(?:fatal error: )?([^\s:]+): No such file or directory$/u,
     text: (match) =>
       `The header “${match?.[1] ?? 'header'}” was not found. Check the name in the “use header” block, or install the library that has it.`,
     notGeneratorBug: true,
+    compilerAtPlace: true,
   },
   {
     pattern: /cannot open output file .*: (?:Permission denied|Invalid argument)/u,
@@ -126,7 +135,22 @@ export function warningOption(code: string): string | null {
  * function heading, without its place, its severity and its option.
  */
 export function compilerMessageText(raw: string): string {
-  const line =
+  return messageLine(raw)
+    .replace(/^.*?:\d+(?::\d+)?: /u, '')
+    .replace(/^(?:\/[^:]*|[A-Za-z]:\\[^:]*|[^:\s]+\.o): /u, '')
+    .replace(/^(?:warning|error): /u, '')
+    .replace(/ \[-W[^\]]+\]$/u, '')
+    .trim();
+}
+
+/** Whether g++'s message line of `raw` names a place in a file (`main.cpp:1:10: …`). */
+function atPlace(raw: string): boolean {
+  return /^.*?:\d+(?::\d+)?: /u.test(messageLine(raw));
+}
+
+/** The first line of `raw` that is not an include chain or a function heading. */
+function messageLine(raw: string): string {
+  return (
     raw
       .split('\n')
       .find(
@@ -136,13 +160,8 @@ export function compilerMessageText(raw: string): string {
           !/^\s+from /u.test(candidate) &&
           !/: In (?:member )?function /u.test(candidate) &&
           !candidate.startsWith('In function'),
-      ) ?? '';
-  return line
-    .replace(/^.*?:\d+(?::\d+)?: /u, '')
-    .replace(/^(?:\/[^:]*|[A-Za-z]:\\[^:]*|[^:\s]+\.o): /u, '')
-    .replace(/^(?:warning|error): /u, '')
-    .replace(/ \[-W[^\]]+\]$/u, '')
-    .trim();
+      ) ?? ''
+  );
 }
 
 /** The names g++ quotes in `text` (‘…’ or '…'), at most four. */
@@ -168,7 +187,11 @@ export function friendlyCompilerMessage(diagnostic: Diagnostic): FriendlyMessage
   const message = compilerMessageText(diagnostic.raw ?? '');
   const quoted = quotedNames(message);
   const option = warningOption(diagnostic.code);
+  const compilerAtPlace = diagnostic.source === 'compiler' && atPlace(diagnostic.raw ?? '');
   for (const rule of RULES) {
+    if (rule.compilerAtPlace === true && !compilerAtPlace) {
+      continue;
+    }
     const match = rule.pattern?.exec(message) ?? null;
     const byOption = option !== null && rule.options?.includes(option) === true;
     if (match !== null || byOption) {

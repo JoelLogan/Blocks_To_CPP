@@ -275,7 +275,7 @@ rule gives the plain-language text, with the quoted names (`‘score’` or
 
 | Match | Friendly text |
 | --- | --- |
-| `fatal error: X: No such file or directory` | “The header `X` was not found. Check the name in the *use header* block, or install the library that has it.” (not a generator bug) |
+| `fatal error: X: No such file or directory` | “The header `X` was not found. Check the name in the *use header* block, or install the library that has it.” (not a generator bug). Only g++'s own message at a place in a file (`main.cpp:1:10: X: …`, `X` without spaces): the linker's `cannot find -lX: No such file or directory` and the driver's message without a place keep the generator-bug label |
 | linker `cannot open output file …: Permission denied` | “The program file could not be written. Is the program still running? Stop it, then build again.” (not a generator bug) |
 | linker `undefined reference to 'f'` | 07's text: “`f` is declared but has no body …” |
 | `no match for 'operator<<'` | 07's text: “Can't print a value of this type …” |

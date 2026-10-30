@@ -161,6 +161,24 @@ describe('in the build output', () => {
     expect(item?.raw).toBe(warning.raw);
   });
 
+  it('reads a missing header only from g++’s message at a place, as the backend sends it', () => {
+    // The backend's raw has no severity word: `file:line:col: message`.
+    const header = gxx('C:error', 'main.cpp:1:10: nothere.h: No such file or directory', 'error');
+    expect(friendlyCompilerMessage(header)).toEqual({
+      text: 'The header “nothere.h” was not found. Check the name in the “use header” block, or install the library that has it.',
+      notGeneratorBug: true,
+    });
+    // The linker cannot find a library: not a header, and still a bug in Blocks2Cpp.
+    const library = gxx('C:link', 'cannot find -lasan: No such file or directory', 'error');
+    expect(friendlyCompilerMessage(library)).toBeNull();
+    const labelled = labelGeneratorBugs([library], null);
+    expect(labelled.generatorBug).toBe(true);
+    expect(labelled.items[0]?.message).toContain(GENERATOR_BUG_LABEL);
+    // The driver cannot find the source file: no place, so not a header either.
+    const driver = gxx('C:error', 'main.cpp: No such file or directory', 'error');
+    expect(friendlyCompilerMessage(driver)).toBeNull();
+  });
+
   it('does not call a header that is not installed a bug, and keeps the label on a real one', () => {
     const header = gxx(
       'C:error',
