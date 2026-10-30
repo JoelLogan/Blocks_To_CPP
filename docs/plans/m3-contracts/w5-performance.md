@@ -839,7 +839,15 @@ editor, structs and enums, functions and globals, collections, control,
 typed slots, layout, chrome) at 800 × 560 and 1024 × 768 (10 files, 29
 passed each).
 
-**CI on the branch:** pending on `b5cc373` when this was written; the result follows below.
+**CI on the branch:** green on `b5cc373`, the last code commit: CI (run
+41061458054: tests on Linux, Windows, GCC 11 and 15 and cgroup scopes, both
+clippy targets, rustdoc, the coverage gates, the WebAssembly size budget,
+fuzz smoke, docs and links), Desktop (run 41061458037: the frontend checks
+and tests with coverage, the app on both systems, the E2E suite and the
+visual diff on Linux and Windows), CodeQL and OSV-Scanner. The commits after
+it change only this file. The two failures CI found on the way (rustdoc
+linking a type `lib.rs` does not re-export; the selection flow expecting the
+_create_ block to be built again) were fixed in `cb0d243` and `b5cc373`.
 
 **The A/B job to dispatch** (the coordinator's): `bench-ab.yml` on this
 branch against `8a3d8ec`, all metric groups, both systems; and a manual
