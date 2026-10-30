@@ -270,7 +270,7 @@ export class EditorSession {
     if (project !== null && project.document !== doc) {
       this.store.getState().actions.updateProject({ document: doc });
     }
-    this.pipeline.invalidate();
+    this.pipeline.invalidate({ newDocument: true });
     this.guard.reset();
     this.leftViews.clear();
     const moduleId = pickModule(doc, project?.activeModuleId);
@@ -690,7 +690,7 @@ export class EditorSession {
 
   /** Empties the canvas (the project was closed). */
   private clearCanvas(): void {
-    this.pipeline.invalidate();
+    this.pipeline.invalidate({ newDocument: true });
     this.preDrag = null;
     this.waitingSwitch = null;
     clearWorkspace(this.workspace);

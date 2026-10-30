@@ -209,7 +209,13 @@ answers the same question one layer down, in files it owns:
   update ran in the worker, `null` when it ran on the main thread, whose
   instance then holds that very analysis (as in M2). So a menu always
   answers about the applied preview, from wherever that preview was made.
-  `invalidate()` (a new document shown) clears it.
+  `invalidate()` for another module of the same document keeps it (it
+  covers every module, and the next preview replaces it). For another
+  document (`invalidate({ newDocument: true })`), and when the worker's
+  index cannot be read, the host is given `NO_SCOPE` while the worker
+  previews: the scope query then answers nothing (the menus fall back to
+  the block's place) rather than ask the main instance, which has not seen
+  the document since the worker took over. `dispose()` clears it.
 
 So every caller of worker.md §1 that asks `symbolsInScope` (the field
 menus, the call labels, the landing, _Make a variable_) gets the index's

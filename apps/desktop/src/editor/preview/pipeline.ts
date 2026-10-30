@@ -53,7 +53,7 @@ import {
 
 import type { AnalysisNotice, useAppStore } from '../../app/store';
 import { recordSpan, startSpan, timed } from '../../lib/timing';
-import type { CoreHost } from './coreHost';
+import { type CoreHost, NO_SCOPE } from './coreHost';
 import { mainThreadPreviewService, type PreviewAnswer, type PreviewService } from './service';
 
 /** How long the pipeline waits after the last change before it runs (02 §2.4.1). */
@@ -214,18 +214,28 @@ export class PreviewPipeline {
     }
   }
 
-  /** Discards the results of runs in progress (a new document is shown). */
-  invalidate(): void {
+  /**
+   * Discards the results of runs in progress (another module or document is shown). The applied
+   * scope index stays while the same document is shown in another module: it covers every module,
+   * so the menus keep answering about the applied preview until the next one replaces it. With
+   * `newDocument` (another document loaded, or none) it no longer fits: while the worker previews,
+   * the scope query then answers nothing until the next preview (the main instance has not seen
+   * the document); on the main thread the instance answers, as in M2.
+   */
+  invalidate(options: { readonly newDocument?: boolean } = {}): void {
     this.cancel();
     this.latest += 1;
     this.epoch += 1;
     this.dropHeld();
-    this.options.host.applyScope?.(null);
+    if (options.newDocument === true) {
+      this.options.host.applyScope?.(this.service.thread() === 'worker' ? NO_SCOPE : null);
+    }
   }
 
   /** Stops for good. */
   dispose(): void {
     this.invalidate();
+    this.options.host.applyScope?.(null);
     this.disposed = true;
     this.unsubscribe();
   }

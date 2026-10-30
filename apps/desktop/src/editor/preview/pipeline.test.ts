@@ -382,9 +382,11 @@ describe('the preview pipeline', () => {
     pipeline.dispose();
   });
 
-  it('gives the host the scope index of the answer it applies, and forgets it on invalidate', async () => {
+  it('gives the host the scope index of the answer it applies, kept across a module switch', async () => {
     openProject();
-    const host = hostOf(stubCore({ symbolsInScope: () => [] }));
+    // The main instance answers about an older document than the worker's preview.
+    const older = [{ id: 's_count' }] as unknown as ReturnType<CoreWasm['symbolsInScope']>;
+    const host = hostOf(stubCore({ symbolsInScope: () => older }));
     const fromIndex = [{ id: 's_x' }] as unknown as ReturnType<CoreWasm['symbolsInScope']>;
     const symbolsAt = vi.fn(() => fromIndex);
     const scope = { symbolsAt } as unknown as ScopeIndex;
@@ -406,9 +408,14 @@ describe('the preview pipeline', () => {
     await pipeline.runNow();
     expect(host.current()?.symbolsInScope('b1', null)).toBe(fromIndex);
     expect(symbolsAt).toHaveBeenCalledWith('b1', null);
+    // Another module of the same document: the index covers it, so it stays.
     pipeline.invalidate();
-    expect(host.current()?.symbolsInScope('b1', null)).toEqual([]);
+    expect(host.current()?.symbolsInScope('b1', null)).toBe(fromIndex);
+    // Another document: no answer, rather than the main instance's about an older one.
+    pipeline.invalidate({ newDocument: true });
+    expect(host.current()?.symbolsInScope('b1', null)).toBeNull();
     pipeline.dispose();
+    expect(host.current()?.symbolsInScope('b1', null)).toBe(older);
   });
 
   it('drops an answer computed while a rename wrote the document, and reads the canvas again', async () => {

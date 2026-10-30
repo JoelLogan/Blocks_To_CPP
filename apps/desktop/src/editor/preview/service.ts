@@ -5,7 +5,7 @@
  */
 import type { PreviewOptions, ScopeIndex, UpdateResult } from '@blocks2cpp/b2c-core-wasm';
 
-import type { CoreHost } from './coreHost';
+import type { CoreHost, NO_SCOPE } from './coreHost';
 
 /** Where an update runs. */
 export type PreviewThread = 'worker' | 'main';
@@ -23,10 +23,11 @@ export interface PreviewAnswer {
   readonly result: UpdateResult;
   /**
    * The scope index of the instance that made the preview, when that is not the main instance
-   * (the worker's; docs/plans/m3-contracts/worker.md §4), or `null`: the main instance made it and
-   * answers the scope query itself, or the document did not load.
+   * (the worker's; docs/plans/m3-contracts/worker.md §4); `null`: the main instance made it and
+   * answers the scope query itself, or the document did not load; {@link NO_SCOPE}: the worker
+   * made it but its index could not be read, so nothing answers the scope query.
    */
-  readonly scope: ScopeIndex | null;
+  readonly scope: ScopeIndex | typeof NO_SCOPE | null;
   readonly timing: PreviewTiming;
 }
 

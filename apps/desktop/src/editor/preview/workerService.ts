@@ -16,7 +16,7 @@ import { CoreError, CoreTrap, ScopeIndex, type UpdateResult } from '@blocks2cpp/
 import type { CoreWorkerClient } from '@blocks2cpp/b2c-core-wasm/worker';
 
 import { timed } from '../../lib/timing';
-import type { CoreHost } from './coreHost';
+import { type CoreHost, NO_SCOPE } from './coreHost';
 import {
   mainThreadPreviewService,
   type PreviewAnswer,
@@ -34,14 +34,15 @@ export function previewWorkerEnabled(): boolean {
 
 /**
  * The worker's scope index for its preview, or `null` when the document did not load (the index is
- * then the last loaded document's, which the pipeline does not apply either) or the index cannot
- * be read, which is logged: the menus then ask the main instance, as before the worker.
+ * then the last loaded document's, which the pipeline does not apply either). An index that
+ * cannot be read is logged and gives {@link NO_SCOPE}: the menus then get no answer and fall back
+ * to the block's place, rather than ask the main instance, which has not seen the document.
  */
 function scopeOf(
   json: string | null,
   result: UpdateResult,
   log: (message: string) => void,
-): ScopeIndex | null {
+): ScopeIndex | typeof NO_SCOPE | null {
   if (json === null || result.contentHash === null) {
     return null;
   }
@@ -51,7 +52,7 @@ function scopeOf(
     log(
       `The preview worker's scope index could not be read: ${error instanceof Error ? error.message : 'unknown error'}`,
     );
-    return null;
+    return NO_SCOPE;
   }
 }
 

@@ -9,7 +9,10 @@
  * the host the scope index of the preview it applied ({@link CoreHost.applyScope}), and the
  * editor's instance ({@link CoreHost.current}) answers `symbolsInScope` from it
  * (docs/plans/m3-contracts/w5-performance.md §2.2). Without an index (a preview made on the main
- * thread, whose instance holds that very analysis) the instance answers itself, as in M2.
+ * thread, whose instance holds that very analysis) the instance answers itself, as in M2. With
+ * {@link NO_SCOPE} (the worker previews, but there is no index for the document shown: another
+ * document was loaded, or the worker's index could not be read) it answers nothing, so a menu falls
+ * back to the block's place rather than ask the main instance about a document it has not seen.
  */
 import {
   CoreError,
@@ -20,6 +23,9 @@ import {
 } from '@blocks2cpp/b2c-core-wasm';
 
 import { getCore, setCore } from '../../app/core';
+
+/** What the scope query answers from while the worker previews and no index fits ({@link CoreHost.applyScope}). */
+export const NO_SCOPE = 'none';
 
 /** Where the editor gets the compiler core. */
 export interface CoreHost {
@@ -42,9 +48,10 @@ export interface CoreHost {
   restart(): Promise<CoreWasm>;
   /**
    * Makes `scope` the index the scope query answers from (the applied preview's, made in the
-   * worker), or with `null` lets the instance answer (a preview made on the main thread).
+   * worker); with `null` lets the instance answer (a preview made on the main thread); with
+   * {@link NO_SCOPE} answers nothing (`null`, no answer).
    */
-  applyScope?(scope: ScopeIndex | null): void;
+  applyScope?(scope: ScopeIndex | typeof NO_SCOPE | null): void;
 }
 
 /** What a {@link CoreHost} is built from (replaceable in tests). */
@@ -65,7 +72,7 @@ const PACKAGE_DEPS: CoreHostDeps = {
 /** A core host over `deps` (by default the package's `initCore` and the shell's `setCore`). */
 export function createCoreHost(deps: CoreHostDeps = PACKAGE_DEPS): CoreHost {
   let starting: Promise<CoreWasm> | null = null;
-  let scope: ScopeIndex | null = null;
+  let scope: ScopeIndex | typeof NO_SCOPE | null = null;
   /** The view of each instance that answers the scope query from the applied index. */
   const views = new WeakMap<CoreWasm, CoreWasm>();
 
@@ -78,7 +85,11 @@ export function createCoreHost(deps: CoreHostDeps = PACKAGE_DEPS): CoreHost {
         canonical: (documentJson) => core.canonical(documentJson),
         update: (documentJson, options) => core.update(documentJson, options),
         symbolsInScope: (blockId, input) =>
-          scope === null ? core.symbolsInScope(blockId, input) : scope.symbolsAt(blockId, input),
+          scope === null
+            ? core.symbolsInScope(blockId, input)
+            : scope === NO_SCOPE
+              ? null
+              : scope.symbolsAt(blockId, input),
         conversionTable: () => core.conversionTable(),
         clipboardMake: (documentJson, blockIds) => core.clipboardMake(documentJson, blockIds),
         pastePrepare: (clipboardText, documentJson, target, seedHex) =>

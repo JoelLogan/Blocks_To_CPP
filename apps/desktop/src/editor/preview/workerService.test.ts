@@ -13,7 +13,7 @@ import {
 import type { CoreWorkerClient, WorkerUpdate } from '@blocks2cpp/b2c-core-wasm/worker';
 import { describe, expect, it, vi } from 'vitest';
 
-import { createCoreHost } from './coreHost';
+import { createCoreHost, NO_SCOPE } from './coreHost';
 import { previewWorkerEnabled, workerPreviewService } from './workerService';
 
 const VERSION: CoreVersion = {
@@ -150,7 +150,11 @@ describe('the worker preview service', () => {
         indexMs: 3,
       });
     const answer = await service.update('two', OPTIONS);
-    expect(answer?.scope?.symbolsAt('b1', null)).toEqual([]);
+    const scope = answer?.scope;
+    if (typeof scope !== 'object' || scope === null) {
+      throw new Error('no scope index');
+    }
+    expect(scope.symbolsAt('b1', null)).toEqual([]);
     expect(answer?.timing).toEqual({ startedAt: 1, updateMs: 2, indexMs: 3 });
     expect(log).not.toHaveBeenCalled();
 
@@ -162,7 +166,8 @@ describe('the worker preview service', () => {
         updateMs: 2,
         indexMs: 3,
       });
-    expect((await service.update('three', OPTIONS))?.scope).toBeNull();
+    // An index it cannot read answers nothing: the main instance has not seen the document.
+    expect((await service.update('three', OPTIONS))?.scope).toBe(NO_SCOPE);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('scope index could not be read'));
 
     // A document that did not load has no index to apply.
