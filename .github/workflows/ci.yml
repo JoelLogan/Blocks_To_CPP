@@ -112,14 +112,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install g++ (MSYS2 UCRT64)
+      # The make package's mingw32-make.exe lands in ucrt64\bin next to g++,
+      # for the export tests (MSYS's own make is not used: usr\bin on PATH
+      # would put coreutils' link ahead of the MSVC linker cargo uses).
+      - name: Install g++ and make (MSYS2 UCRT64)
         if: runner.os == 'Windows'
         id: msys2
         uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: UCRT64
           update: false
-          install: mingw-w64-ucrt-x86_64-gcc
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make
 
       - name: Put g++ on PATH
         if: runner.os == 'Windows'
@@ -144,6 +147,7 @@ jobs:
         run: cargo test --locked --no-fail-fast
         env:
           B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
+          B2C_REQUIRE_MAKE: "1" # fail, rather than skip, the export's make builds
 
   # The oldest supported GCC (b2c_toolchain::probe::MIN_GCC_MAJOR) and the
   # newest, next to the Linux job's GCC 13 (spec §9.2, golden end-to-end), in
@@ -203,6 +207,7 @@ jobs:
         run: cargo test --locked --no-fail-fast -p b2c-process -p b2c-lang -p b2c-codegen -p b2c-build -p b2c-cli
         env:
           B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
+          B2C_REQUIRE_MAKE: "1" # fail, rather than skip, the export's make builds
 
   # Linux cgroup v2 containment (docs/spec/07-toolchain-build-run.md §7.5.2,
   # §7.6.2; ADR-0008). Lingering starts a user systemd instance for the

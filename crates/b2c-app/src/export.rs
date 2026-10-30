@@ -105,11 +105,17 @@ impl Backend {
             }
         };
         let written = export::write(&target, &export, mode).map_err(|error| export_error(&error))?;
-        tracing::info!(files = written.len(), "project exported");
+        // Files the student changed after the earlier export are kept
+        // (w3-modules.md §2.8); the response does not name them yet.
+        tracing::info!(
+            files = written.files.len(),
+            kept = written.kept.len(),
+            "project exported"
+        );
         Ok(ProjectExportDialogResponse {
             cancelled: false,
             folder_name: Some(display_text(&export.folder_name, MAX_FOLDER_NAME_CHARS)),
-            files: u32::try_from(written.len()).unwrap_or(u32::MAX),
+            files: u32::try_from(written.files.len()).unwrap_or(u32::MAX),
         })
     }
 }

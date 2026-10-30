@@ -404,6 +404,236 @@ fn several_translation_units_compile_then_link() {
     sessions.record(&id).unwrap().verify_executable().unwrap();
 }
 
+/// `hello_world` with more, empty modules: a project of several translation
+/// units that the analyser builds today (hand-made: no example shares
+/// anything yet).
+fn with_modules(names: &[(&str, &str)]) -> serde_json::Value {
+    let mut document = example_json("hello_world");
+    for (id, name) in names {
+        document["modules"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"id": id, "name": name, "workspace": {"blocks": []}}));
+    }
+    document
+}
+
+/// The names in a folder, sorted.
+fn listing(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// The generated files of a build folder's last build, from its source map.
+fn generated_names(dir: &Path) -> Vec<String> {
+    let map: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("sourcemap.json")).unwrap()).unwrap();
+    let mut names: Vec<String> = map["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["path"].as_str().unwrap().to_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// `gen/` holds exactly the generated files (w3-modules.md §2.7): a build
+/// deletes an earlier build's files that it does not generate (a stale
+/// `.cpp` and `.hpp`, a renamed module's), never a file with another name
+/// or a link, and a deletion is a change; a build with no edits deletes
+/// nothing and is up to date.
+#[test]
+fn gen_holds_exactly_the_generated_files() {
+    let Some(toolchain) = real_toolchain() else {
+        return;
+    };
+    let cache = tempfile::tempdir().unwrap();
+    let sessions = BuildSessions::new(cache.path().to_path_buf());
+    let document = with_modules(&[("mod_util", "util")]);
+    let (first, events) = run(
+        &sessions,
+        job("ph_prune", bytes(&document), ready(toolchain.clone())),
+    );
+    assert_eq!(
+        outcome(&events).0,
+        BuildOutcome::Built,
+        "{:#?}",
+        diagnostics(&events)
+    );
+    let dir = build_dir(&sessions, &first);
+    let gen_dir = dir.join("gen");
+    assert_eq!(listing(&gen_dir), generated_names(&dir));
+    assert!(listing(&gen_dir).contains(&String::from("util.cpp")));
+
+    // An earlier build's files, a file of someone else's and a link.
+    for name in ["old.cpp", "old.hpp", "notes.txt"] {
+        std::fs::write(gen_dir.join(name), "// old").unwrap();
+    }
+    let outside = tempfile::tempdir().unwrap();
+    let victim = outside.path().join("victim.cpp");
+    std::fs::write(&victim, "keep me").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&victim, gen_dir.join("linked.cpp")).unwrap();
+    let (second, events) = run(
+        &sessions,
+        job("ph_prune", bytes(&document), ready(toolchain.clone())),
+    );
+    // Deleting the stale files was a change: the program was built again.
+    assert_eq!(outcome(&events).0, BuildOutcome::Built);
+    let mut expected = generated_names(&dir);
+    expected.push(String::from("notes.txt"));
+    if cfg!(unix) {
+        expected.push(String::from("linked.cpp"));
+    }
+    expected.sort();
+    assert_eq!(listing(&gen_dir), expected);
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
+    sessions.record(&second).unwrap().verify_executable().unwrap();
+
+    // No edits: nothing deleted, up to date.
+    let (_, events) = run(
+        &sessions,
+        job("ph_prune", bytes(&document), ready(toolchain.clone())),
+    );
+    assert_eq!(outcome(&events).0, BuildOutcome::UpToDate);
+    assert_eq!(listing(&gen_dir), expected);
+
+    // A renamed module leaves no old file behind.
+    let renamed = with_modules(&[("mod_util", "tools")]);
+    let (third, events) = run(&sessions, job("ph_prune", bytes(&renamed), ready(toolchain)));
+    assert_eq!(outcome(&events).0, BuildOutcome::Built);
+    assert_eq!(build_dir(&sessions, &third), dir);
+    let names = listing(&gen_dir);
+    assert!(names.contains(&String::from("tools.cpp")), "{names:?}");
+    assert!(!names.iter().any(|name| name.starts_with("util.")), "{names:?}");
+    assert!(names.contains(&String::from("notes.txt")), "{names:?}");
+}
+
+/// The variable that makes [`a_failed_build_removes_its_objects_and_no_decoy`]
+/// the helper it starts: the folder to read the toolchain from and to write
+/// the build's events and folder to.
+const DECOY_BUILD_DIR: &str = "B2C_TEST_DECOY_BUILD_DIR";
+
+/// Objects are named relative to the compiler's folder in its argv
+/// (`../out/main.o`), but a failed multi-module build deletes them by their
+/// absolute paths: run in a process whose working folder has a decoy
+/// `../out/<stem>.o` of each, it removes the build's objects and leaves every
+/// decoy. The build runs in a helper (this test, in a new process started in
+/// that working folder), since a test cannot change its own process's
+/// working folder without disturbing the tests running beside it.
+#[test]
+fn a_failed_build_removes_its_objects_and_no_decoy() {
+    if let Some(dir) = std::env::var_os(DECOY_BUILD_DIR) {
+        // The helper: build, and leave the checks to the test that started it.
+        let dir = PathBuf::from(dir);
+        let toolchain = serde_json::from_slice(&std::fs::read(dir.join("toolchain.json")).unwrap()).unwrap();
+        let document: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("project.b2c")).unwrap()).unwrap();
+        let sessions = BuildSessions::new(dir.join("cache"));
+        let (id, events) = run(&sessions, job("ph_decoy", bytes(&document), ready(toolchain)));
+        std::fs::write(dir.join("events.json"), serde_json::to_vec(&events).unwrap()).unwrap();
+        std::fs::write(
+            dir.join("build-dir.txt"),
+            build_dir(&sessions, &id).to_string_lossy().as_bytes(),
+        )
+        .unwrap();
+        return;
+    }
+    let Some(toolchain) = real_toolchain() else {
+        return;
+    };
+    // Warnings are errors, and `main` has an unused variable: `main.cpp`
+    // fails while `util.cpp` and the init unit compile to objects.
+    let mut document = with_modules(&[("mod_util", "util")]);
+    document["project"]["build"]["configurations"]["debug"]["warningsAsErrors"] = serde_json::json!(true);
+    document["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "id": "b100",
+            "type": "var.declare",
+            "v": 1,
+            "fields": {"CONST": false, "NAME": {"sym": "s_unused", "name": "unused"}, "TYPE": "int"},
+            "inputs": {"VALUE": {"expr": [{"num": "7"}]}}
+        }));
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("toolchain.json"),
+        serde_json::to_vec(&toolchain).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("project.b2c"), bytes(&document)).unwrap();
+    let work = dir.path().join("work");
+    let decoys = dir.path().join("out");
+    std::fs::create_dir(&work).unwrap();
+    std::fs::create_dir(&decoys).unwrap();
+    let objects = ["main.o", "util.o", "b2c_ide_init.o"];
+    for name in objects {
+        std::fs::write(decoys.join(name), "decoy").unwrap();
+    }
+    // Production code spawns processes only through b2c-process; this test
+    // starts its own helper directly, in the working folder it needs.
+    #[allow(clippy::disallowed_methods)]
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "a_failed_build_removes_its_objects_and_no_decoy",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .current_dir(&work)
+        .env(DECOY_BUILD_DIR, dir.path())
+        .output()
+        .unwrap();
+    let shown = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "the helper failed:\n{shown}");
+    let events: Vec<BuildEvent> = serde_json::from_slice(
+        &std::fs::read(dir.path().join("events.json"))
+            .unwrap_or_else(|error| panic!("the helper wrote no events ({error}):\n{shown}")),
+    )
+    .unwrap();
+    let found = diagnostics(&events);
+    assert_eq!(outcome(&events).0, BuildOutcome::ProjectErrors, "{found:#?}");
+    assert!(
+        found.iter().any(|d| d.code == "C:-Wunused-variable"),
+        "{found:#?}"
+    );
+    // The build compiled the other units (so it had objects to delete) ...
+    assert_eq!(
+        progress(&events)
+            .iter()
+            .filter(|(stage, _, _)| stage == "compile")
+            .map(|(_, _, total)| *total)
+            .max(),
+        Some(3)
+    );
+    // ... and deleted them, but not the decoys in its working folder's `..`.
+    let build = PathBuf::from(std::fs::read_to_string(dir.path().join("build-dir.txt")).unwrap());
+    let left: Vec<String> = listing(&build.join("out"));
+    assert!(
+        !left.iter().any(|name| Path::new(name)
+            .extension()
+            .is_some_and(|extension| extension == "o")),
+        "{left:?}"
+    );
+    for name in objects {
+        assert_eq!(
+            std::fs::read_to_string(decoys.join(name)).unwrap(),
+            "decoy",
+            "{name}"
+        );
+    }
+}
+
 /// Starting a second build of the same project cancels the first.
 #[cfg(unix)]
 #[test]

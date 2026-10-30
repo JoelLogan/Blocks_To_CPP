@@ -1,8 +1,9 @@
 //! `project_export_dialog` (`docs/spec/06-compiler-pipeline.md` §6.11): the
 //! folder comes from the (scripted) dialog, the export goes into a folder
 //! named after the project, an earlier export of the same project is
-//! replaced only after the user agrees, and a folder with other files or
-//! another project's export is never written into.
+//! replaced only after the user agrees (and then only the files nobody
+//! changed), and a folder with other files or another project's export is
+//! never written into.
 
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -55,13 +56,19 @@ fn a_project_is_exported_into_a_folder_of_its_own() {
         std::fs::read_to_string(folder.join("Makefile")).unwrap(),
         "edited"
     );
+    // Yes replaces the files nobody changed; the edited Makefile is kept
+    // (w3-modules.md §2.8), and a deleted one is written again.
+    std::fs::remove_file(folder.join("CMakeLists.txt")).unwrap();
     app.dialogs.will_pick_export(Some(&parent));
     app.dialogs.will_replace_export(true);
-    assert!(!export(&created.document).unwrap().cancelled);
-    assert_ne!(
+    let replaced = export(&created.document).unwrap();
+    assert!(!replaced.cancelled);
+    assert_eq!(replaced.files, 4);
+    assert_eq!(
         std::fs::read_to_string(folder.join("Makefile")).unwrap(),
         "edited"
     );
+    assert!(folder.join("CMakeLists.txt").is_file());
 
     // A folder of the same name with other files is refused.
     let other = app.root.path().join("other");
