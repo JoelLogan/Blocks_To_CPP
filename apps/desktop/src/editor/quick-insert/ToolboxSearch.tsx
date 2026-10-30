@@ -41,6 +41,18 @@ export function ToolboxSearch({ workspace }: { readonly workspace: Blockly.Works
     if (!open) {
       return undefined;
     }
+    // The results are built again when what the toolbox offers changes (an edit, another module):
+    // the status follows them.
+    return toolboxSearch(workspace)?.onResultsChanged(() => {
+      const search = toolboxSearch(workspace);
+      setCount(search?.query() === null ? null : (search?.resultCount() ?? 0));
+    });
+  }, [open, workspace]);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
     const timer = setTimeout(() => {
       const search = toolboxSearch(workspace);
       search?.setQuery(query);

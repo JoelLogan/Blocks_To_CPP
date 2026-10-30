@@ -27,7 +27,7 @@ import { dialogs as appDialogs } from '../../app/dialogs/instance';
 import type { DialogService, DialogTextOptions } from '../../app/dialogs/service';
 import type { EditorContext, EditorPlugin } from '../../app/editor-types';
 import { editorMode, modeKey } from '../gating';
-import { searchBlocks, searchEntries } from '../search';
+import { searchBlocks, searchEntries, type SearchEntry } from '../search';
 import { analysisScope } from '../services/symbols';
 import { handleBlockDrops } from '../sync/drag';
 import {
@@ -214,7 +214,10 @@ const SEARCHES = new WeakMap<Blockly.Workspace, ToolboxSearch>();
  * Toolbox search (docs/spec/04-user-interface.md §4.2, docs/plans/m3-contracts/w4-editor-tools.md
  * §2.4): while a query is set, the toolbox shows one category, *Search results*, with the blocks
  * that match it, best first (the toolbox's own items, so they are dragged out as from their
- * category); without one, its categories again.
+ * category); without one, its categories again. The results follow what the toolbox offers: when
+ * the module's variables or functions, the module shown or the mode change while a query is set,
+ * the search runs again (once a gesture in progress has ended), so a result never names a symbol
+ * that is gone.
  */
 export interface ToolboxSearch {
   /** Shows the blocks that match `query`, or with `null` the categories again. */
@@ -223,6 +226,11 @@ export interface ToolboxSearch {
   query(): string | null;
   /** How many blocks the results show (0 without a query). */
   resultCount(): number;
+  /**
+   * Calls `listener` each time the results are built again for the same query (what the toolbox
+   * offers changed); returns the function that stops it.
+   */
+  onResultsChanged(listener: () => void): () => void;
 }
 
 /** The toolbox search of `workspace`, while its toolbox is attached. */
@@ -272,6 +280,13 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     (workspace.getInjectionDiv() as HTMLElement | null)?.ownerDocument ?? document;
   /** Whether a refresh waits for the gesture in progress to end ({@link waitForGestureEnd}). */
   let waitingForGesture = false;
+  /**
+   * Whether the search results were built for contents that have changed since: the next refresh
+   * runs the search again ({@link refreshIfChanged}).
+   */
+  let resultsStale = false;
+  /** Who hears that the results were built again ({@link ToolboxSearch.onResultsChanged}). */
+  const resultsListeners = new Set<() => void>();
 
   /** No refresh waits for a gesture any more. */
   const stopWaitingForGesture = (): void => {
@@ -313,6 +328,10 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
       }
       return;
     }
+    if (resultsStale) {
+      resultsStale = false;
+      searchAgain();
+    }
     try {
       workspace.refreshToolboxSelection();
     } catch (error: unknown) {
@@ -331,11 +350,17 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
       }
     }, 0);
   };
-  /** Rebuilds the dynamic categories when what they show changed since they were last built. */
+  /**
+   * Rebuilds the dynamic categories when what they show changed since they were last built, and
+   * the search results with them while a query is set.
+   */
   const refreshIfChanged = (): void => {
     const key = contentsKey();
     if (key === null || key !== builtKey) {
       builtKey = key;
+      if (searchQuery !== null) {
+        resultsStale = true;
+      }
       scheduleRefresh();
     }
   };
@@ -380,9 +405,24 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   /** The toolbox search's query, or `null`. */
   let searchQuery: string | null = null;
   let searchCount = 0;
+  /**
+   * The search entries and the contents key they were built for: the entries are built again only
+   * when the key (which holds the mode) changes, not for each query (w4-editor-tools.md §2.3).
+   */
+  let searchIndex: { readonly key: string; readonly entries: readonly SearchEntry[] } | null = null;
+  /** The search entries for what the toolbox offers now. */
+  const currentEntries = (): readonly SearchEntry[] => {
+    const key = contentsKey();
+    if (key !== null && searchIndex?.key === key) {
+      return searchIndex.entries;
+    }
+    const entries = searchEntries(contentsContext);
+    searchIndex = key === null ? null : { key, entries };
+    return entries;
+  };
   /** The definition with the search results for `query`. */
   const resultsDefinition = (query: string): Blockly.utils.toolbox.ToolboxInfo => {
-    const found = searchBlocks(searchEntries(contentsContext), query, MAX_SEARCH_RESULTS);
+    const found = searchBlocks(currentEntries(), query, MAX_SEARCH_RESULTS);
     searchCount = found.length;
     const contents: Blockly.utils.toolbox.FlyoutItemInfo[] =
       found.length === 0
@@ -405,6 +445,31 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     searchQuery === null
       ? toolboxDefinition(editorMode(store.getState()))
       : resultsDefinition(searchQuery);
+  /**
+   * Runs the search again for the query shown, after what the toolbox offers changed: installs the
+   * results when they differ and tells the listeners. Called from {@link refresh}, so never while a
+   * gesture is in progress.
+   */
+  function searchAgain(): void {
+    if (searchQuery === null || !installed) {
+      return;
+    }
+    let definition: Blockly.utils.toolbox.ToolboxInfo;
+    try {
+      definition = resultsDefinition(searchQuery);
+    } catch (error: unknown) {
+      console.error('The toolbox search could not run again', error);
+      return;
+    }
+    const serialised = JSON.stringify(definition);
+    if (serialised !== installedDefinition) {
+      installedDefinition = serialised;
+      setToolbox(workspace, definition);
+    }
+    for (const listener of [...resultsListeners]) {
+      listener();
+    }
+  }
   const firstDefinition = toolboxDefinition(editorMode(store.getState()));
   installedDefinition = JSON.stringify(firstDefinition);
   const installed = setToolbox(workspace, firstDefinition);
@@ -474,6 +539,12 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     },
     query: () => searchQuery,
     resultCount: () => searchCount,
+    onResultsChanged(listener) {
+      resultsListeners.add(listener);
+      return () => {
+        resultsListeners.delete(listener);
+      };
+    },
   });
   const unsubscribe = store.subscribe((state, previous) => {
     if (
@@ -499,6 +570,7 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     detached = true;
     CONTEXTS.delete(workspace);
     SEARCHES.delete(workspace);
+    resultsListeners.clear();
     if (refreshTimer !== null) {
       clearTimeout(refreshTimer);
       refreshTimer = null;
