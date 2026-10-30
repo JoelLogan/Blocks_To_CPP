@@ -746,6 +746,27 @@ in version 1 (82 % of the answer) and 65,003 in version 2, so the answer the
 page parses after each preview falls from 466,399 to 150,198 characters
 (−68 %).
 
+### 13.3 The toolbox flyout (§3)
+
+The same slower machine; "head" is the build of §13.2, "toolbox" adds the
+kept declaring blocks. Two rounds each, alternating (head, toolbox, head,
+toolbox), 5 samples per metric:
+
+| Metric | Head | Toolbox | Change |
+| --- | --- | --- | --- |
+| `webview.declare-variable.toolbox-refresh` | 66.5, 64.5 ms | 32.5, 31 ms | −51 % |
+| `webview.declare-variable-1000.toolbox-refresh` | 68, 63.5 ms | 32.5, 34 ms | −49 % |
+| `webview.declare-variable.max-task` | 94, 92.5 ms | 65, 69 ms | −28 % |
+| `webview.cold-start` | 1,767, 1,919 ms | 1,819, 1,736 ms | none |
+
+What is left of a refresh after a declaration is building the new
+variable's own blocks (its getter, _set_ and _change_) and laying the flyout
+out. The first showing still draws every block (part of `webview.cold-start`,
+which did not change): drawing only the categories near the view (candidate
+4) would change how the continuous flyout scrolls to and selects categories
+(04 §4.2), and since the refreshes no longer draw what did not change, it is
+left for when cold start needs it (N2's 2 s holds on CI's runners).
+
 On this slower machine the guessing game's medians are about 50 ms, so the
 new 50 ms budget of §6 fails here whatever the build; on CI's runners the
 same metrics were 8–9 ms (next steps §3.8), and the nightly's runners are
