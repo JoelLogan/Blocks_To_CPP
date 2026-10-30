@@ -20,7 +20,9 @@ import { benchOs, type BenchOs } from '../bench/results';
 import {
   compareScreenshots,
   MAX_DIFF_RATIO,
+  MAX_TILE_DISTANCE,
   PIXEL_THRESHOLD,
+  TILE_SIDE,
   pngSize,
   VisualCompareError,
   type VisualResult,
@@ -117,17 +119,18 @@ export function summaryLine(os: BenchOs, name: string, outcome: VisualOutcome): 
     case 'compared': {
       const { result } = outcome;
       const share = `${(result.ratio * 100).toFixed(3)}%`;
+      const tiles = `${String(result.changedTiles)} (${(result.tileRatio * 100).toFixed(3)}%), largest ${result.maxTileDistance.toFixed(4)}`;
       const verdict = result.passed ? 'pass' : '**fail**';
-      return `| ${name} | ${os} | ${String(result.width)}×${String(result.height)} | ${String(result.diffPixels)} (${share}) | ${verdict} |`;
+      return `| ${name} | ${os} | ${String(result.width)}×${String(result.height)} | ${String(result.diffPixels)} (${share}) | ${tiles} | ${verdict} |`;
     }
     case 'noBaseline':
-      return `| ${name} | ${os} | ${outcome.size} | — | no baseline yet: commit the candidate |`;
+      return `| ${name} | ${os} | ${outcome.size} | — | — | no baseline yet: commit the candidate |`;
     case 'sizeMismatch':
-      return `| ${name} | ${os} | — | — | **fail**: ${cell(outcome.message)} |`;
+      return `| ${name} | ${os} | — | — | — | **fail**: ${cell(outcome.message)} |`;
     case 'updated':
-      return `| ${name} | ${os} | ${outcome.size} | — | candidate written (update run) |`;
+      return `| ${name} | ${os} | ${outcome.size} | — | — | candidate written (update run) |`;
     case 'notTaken':
-      return `| ${name} | ${os} | — | — | **fail**: not taken: ${cell(outcome.reason)} |`;
+      return `| ${name} | ${os} | — | — | — | **fail**: not taken: ${cell(outcome.reason)} |`;
   }
 }
 
@@ -143,11 +146,13 @@ export function recordOutcome(
     const head = [
       '### Visual diff of the block canvas and the chrome (docs/spec/09-quality-and-delivery.md §9.2)',
       '',
-      `pixelmatch threshold ${String(PIXEL_THRESHOLD)}; more than ${String(MAX_DIFF_RATIO * 100)}% of differing pixels fails. ` +
+      `pixelmatch threshold ${String(PIXEL_THRESHOLD)}; a ${String(TILE_SIDE)}×${String(TILE_SIDE)} tile in which pixelmatch counts no pixel ` +
+        `has changed when the mean colour of its flat pixels moves more than ${String(MAX_TILE_DISTANCE)}; ` +
+        `more than ${String(MAX_DIFF_RATIO * 100)}% of differing pixels, or of changed tiles, fails. ` +
         'Candidates are in the `visual-candidates-*` artifact; baselines in `apps/desktop/e2e/visual/baselines/`.',
       '',
-      '| Screenshot | System | Size | Differing pixels | Result |',
-      '| --- | --- | --- | ---: | --- |',
+      '| Screenshot | System | Size | Differing pixels | Changed tiles | Result |',
+      '| --- | --- | --- | ---: | ---: | --- |',
       '',
     ].join('\n');
     writeFileSync(file, head);
@@ -191,7 +196,7 @@ export async function takeAndCheckShot(
  * Compares screenshot `name` (a PNG) with this system's baseline, writes it (and the diff image)
  * as a candidate and appends its line to the summary. An update run compares nothing, and a
  * missing baseline passes with a warning; a screenshot of another size than its baseline, or with
- * more than {@link MAX_DIFF_RATIO} of its pixels differing, fails.
+ * more than {@link MAX_DIFF_RATIO} of its pixels differing or of its tiles changed in colour, fails.
  */
 export function checkShot(settings: VisualSettings, name: string, screenshot: Buffer): ShotCheck {
   let outcome: VisualOutcome;
@@ -228,10 +233,21 @@ export function checkShot(settings: VisualSettings, name: string, screenshot: Bu
     failure = `${outcome.message}. The candidate is ${candidate}`;
   } else if (outcome.kind === 'compared' && !outcome.result.passed) {
     const { result } = outcome;
-    failure =
-      `${String(result.diffPixels)} pixels of ${name} differ from the ${settings.os} baseline ` +
-      `(${(result.ratio * 100).toFixed(3)}%, more than ${String(MAX_DIFF_RATIO * 100)}%); ` +
-      `see ${candidate} and its .diff.png`;
+    const limit = `more than ${String(MAX_DIFF_RATIO * 100)}%`;
+    const found: string[] = [];
+    if (result.ratio > MAX_DIFF_RATIO) {
+      found.push(
+        `${String(result.diffPixels)} pixels of ${name} differ from the ${settings.os} baseline ` +
+          `(${(result.ratio * 100).toFixed(3)}%, ${limit})`,
+      );
+    }
+    if (result.tileRatio > MAX_DIFF_RATIO) {
+      found.push(
+        `${String(result.changedTiles)} tiles of ${name} changed colour from the ${settings.os} baseline ` +
+          `(${(result.tileRatio * 100).toFixed(3)}%, ${limit}; the largest by ${result.maxTileDistance.toFixed(4)})`,
+      );
+    }
+    failure = `${found.join('; ')}; see ${candidate} and its .diff.png`;
   }
   return { outcome, candidate, failure, warning };
 }

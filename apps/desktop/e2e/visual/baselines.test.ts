@@ -104,14 +104,14 @@ describe('the summary', () => {
     ratio: 12 / (963 * 510),
     changedTiles: 0,
     tileRatio: 0,
-    maxTileDistance: 0,
+    maxTileDistance: 0.0012,
     passed: true,
     diffPng: Buffer.alloc(0),
   };
 
   it('has one line per comparison', () => {
     expect(summaryLine('linux', 'shot', { kind: 'compared', result })).toBe(
-      '| shot | linux | 963×510 | 12 (0.002%) | pass |',
+      '| shot | linux | 963×510 | 12 (0.002%) | 0 (0.000%), largest 0.0012 | pass |',
     );
     expect(
       summaryLine('linux', 'shot', { kind: 'compared', result: { ...result, passed: false } }),
@@ -120,14 +120,14 @@ describe('the summary', () => {
       'no baseline yet',
     );
     expect(summaryLine('linux', 'shot', { kind: 'sizeMismatch', message: 'a | b' })).toBe(
-      '| shot | linux | — | — | **fail**: a / b |',
+      '| shot | linux | — | — | — | **fail**: a / b |',
     );
     expect(summaryLine('linux', 'shot', { kind: 'updated', size: '1×1' })).toContain(
       'candidate written',
     );
     expect(
       summaryLine('linux', 'shot', { kind: 'notTaken', reason: 'the menu |\n did not open' }),
-    ).toBe('| shot | linux | — | — | **fail**: not taken: the menu / did not open |');
+    ).toBe('| shot | linux | — | — | — | **fail**: not taken: the menu / did not open |');
     expect(
       summaryLine('linux', 'shot', { kind: 'notTaken', reason: 'x'.repeat(400) }).length,
     ).toBeLessThan(360);
@@ -145,15 +145,24 @@ describe('the summary', () => {
     const text = readFileSync(path.join(settings.out, VISUAL_SUMMARY), 'utf8');
     expect(text.match(/### Visual diff/g)).toHaveLength(1);
     expect(text).toContain('| one | linux | 1×1 |');
-    expect(text.trimEnd().endsWith('| two | linux | 963×510 | 12 (0.002%) | pass |')).toBe(true);
+    expect(
+      text
+        .trimEnd()
+        .endsWith('| two | linux | 963×510 | 12 (0.002%) | 0 (0.000%), largest 0.0012 | pass |'),
+    ).toBe(true);
   });
 });
 
-/** A `width`×`height` PNG of one grey, with the first `marked` pixels red. */
-function png(width: number, height: number, marked = 0): Buffer {
+/** A `width`×`height` PNG of one colour (a light grey), with the first `marked` pixels red. */
+function png(
+  width: number,
+  height: number,
+  marked = 0,
+  colour: [number, number, number] = [240, 240, 240],
+): Buffer {
   const image = new PNG({ width, height });
   for (let index = 0; index < width * height; index += 1) {
-    const [r, g, b] = index < marked ? [200, 30, 30] : [240, 240, 240];
+    const [r, g, b] = index < marked ? [200, 30, 30] : colour;
     image.data[index * 4] = r;
     image.data[index * 4 + 1] = g;
     image.data[index * 4 + 2] = b;
@@ -185,7 +194,9 @@ describe('checkShot', () => {
     expect(check.candidate).toBe(path.join(settings.out, 'linux', 'chrome-menu-open.png'));
     expect(existsSync(check.candidate)).toBe(true);
     expect(existsSync(path.join(settings.out, 'linux', 'chrome-menu-open.diff.png'))).toBe(false);
-    expect(summary(settings)).toContain('| chrome-menu-open | linux | 10×10 | — | no baseline yet');
+    expect(summary(settings)).toContain(
+      '| chrome-menu-open | linux | 10×10 | — | — | no baseline yet',
+    );
   });
 
   it('only writes the candidate in an update run, even with a baseline', () => {
@@ -206,7 +217,7 @@ describe('checkShot', () => {
     expect(check.warning).toBeNull();
     expect(existsSync(path.join(settings.out, 'linux', 'chrome-menu-open.diff.png'))).toBe(true);
     expect(summary(settings)).toContain(
-      '| chrome-menu-open | linux | 100×100 | 50 (0.500%) | pass |',
+      '| chrome-menu-open | linux | 100×100 | 50 (0.500%) | 0 (0.000%), largest 0.0000 | pass |',
     );
   });
 
@@ -218,13 +229,36 @@ describe('checkShot', () => {
     expect(summary(settings)).toContain('**fail**');
   });
 
+  it('fails a screenshot whose colours changed, naming the changed tiles', () => {
+    // The W2 review's Types colour (compare.test.ts) all over: 48 of the 49 tiles change, all
+    // but the 4 × 4 corner tile, whose 16 pixels move it only 0.0044 (a sixteenth of 0.0703).
+    const settings = settingsWith(png(100, 100, 0, [0x68, 0x68, 0x00]));
+    const check = checkShot(settings, 'chrome-menu-open', png(100, 100, 0, [0x53, 0x62, 0x2c]));
+    expect(check.failure).toMatch(
+      /^48 tiles of chrome-menu-open changed colour from the linux baseline \(97\.959%, more than 0\.5%; the largest by 0\.0703\); see /,
+    );
+    expect(summary(settings)).toContain(
+      '| 100×100 | 0 (0.000%) | 48 (97.959%), largest 0.0703 | **fail** |',
+    );
+  });
+
+  it('names both rules when both fail', () => {
+    // As above with the first 51 pixels red: pixelmatch counts them, and their 4 tiles are left
+    // to the pixel rule.
+    const settings = settingsWith(png(100, 100, 0, [0x68, 0x68, 0x00]));
+    const check = checkShot(settings, 'chrome-menu-open', png(100, 100, 51, [0x53, 0x62, 0x2c]));
+    expect(check.failure).toMatch(
+      /^51 pixels of chrome-menu-open differ from the linux baseline \(0\.510%, more than 0\.5%\); 44 tiles of chrome-menu-open changed colour/,
+    );
+  });
+
   it('fails a screenshot of another size than its baseline', () => {
     const settings = settingsWith(png(100, 100));
     const check = checkShot(settings, 'chrome-menu-open', png(100, 99));
     expect(check.outcome.kind).toBe('sizeMismatch');
     expect(check.failure).toMatch(/100×99 pixels but the baseline is 100×100/);
     expect(summary(settings)).toContain(
-      '| chrome-menu-open | linux | — | — | **fail**: The screenshot',
+      '| chrome-menu-open | linux | — | — | — | **fail**: The screenshot',
     );
   });
 });
@@ -258,7 +292,7 @@ describe('takeAndCheckShot', () => {
       .split('\n')
       .filter((line) => line.startsWith('| canvas-guessing-game '));
     expect(lines).toEqual([
-      '| canvas-guessing-game | linux | — | — | **fail**: not taken: The page fonts did not load within 20 s |',
+      '| canvas-guessing-game | linux | — | — | — | **fail**: not taken: The page fonts did not load within 20 s |',
     ]);
     expect(existsSync(path.join(folder.out, 'linux', 'canvas-guessing-game.png'))).toBe(false);
   });

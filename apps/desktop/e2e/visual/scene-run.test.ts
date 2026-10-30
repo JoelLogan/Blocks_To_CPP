@@ -72,7 +72,7 @@ function rows(settings: VisualSettings): { name: string; result: string }[] {
     .filter((line) => line.startsWith('| chrome-'))
     .map((line) => {
       const cells = line.split('|').map((cell) => cell.trim());
-      return { name: cells[1] ?? '', result: cells[5] ?? '' };
+      return { name: cells[1] ?? '', result: cells[6] ?? '' };
     });
 }
 
