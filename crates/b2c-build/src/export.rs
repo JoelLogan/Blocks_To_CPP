@@ -34,9 +34,13 @@
 //!   (`docs/plans/m3-contracts/w3-modules.md` §2.8). It never follows a link
 //!   (it checks the folders before it removes or writes anything), writes
 //!   each file through a temporary file and a rename, and writes the
-//!   manifest last.
+//!   manifest last. Before it removes or writes anything it writes a
+//!   manifest that also accepts what each file held before, so that an
+//!   export interrupted part of the way through leaves a folder a later
+//!   Replace takes as an export (none of its files kept as changed, none of
+//!   its new files in the way).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
 use std::fs;
 use std::io;
@@ -254,20 +258,35 @@ enum ManifestEntry {
 /// A format 3 entry. `sha256` is missing only for a file an earlier export
 /// (format 1 or 2) wrote without recording it, which a later export kept
 /// ([`KeptReason::NotRecorded`]): such a file is never replaced or removed.
+/// `previous` is only in the manifest an export writes before it writes
+/// anything else: the SHA-256 of what an earlier export wrote into the file
+/// it is about to replace, which the file still holds if that export is
+/// interrupted before it gets to it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct HashedEntry {
     path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    previous: Option<String>,
 }
 
 /// A file an earlier export listed, with the SHA-256 (lower-case hex) of
-/// what it wrote when the manifest records it.
+/// what it wrote when the manifest records it, and of what an earlier one
+/// wrote there when an interrupted export left both possible.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Listed {
     path: String,
     sha256: Option<String>,
+    previous: Option<String>,
+}
+
+impl Listed {
+    /// Whether `hash` is the SHA-256 of something an export wrote there.
+    fn written_by_export(&self, hash: &str) -> bool {
+        self.sha256.as_deref() == Some(hash) || self.previous.as_deref() == Some(hash)
+    }
 }
 
 /// An earlier export's manifest, checked.
@@ -950,6 +969,17 @@ pub fn folder_state(folder: &Path) -> FolderState {
 /// export did not write, [`ExportError::NotAPlainFile`] for a link (the folder or
 /// anything to be written or removed), and [`ExportError::Io`].
 pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Written, ExportError> {
+    write_with(folder, export, mode, replace_file)
+}
+
+/// [`write()`], with `put` writing each file (`replace_file`, or in a test
+/// one that fails part of the way through).
+fn write_with(
+    folder: &Path,
+    export: &Export,
+    mode: ExportMode,
+    mut put: impl FnMut(&Path, &[u8], u32) -> Result<(), ExportError>,
+) -> Result<Written, ExportError> {
     let io = |action: &'static str| move |source: io::Error| ExportError::Io { action, source };
     let earlier = match (mode, folder_state(folder)) {
         (ExportMode::New, FolderState::Empty) => Vec::new(),
@@ -995,13 +1025,22 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Written
         }
     }
     let plan = plan_replacement(folder, export, &earlier)?;
-    for path in &plan.remove {
+    let mode = file_mode();
+    let to_write: Vec<&ExportFile> = export
+        .files
+        .iter()
+        .filter(|file| !plan.keep.contains(&file.path))
+        .collect();
+    // Before anything is removed or written, a manifest that also accepts
+    // what each file holds now (see `interim_entries`).
+    let interim = interim_entries(&to_write, &plan);
+    put_manifest(folder, &export.project_id, interim, false, mode, &mut put)?;
+    for (_, path, _) in &plan.remove {
         fs::remove_file(path).map_err(io("remove a file of the earlier export"))?;
     }
-    let mode = file_mode();
     let mut written = Vec::new();
     let mut entries = Vec::new();
-    for file in export.files.iter().filter(|file| !plan.keep.contains(&file.path)) {
+    for file in to_write {
         let path = target(folder, &file.path).ok_or(ExportError::NotAPlainFile)?;
         if let Some(parent) = path.parent()
             && parent != folder
@@ -1015,11 +1054,12 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Written
                 return Err(ExportError::NotAPlainFile);
             }
         }
-        replace_file(&path, file.contents.as_bytes(), mode)?;
+        put(&path, file.contents.as_bytes(), mode)?;
         written.push(file.path.clone());
         entries.push(ManifestEntry::Hashed(HashedEntry {
             path: file.path.clone(),
             sha256: Some(sha256_hex(file.contents.as_bytes())),
+            previous: None,
         }));
     }
     // A kept file stays listed as the earlier export recorded it, so a later
@@ -1027,22 +1067,8 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Written
     // to what was written. Past the manifest's limit a kept file is no longer
     // listed, which makes it one of the student's own files.
     let room = MAX_MANIFEST_ENTRIES.saturating_sub(entries.len());
-    entries.extend(plan.carried.into_iter().take(room).map(|old| {
-        ManifestEntry::Hashed(HashedEntry {
-            path: old.path,
-            sha256: old.sha256,
-        })
-    }));
-    let manifest = Manifest {
-        format: String::from(MANIFEST_FORMAT),
-        format_version: MANIFEST_VERSION,
-        project_id: Some(export.project_id.clone()),
-        files: entries,
-    };
-    let mut text = serde_json::to_string_pretty(&manifest)
-        .map_err(|error| io("write the export manifest")(io::Error::other(error)))?;
-    text.push('\n');
-    replace_file(&folder.join(EXPORT_MANIFEST), text.as_bytes(), mode)?;
+    entries.extend(plan.carried.iter().take(room).map(carried_entry));
+    put_manifest(folder, &export.project_id, entries, true, mode, &mut put)?;
     written.push(String::from(EXPORT_MANIFEST));
     Ok(Written {
         files: written,
@@ -1050,11 +1076,101 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Written
     })
 }
 
+/// The entries of the manifest an export writes before it removes or writes
+/// anything: every file it touches, with each content the file may have if
+/// the export is interrupted (what an earlier export wrote and what this
+/// one writes), then the kept files. A later Replace then neither keeps a
+/// file this one wrote as the student's change nor refuses a new one as in
+/// the way.
+fn interim_entries(to_write: &[&ExportFile], plan: &Replacement) -> Vec<ManifestEntry> {
+    let mut interim: Vec<ManifestEntry> = to_write
+        .iter()
+        .map(|file| {
+            let sha256 = sha256_hex(file.contents.as_bytes());
+            let previous = plan
+                .current
+                .get(&file.path)
+                .filter(|now| **now != sha256)
+                .cloned();
+            ManifestEntry::Hashed(HashedEntry {
+                path: file.path.clone(),
+                sha256: Some(sha256),
+                previous,
+            })
+        })
+        .collect();
+    interim.extend(plan.remove.iter().map(|(path, _, sha256)| {
+        ManifestEntry::Hashed(HashedEntry {
+            path: path.clone(),
+            sha256: Some(sha256.clone()),
+            previous: None,
+        })
+    }));
+    interim.extend(plan.carried.iter().map(carried_entry));
+    interim.truncate(MAX_MANIFEST_ENTRIES);
+    interim
+}
+
+/// The entry of a kept file in a new manifest: as the earlier export
+/// recorded it, without the content an interrupted export had not replaced
+/// yet (a kept file is never replaced).
+fn carried_entry(old: &Listed) -> ManifestEntry {
+    ManifestEntry::Hashed(HashedEntry {
+        path: old.path.clone(),
+        sha256: old.sha256.clone(),
+        previous: None,
+    })
+}
+
+/// Writes the manifest of `entries` with `put`: indented when `last` (the
+/// one an export leaves), on one line before the files are written.
+fn put_manifest(
+    folder: &Path,
+    project_id: &str,
+    entries: Vec<ManifestEntry>,
+    last: bool,
+    mode: u32,
+    put: &mut impl FnMut(&Path, &[u8], u32) -> Result<(), ExportError>,
+) -> Result<(), ExportError> {
+    // A path listed twice, even in another case, would make the manifest
+    // unreadable: the first entry stays.
+    let mut seen = BTreeSet::new();
+    let entries = entries
+        .into_iter()
+        .filter(|entry| match entry {
+            ManifestEntry::Path(path) | ManifestEntry::Hashed(HashedEntry { path, .. }) => {
+                seen.insert(path.to_ascii_lowercase())
+            }
+        })
+        .collect();
+    let manifest = Manifest {
+        format: String::from(MANIFEST_FORMAT),
+        format_version: MANIFEST_VERSION,
+        project_id: Some(project_id.to_owned()),
+        files: entries,
+    };
+    let text = if last {
+        serde_json::to_string_pretty(&manifest)
+    } else {
+        serde_json::to_string(&manifest)
+    };
+    let mut text = text.map_err(|error| ExportError::Io {
+        action: "write the export manifest",
+        source: io::Error::other(error),
+    })?;
+    text.push('\n');
+    put(&folder.join(EXPORT_MANIFEST), text.as_bytes(), mode)
+}
+
 /// What a replacement does with the files an earlier export listed.
 #[derive(Debug, Default)]
 struct Replacement {
-    /// Unchanged files this export no longer writes, to delete.
-    remove: Vec<PathBuf>,
+    /// Unchanged files this export no longer writes, to delete: the path in
+    /// the export, in the folder, and the file's SHA-256.
+    remove: Vec<(String, PathBuf, String)>,
+    /// The SHA-256 of each listed file this export writes again, as the
+    /// file is now.
+    current: BTreeMap<String, String>,
     /// Changed files this export would write: left alone.
     keep: BTreeSet<String>,
     /// The files kept, for the result.
@@ -1065,7 +1181,7 @@ struct Replacement {
 
 /// Decides, before anything is written, what happens to each file the
 /// earlier export listed: a missing one is forgotten; one whose content
-/// still has the recorded SHA-256 is replaced, or deleted when this export
+/// still has a recorded SHA-256 is replaced, or deleted when this export
 /// no longer writes it; one that already holds exactly what this export
 /// writes is written again; any other is kept (w3-modules.md §2.8).
 fn plan_replacement(folder: &Path, export: &Export, earlier: &[Listed]) -> Result<Replacement, ExportError> {
@@ -1088,13 +1204,16 @@ fn plan_replacement(folder: &Path, export: &Export, earlier: &[Listed]) -> Resul
             source,
         })?;
         let replacement = export.files.iter().find(|file| file.path == old.path);
-        if old.sha256.as_deref() == Some(current.as_str()) {
+        if old.written_by_export(&current) {
             if replacement.is_none() {
-                plan.remove.push(path);
+                plan.remove.push((old.path.clone(), path, current));
+            } else {
+                plan.current.insert(old.path.clone(), current);
             }
             continue;
         }
         if replacement.is_some_and(|file| sha256_hex(file.contents.as_bytes()) == current) {
+            plan.current.insert(old.path.clone(), current);
             continue;
         }
         plan.kept.push(KeptFile {
@@ -1135,7 +1254,8 @@ pub fn earlier_export_project(folder: &Path) -> Option<Option<String>> {
 /// An earlier export's manifest, when it is a regular file of at most
 /// 256 KiB that reads as one: its format, version and project ID agree;
 /// every entry has the version's shape and names a file an export writes,
-/// with at most one hash (64 lower-case hex digits); no path is listed twice,
+/// with at most one hash (64 lower-case hex digits) and, only beside it, the
+/// hash a file held before an interrupted export; no path is listed twice,
 /// even ignoring case; at most [`MAX_MANIFEST_ENTRIES`]. A manifest is
 /// untrusted input: the folder may have been copied, cloned or edited.
 fn read_manifest(folder: &Path) -> Option<EarlierExport> {
@@ -1157,17 +1277,34 @@ fn read_manifest(folder: &Path) -> Option<EarlierExport> {
     let mut seen = BTreeSet::new();
     for entry in manifest.files {
         let listed = match entry {
-            ManifestEntry::Path(path) if !hashed => Listed { path, sha256: None },
-            ManifestEntry::Hashed(HashedEntry { path, sha256 }) if hashed => Listed { path, sha256 },
+            ManifestEntry::Path(path) if !hashed => Listed {
+                path,
+                sha256: None,
+                previous: None,
+            },
+            ManifestEntry::Hashed(HashedEntry {
+                path,
+                sha256,
+                previous,
+            }) if hashed => Listed {
+                path,
+                sha256,
+                previous,
+            },
             _ => return None,
         };
+        let is_hash = |hash: &str| {
+            hash.len() == 64
+                && hash
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        };
         let well_formed = is_export_path(&listed.path)
-            && listed.sha256.as_deref().is_none_or(|hash| {
-                hash.len() == 64
-                    && hash
-                        .bytes()
-                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-            })
+            && listed.sha256.as_deref().is_none_or(is_hash)
+            && listed
+                .previous
+                .as_deref()
+                .is_none_or(|hash| listed.sha256.is_some() && is_hash(hash))
             && seen.insert(listed.path.to_ascii_lowercase());
         if !well_formed {
             return None;
@@ -1358,6 +1495,116 @@ mod tests {
             file.to_string(),
             "src/main.cpp was kept because the earlier export did not record its content, so it may have been changed (this export's version of it was not written)"
         );
+    }
+
+    /// An export of these files, as `prepare` would make one.
+    fn export_of(files: &[(&str, &str)]) -> Export {
+        Export {
+            name: String::from("main"),
+            folder_name: String::from("main"),
+            project_id: String::from("prj_test"),
+            files: files
+                .iter()
+                .map(|(path, contents)| ExportFile {
+                    path: (*path).to_owned(),
+                    contents: (*contents).to_owned(),
+                })
+                .collect(),
+        }
+    }
+
+    /// What `write` puts into `folder`, by path.
+    fn contents(folder: &Path, export: &Export) -> Vec<(String, String)> {
+        export
+            .files
+            .iter()
+            .map(|file| {
+                let text = fs::read_to_string(folder.join(&file.path)).unwrap_or_default();
+                (file.path.clone(), text)
+            })
+            .collect()
+    }
+
+    /// A Replace interrupted at any file (a full disk, a file another
+    /// program holds open, the app closed) leaves a folder that a later
+    /// Replace of a changed project accepts: the files written before the
+    /// interruption are neither kept as the student's changes nor in the
+    /// way, and a file the interrupted export had not written yet is still
+    /// the earlier export's.
+    #[test]
+    fn an_interrupted_replace_leaves_a_folder_a_later_replace_accepts() {
+        let first = export_of(&[
+            ("src/main.cpp", "main A\n"),
+            ("src/old.cpp", "old A\n"),
+            ("CMakeLists.txt", "cmake A\n"),
+            ("Makefile", "make A\n"),
+            ("README.md", "readme\n"),
+        ]);
+        let second = export_of(&[
+            ("src/main.cpp", "main B\n"),
+            ("src/extra.cpp", "extra B\n"),
+            ("CMakeLists.txt", "cmake B\n"),
+            ("Makefile", "make B\n"),
+            ("README.md", "readme\n"),
+        ]);
+        let third = export_of(&[
+            ("src/main.cpp", "main C\n"),
+            ("src/extra.cpp", "extra C\n"),
+            ("CMakeLists.txt", "cmake C\n"),
+            ("Makefile", "make C\n"),
+            ("README.md", "readme\n"),
+        ]);
+        // Stopped at its first write, then its second, and so on, until it
+        // runs to the end.
+        for stop in 1.. {
+            let dir = tempfile::tempdir().unwrap();
+            let folder = dir.path().join("export");
+            write(&folder, &first, ExportMode::New).unwrap();
+            let mut puts = 0;
+            let mut stopped_at = None;
+            let interrupted = write_with(&folder, &second, ExportMode::Replace, |path, contents, mode| {
+                puts += 1;
+                if puts == stop {
+                    stopped_at = Some(path.to_path_buf());
+                    return Err(ExportError::Io {
+                        action: "write an exported file",
+                        source: io::Error::other("interrupted"),
+                    });
+                }
+                replace_file(path, contents, mode)
+            });
+            let Some(stopped_at) = stopped_at else {
+                assert!(interrupted.is_ok());
+                break;
+            };
+            let at = stopped_at.display();
+            assert!(matches!(interrupted, Err(ExportError::Io { .. })), "{at}");
+            assert_eq!(folder_state(&folder), FolderState::EarlierExport, "{at}");
+            let written = write(&folder, &third, ExportMode::Replace)
+                .unwrap_or_else(|error| panic!("after a stop at {at}: {error}"));
+            assert_eq!(written.kept, [], "after a stop at {at}");
+            assert_eq!(
+                contents(&folder, &third),
+                contents_of(&third),
+                "after a stop at {at}"
+            );
+            assert!(!folder.join("src/old.cpp").exists(), "{at}");
+            // The manifest records one hash a file, and a later Replace keeps
+            // nothing either.
+            let manifest = fs::read_to_string(folder.join(EXPORT_MANIFEST)).unwrap();
+            assert!(!manifest.contains("previous"), "{manifest}");
+            let again = write(&folder, &first, ExportMode::Replace).unwrap();
+            assert_eq!(again.kept, [], "after a stop at {at}");
+        }
+    }
+
+    /// An export's files, by path.
+    fn contents_of(export: &Export) -> Vec<(String, String)> {
+        export
+            .files
+            .iter()
+            .map(|file| (file.path.clone(), file.contents.clone()))
+            .collect()
     }
 
     #[test]

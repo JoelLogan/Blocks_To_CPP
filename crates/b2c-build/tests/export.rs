@@ -803,6 +803,64 @@ fn replace_after_a_rename_and_a_delete_keeps_the_edited_files() {
     assert!(folder.join("README.md").is_file());
 }
 
+/// A Replace that fails part of the way through (here the export folder
+/// is read-only while `src/` is not, as a full disk or a file another
+/// program holds open would make it fail) leaves a folder that the next
+/// Replace of a changed project takes as an export: nothing is kept as the
+/// student's change and no new module's file is in the way. Unix only, and
+/// skipped where the mode bits do not stop a write (as root).
+#[cfg(unix)]
+#[test]
+fn a_replace_after_a_failed_one_keeps_nothing() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let mode = |path: &Path, mode: u32| {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("export");
+    export::write(&folder, &two_modules_export(Some("utils")), ExportMode::New).unwrap();
+    mode(&folder, 0o555);
+    if std::fs::write(folder.join("probe"), "").is_ok() {
+        mode(&folder, 0o755);
+        return;
+    }
+    // `tools` added; main.cpp and the build files change.
+    let (mut document, mut project) = two_modules(Some("utils"));
+    document.modules.push(b2c_model::Module {
+        id: b2c_ir::ModuleId::new("mod_tools").unwrap(),
+        name: String::from("tools"),
+        workspace: b2c_model::Workspace::default(),
+    });
+    project.files[0].contents.push_str("// with tools\n");
+    project.files.push(generated(
+        "tools.cpp",
+        FileKind::Source,
+        "mod_tools",
+        "int tools_version() {\n    return 1;\n}\n",
+    ));
+    let second = export::assemble(&document, &project, "0.0.0-test").unwrap();
+    let failed = export::write(&folder, &second, ExportMode::Replace);
+    mode(&folder, 0o755);
+    assert!(
+        matches!(failed, Err(export::ExportError::Io { .. })),
+        "{failed:?}"
+    );
+    // Changed once more: `tools.cpp` too.
+    project.files[0].contents.push_str("// again\n");
+    project.files.last_mut().unwrap().contents.push_str("// again\n");
+    let third = export::assemble(&document, &project, "0.0.0-test").unwrap();
+    let written = export::write(&folder, &third, ExportMode::Replace).unwrap();
+    assert_eq!(kept(&written), []);
+    for file in &third.files {
+        assert_eq!(
+            std::fs::read_to_string(folder.join(&file.path)).unwrap(),
+            file.contents,
+            "{}",
+            file.path
+        );
+    }
+}
+
 /// An older manifest (format 2) records no hashes: Replace keeps every
 /// listed file it would delete or change, naming each, and writes the rest.
 #[test]
@@ -857,7 +915,8 @@ fn an_older_manifest_without_hashes_keeps_every_listed_file() {
 }
 
 /// A manifest is untrusted: a format 3 entry without its object shape, a
-/// hash that is not 64 lower-case hex digits, an unknown key, a path that is
+/// hash that is not 64 lower-case hex digits, an earlier hash without a
+/// hash, an unknown key, a path that is
 /// not an export's, a path listed twice (also in another case) or an entry
 /// without a path make the folder one Blocks2Cpp did not make.
 #[test]
@@ -873,6 +932,8 @@ fn a_malformed_manifest_is_not_an_export() {
         serde_json::json!([{"path": "src/main.cpp", "sha256": hash.to_uppercase()}]),
         serde_json::json!([{"path": "src/main.cpp", "sha256": &hash[1..]}]),
         serde_json::json!([{"path": "src/main.cpp", "sha256": hash, "size": 1}]),
+        serde_json::json!([{"path": "src/main.cpp", "previous": hash}]),
+        serde_json::json!([{"path": "src/main.cpp", "sha256": hash, "previous": &hash[1..]}]),
         serde_json::json!([{"path": "../main.cpp", "sha256": hash}]),
         serde_json::json!([{"path": "src/main.cpp"}, {"path": "src/main.cpp"}]),
         serde_json::json!([{"path": "src/main.cpp"}, {"path": "src/Main.cpp"}]),
