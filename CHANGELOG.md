@@ -627,7 +627,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `proptest` 1.12, `toml` 1.1.8, Radix's dialog 1.3, tabs 1.2 and tooltip 1.4,
   React 19.3.1, Vitest 4.1.12, criterion 0.8 for the native benchmark,
   `pixelmatch` 8 for the visual diff (its threshold of 0.1 is now a perceptual
-  colour distance, and the baselines compare as before) and other patch
+  colour distance; it counts no pixel of a slight recolouring that 7.2.0
+  counted, see the visual diff under Fixed) and other patch
   releases, ESLint 10.13 and `libc` 0.2.191, and the CodeQL, OSV-Scanner,
   Scorecard and zizmor actions (zizmor 1.31.1). Vitest 4.1.12 and `tokio`
   1.53.3 fix advisories, an override moves `markdown-it` (through
@@ -911,6 +912,21 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `analyze_checked_with` with `Catalog::sigs()`.
 
 ### Fixed
+
+- The visual diff passed a recolouring of a third of a scene: the W2
+  review's new Types and Files colours moved every pixel of those blocks by
+  0.060 to 0.084, under `pixelmatch` 8's threshold of 0.1, so it counted
+  none of them (7.2.0 would have failed the Files scenes, not the Types
+  ones; the update said the baselines compared as before). A second rule
+  now finds a colour change too slight for any one pixel: a 16×16 tile in
+  which pixelmatch counts no pixel has changed when the mean colour of its
+  pixels that are flat in the baseline (not an edge or anti-aliased text)
+  moves more than 0.015, and more than 0.5% of changed tiles fails, as for
+  pixels (one tile on the toolbar's 150). On every committed baseline each
+  channel ±3 and the whole image 2 lighter still pass, 5 lighter fails, and
+  the W2 recolouring fails its 9 scenes at twice the limit. The summary has
+  a column for the changed tiles, the failure names them, and the diff
+  image outlines them in blue.
 
 - On Linux, a project whose name, folder or library names hold a `%` (a
   project named `%s%s%n`, say) could crash the app, or worse, as its trust

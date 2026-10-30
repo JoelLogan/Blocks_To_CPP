@@ -165,7 +165,13 @@ build needs.
   Linux, 16 Windows), 7.2.0 and 8.0.0 both count no pixel for each channel ±3, blue +6 or
   brightness +10, count the same pixels for a 20 × 20 red square, and fail every baseline shifted
   by one pixel (8.0.0 counting 0.4% fewer to 8.3% more pixels), so the threshold stays 0.1;
-  `compare.test.ts` checks the noise on every committed baseline. The API and the `pngjs`
+  `compare.test.ts` checks the noise on every committed baseline. Those checks missed that 8.0.0
+  no longer counts some slight recolourings that 7.2.0 counted: the W2 review's new Types and
+  Files colours (2f747cf) move each pixel 0.060 to 0.084 in OKLab HyAB, and 8.0.0 counted none of
+  them, where 7.2.0 would have failed the Files scenes (a YIQ difference of 719 and 850 against
+  352 for 0.1) but not the Types scenes (229 and 267). So the baselines did not compare as
+  before: `compare.ts` now adds a rule for colour changes too slight for any one pixel (the mean
+  colour of 16×16 tiles; see `e2e/visual/README.md`). The API and the `pngjs`
   dependency are the same, and the new checkerboard blend applies only to semi-transparent pixels,
   which our screenshots do not have. 8.0.0 was published from its author's own npm account, where
   7.1.1 and 7.2.0 came from Mapbox's release accounts; no version has provenance, so

@@ -300,8 +300,22 @@ Details of each level as M2 sets them up:
 * **Visual diff.** The guessing game in a 1000×700 window (set through the
   app's window-size seam) at zoom 1.0, light theme, caret hidden, with the
   C++ and bottom panels folded and the *Program* category chosen, compared
-  with pixelmatch (threshold 0.1); more than 0.5% of differing pixels fails,
-  and so does a screenshot of another size than its baseline. The chrome's
+  pixel by pixel with pixelmatch (threshold 0.1) and tile by tile: a 16×16
+  tile in which pixelmatch counted no pixel has changed when the mean colour
+  of its pixels that are flat in the baseline (3 or more of their 8
+  neighbours alike, pixelmatch's test for a pixel that is not anti-aliased)
+  moves more than 0.015, pixelmatch's OKLab HyAB distance; each tile's sum is
+  divided by 256, also for the smaller tiles at the edges. The tile rule
+  finds a recolouring too slight for 0.1 on any one pixel, such as the W2
+  review's new Types and Files colours (0.06 to 0.08 on every pixel, which
+  pixelmatch alone did not count), and leaves strong changes, however small,
+  to the pixel rule. More than 0.5% of differing pixels, or of changed tiles,
+  fails (on a scene of fewer than 200 tiles, such as the toolbar's 150, one
+  changed tile fails), and so does a screenshot of another size than its
+  baseline. On every committed baseline both rules let each channel ±3 and
+  the whole image 2 lighter through, and 5 lighter fails; the W2
+  recolouring fails its 9 scenes at twice the tile limit
+  (`apps/desktop/e2e/visual/compare.ts` gives the margins). The chrome's
   scenes (the table's row) are taken in one launch per theme, light and, on
   Linux, dark (`GTK_THEME=Adwaita:dark`), each cut out of a screenshot of
   the window and compared the same way. The whole-window scenes have the
