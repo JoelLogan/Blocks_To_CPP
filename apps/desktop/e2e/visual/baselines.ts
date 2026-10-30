@@ -147,7 +147,8 @@ export function recordOutcome(
       '### Visual diff of the block canvas and the chrome (docs/spec/09-quality-and-delivery.md §9.2)',
       '',
       `pixelmatch threshold ${String(PIXEL_THRESHOLD)}; a ${String(TILE_SIDE)}×${String(TILE_SIDE)} tile in which pixelmatch counts no pixel ` +
-        `has changed when the mean colour of its flat pixels moves more than ${String(MAX_TILE_DISTANCE)}; ` +
+        `has changed when its mean colour over its ${String(TILE_SIDE * TILE_SIDE)} pixels moves more than ${String(MAX_TILE_DISTANCE)}, ` +
+        'only pixels flat in the baseline and under the threshold counting as changed; ' +
         `more than ${String(MAX_DIFF_RATIO * 100)}% of differing pixels, or of changed tiles, fails. ` +
         'Candidates are in the `visual-candidates-*` artifact; baselines in `apps/desktop/e2e/visual/baselines/`.',
       '',

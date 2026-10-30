@@ -917,16 +917,20 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   review's new Types and Files colours moved every pixel of those blocks by
   0.060 to 0.084, under `pixelmatch` 8's threshold of 0.1, so it counted
   none of them (7.2.0 would have failed the Files scenes, not the Types
-  ones; the update said the baselines compared as before). A second rule
-  now finds a colour change too slight for any one pixel: a 16×16 tile in
-  which pixelmatch counts no pixel has changed when the mean colour of its
-  pixels that are flat in the baseline (not an edge or anti-aliased text)
-  moves more than 0.015, and more than 0.5% of changed tiles fails, as for
-  pixels (one tile on the toolbar's 150). On every committed baseline each
-  channel ±3 and the whole image 2 lighter still pass, 5 lighter fails, and
-  the W2 recolouring fails its 9 scenes at twice the limit. The summary has
-  a column for the changed tiles, the failure names them, and the diff
-  image outlines them in blue.
+  ones; the update said the baselines compared as before). A second rule now
+  finds a colour change too slight for any one pixel: a 16×16 tile in which
+  pixelmatch counts no pixel has changed when its mean colour over its 256
+  pixels moves more than 0.015, where only a pixel that pixelmatch found
+  under its threshold and that is flat in the baseline (not an edge,
+  anti-aliased text or what pixelmatch takes for anti-aliasing) counts as
+  changed, also for the smaller tiles at the edges. More than 0.5% of
+  changed tiles fails, as for pixels (one tile on the toolbar's 150). On
+  every committed baseline each channel ±3 and the whole image 2 lighter
+  still pass, text drawn 15% stronger or weaker changes no tile, 5 lighter
+  fails, and the W2 recolouring fails its 9 scenes at twice the limit; a
+  runner update that shifts every colour by more than about 3 levels will
+  fail every scene. The summary has a column for the changed tiles, the
+  failure names them, and the diff image outlines them in blue.
 
 - On Linux, a project whose name, folder or library names hold a `%` (a
   project named `%s%s%n`, say) could crash the app, or worse, as its trust

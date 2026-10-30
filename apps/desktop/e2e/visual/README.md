@@ -95,32 +95,38 @@ as not taken. The canvas screenshot is recorded as not taken, too, when its test
 
 - **pixels:** pixelmatch with a colour threshold of 0.1 counts the differing pixels (anti-aliased
   edges are not counted): what moved, appeared or went;
-- **tiles:** a 16×16 tile in which pixelmatch counted no pixel has changed when the mean colour of
-  its pixels that are flat in the baseline (3 or more of their 8 neighbours alike, so not an edge
-  or anti-aliased text) moves more than 0.015: a colour change too slight for 0.1 on any one pixel.
-  The W2 review's new Types and Files colours moved every pixel of those blocks by 0.06 to 0.08,
-  and pixelmatch counted none of them on scenes where a third of the image changed colour. Each
-  tile's sum is divided by a whole tile's 256 pixels, also at the right and bottom edges, where
-  tiles are smaller.
+- **tiles:** a 16×16 tile in which pixelmatch counted no pixel has changed when its mean colour
+  moves more than 0.015: a colour change too slight for 0.1 on any one pixel. The W2 review's new
+  Types and Files colours moved every pixel of those blocks by 0.06 to 0.08, and pixelmatch counted
+  none of them on scenes where a third of the image changed colour. The mean is taken over a whole
+  tile's 256 pixels, also for the smaller tiles at the right and bottom edges, and only a pixel
+  that pixelmatch found under its threshold and that is flat in the baseline (3 or more of its 8
+  neighbours alike, so not an edge or anti-aliased text) counts as changed; every other pixel
+  counts as unchanged.
 
-The tile rule only adds what the pixel rule cannot see: a strong change, even a small one, is the
-pixel rule's (a 2×2 dot is counted as 4 pixels and passes). On the smallest scenes, 0.5% of the
-tiles is less than one: on the toolbar's 150 tiles, one recoloured tile fails. A recolouring of
-about 0.5% of a scene passes or fails depending on how it falls on the tiles.
+The tile rule only adds what the pixel rule cannot see: every change beyond the threshold is the
+pixel rule's, even a small one (a 3×3 dot is counted as 9 pixels and passes), and so is a pixel
+that pixelmatch takes for anti-aliasing (a stroke drawn half a pixel off). On the smallest scenes,
+0.5% of the tiles is less than one: on the toolbar's 150 tiles, one recoloured tile fails. A
+recolouring of about 0.5% of a scene passes or fails depending on how it falls on the tiles.
 
 A screenshot of another size than its baseline fails too. Both distances are pixelmatch 8's
 perceptual colour distance (OKLab HyAB, where 1 is black against white). Screenshots of an
-unchanged scene come out the same, pixel for pixel, from run to run on the CI runners (the only
-exception seen, Windows' `chrome-console-scrolled`, differs by 1 in a channel on a few anti-aliased
-corner pixels), so neither limit is there for noise from the runners. On every committed baseline,
-[`compare.test.ts`](compare.test.ts) checks that both rules let through each channel ±3 on every
-pixel and every pixel 2 lighter, that every pixel 5 lighter fails, and that the W2 review's
-recolouring, replayed on the baselines, fails; `compare.ts` gives the margins. Near black one step
-is already beyond the tile limit (#000 to #010101 is 0.016), so a black area that came out a step
-lighter would fail; no baseline has one. The `.diff.png` marks the differing pixels in red and
-outlines the changed tiles in blue (a changed tile has no red pixel). [`baselines.ts`](baselines.ts)
-(`checkShot`) does it for every screenshot, the canvas and each chrome scene alike; the summary
-gives both counts and the largest tile distance.
+unchanged scene came out the same, pixel for pixel, in 9 runs on each system (the only exception
+seen, Windows' `chrome-console-scrolled`, differs by 1 in a channel on a few anti-aliased corner
+pixels), so neither limit is there for noise from run to run. Those Windows runs were all on one
+runner image, though, so no WebView2 or font update has been seen. The tile rule lets through a
+shift of every colour by about 3 levels (4 fails most baselines): a runner update that moves
+colours further fails every scene, and needs new baselines as under "A deliberate change" below.
+On every committed baseline, [`compare.test.ts`](compare.test.ts) checks that both rules let
+through each channel ±3 on every pixel and every pixel 2 lighter, that every pixel 5 lighter fails,
+that text drawn 15% stronger or weaker changes no tile, and that the W2 review's recolouring,
+replayed on the baselines, fails; `compare.ts` gives the margins. Near black, one step in each
+channel is already beyond the tile limit (#000 to #010101 is 0.016), so a black area that came out
+a step lighter would fail; no baseline has one. The `.diff.png` marks the differing pixels in red
+and outlines the changed tiles in blue (a changed tile has no red pixel).
+[`baselines.ts`](baselines.ts) (`checkShot`) does it for every screenshot, the canvas and each
+chrome scene alike; the summary gives both counts and the largest tile distance.
 
 ## Baselines
 
@@ -128,9 +134,9 @@ Each system has its own baselines, because fonts and anti-aliasing differ betwee
 WebView2 and between machines. They must come from the CI runners, never from a developer's
 machine. Every run writes each screenshot as a candidate, with a `.diff.png` that marks the
 differing pixels in red and the changed tiles in blue when there is a baseline, into
-`visual/<system>/` of the artifacts folder;
-the CI job uploads them as the artifact `visual-candidates-<os>` (`nightly-visual-candidates-<os>`
-nightly), and adds the table of `visual/visual-diff.md` to its summary.
+`visual/<system>/` of the artifacts folder; the CI job uploads them as the artifact
+`visual-candidates-<os>` (`nightly-visual-candidates-<os>` nightly), and adds the table of
+`visual/visual-diff.md` to its summary.
 
 - **No baseline yet** (the first runs on a system, and every new scene): the screenshot passes
   with a warning, and the candidate is the baseline to commit.
