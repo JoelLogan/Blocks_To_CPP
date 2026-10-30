@@ -708,6 +708,11 @@ page's own share of a 1,000-block preview falls from about 61 ms to about
 15 ms (read, commit, publish, receive), and the preview's latency grows by
 about 15 ms, as the spike measured (w5-worker.md §2.2).
 
+The scope index of the 1,000-block document is 34,841 characters; making it
+takes about 5 ms in the worker (`b2c:preview:index`) and reading it about
+3 ms on the page (`b2c:preview:receive`; both measured in Node with the
+release core).
+
 **What the worker does not change:** the longest task of a 1,000-block edit
 with the panel shown, 875 ms in both builds. It is not the preview (whose
 spans add up to under 70 ms): it is Blockly re-rendering the edited stack
