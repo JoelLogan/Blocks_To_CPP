@@ -222,9 +222,12 @@ pub(crate) fn source_file(
     // Step 3 of 06 §6.7: each type in a section of its own; a run of
     // function declarations, or of globals, in one section. What the
     // module's header declares is not declared again, but a shared global
-    // that is not `constexpr` is defined here.
+    // that is not `constexpr` is defined here. A forward declaration is left
+    // out when the header defines the struct it declares.
     let in_header = |decl: &Placed<CDecl>| {
-        decl.item.is_some_and(|item| plan.header_order.contains(&item))
+        decl.declares
+            .or(decl.item)
+            .is_some_and(|item| plan.header_order.contains(&item))
             && !matches!(&decl.node, CDecl::Global(global) if global.qualifier != Qualifier::Constexpr)
     };
     let mut last: Option<&Placed<CDecl>> = None;
@@ -276,11 +279,14 @@ pub(crate) fn source_file(
 /// Prints a module's header, `<stem>.hpp` (w3-modules.md §1.7): the header
 /// comment, `#pragma once`, the standard headers its declarations need, the
 /// project headers it includes, `b2c_support.hpp` when a declaration calls
-/// a helper, the forward declarations, then the items of `header_order` in
-/// their namespaces: a function's declaration with its default values, a
-/// struct's or enum's definition (a shared enum's print support is package
-/// T's), a global's `extern` declaration or a `constexpr` constant's
-/// `inline constexpr` definition. Never a `using` directive.
+/// a helper, the forward declarations of other modules' types, then the
+/// items of `header_order` in their namespaces, each after the forward
+/// declarations of the module's structs it needs (they belong to the item
+/// that needs them, not to the struct they declare): a function's
+/// declaration with its default values, a struct's or enum's definition (a
+/// shared enum's print support is package T's), a global's `extern`
+/// declaration or a `constexpr` constant's `inline constexpr` definition.
+/// Never a `using` directive.
 pub(crate) fn header_file(
     module: &LoweredModule,
     plan: &FilePlan<'_>,

@@ -92,9 +92,14 @@ pub(crate) struct LoweredModule {
 pub(crate) struct Placed<T> {
     /// The node.
     pub(crate) node: T,
-    /// The item, by index into `Module::items`; `None` for a forward
-    /// declaration of a type the module does not define.
+    /// The item, by index into `Module::items`, whose lowering produced it
+    /// (for a forward declaration, the item that needs it); `None` for a
+    /// forward declaration of a type the module does not define.
     pub(crate) item: Option<usize>,
+    /// For a forward declaration of a struct the module defines, that
+    /// struct's item: a source file leaves the declaration out when its
+    /// header defines the struct.
+    pub(crate) declares: Option<usize>,
     /// Where it is printed.
     pub(crate) region: Region,
 }
@@ -106,6 +111,7 @@ impl<T> Placed<T> {
         Placed {
             node,
             item: None,
+            declares: None,
             region: Region::default(),
         }
     }
@@ -183,19 +189,24 @@ pub(crate) fn lower_module(
     let place = |node: CDecl, index: usize| Placed {
         node,
         item: Some(index),
+        declares: None,
         region: region(index),
     };
-    // A forward declaration is printed where the struct it declares is.
-    let place_type = |def: CTypeDef, own: usize| {
-        let item = match &def {
-            CTypeDef::Forward(name) => struct_items.get(name.as_str()).copied(),
-            CTypeDef::Struct(_) | CTypeDef::Enum(_) => Some(own),
-        };
-        Placed {
-            node: CDecl::Type(def),
-            item,
-            region: item.map(region).unwrap_or_default(),
+    // A forward declaration belongs to the item that needs it, so that a
+    // header prints it before that item, and is printed in the region of
+    // the struct it declares (the anonymous namespace for one that is not
+    // shared).
+    let place_type = |def: CTypeDef, own: usize| match &def {
+        CTypeDef::Forward(name) => {
+            let declares = struct_items.get(name.as_str()).copied();
+            Placed {
+                node: CDecl::Type(def),
+                item: declares.map(|_| own),
+                declares,
+                region: declares.map(region).unwrap_or_default(),
+            }
         }
+        CTypeDef::Struct(_) | CTypeDef::Enum(_) => place(CDecl::Type(def), own),
     };
     let mut decls = Vec::new();
     let mut decl_parts = BTreeMap::new();
@@ -260,6 +271,7 @@ pub(crate) fn lower_module(
             .map(|(index, node)| Placed {
                 node,
                 item: Some(index),
+                declares: None,
                 region: region(index),
             })
             .collect(),

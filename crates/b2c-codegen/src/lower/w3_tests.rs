@@ -465,3 +465,152 @@ fn definitions_in_a_namespace_are_printed_inside_it() {
         );
     }
 }
+
+/// A module whose structs list each other: `Course` holds a list of
+/// `Student`s, which W2 meets with a forward declaration of `Student`, and
+/// `Student` holds a `Course`.
+fn school_module() -> Value {
+    json!([
+        {"id": "b_course", "type": "type.struct", "v": 1,
+         "fields": {"NAME": {"sym": "s_Course", "name": "Course"}, "COMPARABLE": false, "PRINTABLE": false},
+         "extra": {"fields": [{"sym": "s_students", "name": "students",
+                               "type": {"std::vector": {"ref": "s_Student"}}}]}},
+        {"id": "b_student", "type": "type.struct", "v": 1,
+         "fields": {"NAME": {"sym": "s_Student", "name": "Student"}, "COMPARABLE": false, "PRINTABLE": false},
+         "extra": {"fields": [{"sym": "s_course", "name": "course", "type": {"ref": "s_Course"}}]}}
+    ])
+}
+
+/// A module whose struct `Tally` has a field whose default value calls the
+/// function `count`, whose parameter is a list of `Tally`s: `count` is
+/// declared before `Tally` (modules.md §4.1), after a forward declaration
+/// of `Tally`.
+fn tally_module() -> Value {
+    json!([
+        {"id": "b_tally", "type": "type.struct", "v": 1,
+         "fields": {"NAME": {"sym": "s_Tally", "name": "Tally"}, "COMPARABLE": false, "PRINTABLE": false},
+         "extra": {"fields": [{"sym": "s_size", "name": "size", "type": "int"}]},
+         "inputs": {"DEFAULT0": {"block": {"id": "b_count_call", "type": "func.call", "v": 1,
+            "extra": {"argCount": 1},
+            "fields": {"FUNC": {"ref": "s_count"}},
+            "inputs": {"ARG0": {"block": {"id": "b_none", "type": "coll.list_of", "v": 1,
+                "extra": {"itemCount": 0}}}}}}}},
+        {"id": "b_count", "type": "func.define", "v": 1,
+         "fields": {"NAME": {"sym": "s_count", "name": "count"}, "RETURNS": "int", "SHARED": true},
+         "extra": {"params": [{"mode": "copy", "name": "tallies", "sym": "s_tallies",
+                               "type": {"std::vector": {"ref": "s_Tally"}}}]},
+         "statements": {"BODY": [
+            {"id": "b_count_return", "type": "func.return", "v": 1,
+             "inputs": {"VALUE": {"block": {"id": "b_length", "type": "coll.length", "v": 1,
+                "fields": {"LIST": {"ref": "s_tallies"}}}}}}
+         ]}}
+    ])
+}
+
+/// Puts every item of each module but the first into its header, in the
+/// module's declaration order, as packages F and T will once types and
+/// functions are shared, and has its `.cpp` include it.
+fn share_everything(program: &mut Program) {
+    for module in program.modules.iter_mut().skip(1) {
+        for item in &mut module.items {
+            item.shared = true;
+        }
+    }
+    for files in program.layout.modules.iter_mut().skip(1) {
+        files.header = true;
+        files.header_order.clone_from(&files.source_order);
+        files.source_includes = vec![files.module.clone()];
+    }
+}
+
+/// Compiles each header of `project` alone, as the one include of an
+/// otherwise empty translation unit, with each of `compilers` under C++17
+/// at the *strict* level with `-Werror`: a header declares what it needs
+/// before it uses it.
+fn headers_compile_alone(project: &GeneratedProject, compilers: &[std::path::PathBuf], dir: &Path) {
+    let sources = dir.join("src");
+    std::fs::create_dir_all(&sources).unwrap();
+    for file in &project.files {
+        std::fs::write(sources.join(&file.path), &file.contents).unwrap();
+    }
+    let all = render(project);
+    for header in project.files.iter().filter(|file| file.kind == FileKind::Header) {
+        let unit = dir.join(format!("alone-{}.cpp", header.path));
+        std::fs::write(&unit, format!("#include \"{}\"\n", header.path)).unwrap();
+        for gxx in compilers {
+            let checked = command(gxx)
+                .arg("-std=c++17")
+                .args(STRICT)
+                .arg("-fsyntax-only")
+                .arg("-iquote")
+                .arg(&sources)
+                .arg(&unit)
+                .output()
+                .unwrap();
+            assert!(
+                checked.status.success(),
+                "{} rejected {} alone:\n{}\n--- files ---\n{all}",
+                gxx.display(),
+                header.path,
+                String::from_utf8_lossy(&checked.stderr)
+            );
+        }
+    }
+}
+
+/// The forward declarations of a module's own structs are printed in its
+/// header before the declaration that needs them: `struct Student;` before
+/// `Course`, whose list names `Student`, and `struct Tally;` before
+/// `count`, whose parameter names it. Each header compiles alone, and the
+/// program compiles and runs.
+#[test]
+fn a_header_forward_declares_its_own_structs_before_their_use() {
+    let mut program = analyse(
+        &project(&[
+            ("mod_main", "main", colours_main()),
+            ("mod_school", "school", school_module()),
+            ("mod_tally", "tally", tally_module()),
+        ]),
+        &[],
+    );
+    share_everything(&mut program);
+    let project = generate(&program);
+    let text = |path: &str| {
+        &project
+            .files
+            .iter()
+            .find(|file| file.path == path)
+            .unwrap_or_else(|| panic!("no {path}"))
+            .contents
+    };
+    let before = |path: &str, first: &str, then: &str| {
+        let contents = text(path);
+        let first_at = contents.find(first);
+        let then_at = contents.find(then);
+        assert!(
+            first_at.is_some() && then_at.is_some() && first_at < then_at,
+            "{path}: {first:?} is not before {then:?}:\n{contents}"
+        );
+    };
+    before("school.hpp", "struct Student;", "struct Course {");
+    before("tally.hpp", "struct Tally;", "int count(");
+    before("tally.hpp", "int count(", "struct Tally {");
+    // What the header declares, the source file does not declare again.
+    for path in ["school.cpp", "tally.cpp"] {
+        assert!(!text(path).contains("struct "), "{path}:\n{}", text(path));
+    }
+    insta::assert_snapshot!("w3_header_forward_declarations", render(&project));
+    let compilers = compilers();
+    if compilers.is_empty() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    headers_compile_alone(&project, &compilers, &dir.path().join("alone"));
+    compile_and_run(
+        &project,
+        &compilers,
+        &dir.path().join("run"),
+        "4\n",
+        "Number? colour Green 4\n",
+    );
+}
