@@ -104,6 +104,43 @@ function noisy(bytes: Buffer): Buffer {
   );
 }
 
+/**
+ * `bytes` (a PNG) with its anti-aliased pixels `factor` further from their background (negative:
+ * nearer), as text drawn with stronger or weaker contrast: in each tile, the commonest colour is
+ * the background, and a colour on fewer than 4 of the tile's pixels is taken for anti-aliasing.
+ */
+function contrasted(bytes: Buffer, factor: number): Buffer {
+  const image = PNG.sync.read(bytes);
+  const source = Buffer.from(image.data);
+  const { width, height } = image;
+  for (let top = 0; top < height; top += TILE_SIDE) {
+    for (let left = 0; left < width; left += TILE_SIDE) {
+      const tile: number[] = [];
+      for (let y = top; y < Math.min(top + TILE_SIDE, height); y += 1) {
+        for (let x = left; x < Math.min(left + TILE_SIDE, width); x += 1)
+          tile.push((y * width + x) * 4);
+      }
+      const counts = new Map<number, number>();
+      for (const at of tile) {
+        const key = source.readUInt32BE(at);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      const [background] = [...counts].reduce((best, entry) => (entry[1] > best[1] ? entry : best));
+      const back = [background >>> 24, (background >>> 16) & 255, (background >>> 8) & 255];
+      for (const at of tile) {
+        const key = source.readUInt32BE(at);
+        if (key === background || (counts.get(key) ?? 0) >= 4) continue;
+        for (let channel = 0; channel < 3; channel += 1) {
+          const value = source[at + channel] ?? 0;
+          const moved = Math.round(value + factor * (value - (back[channel] ?? 0)));
+          image.data[at + channel] = Math.min(255, Math.max(0, moved));
+        }
+      }
+    }
+  }
+  return PNG.sync.write(image);
+}
+
 /** The W2 review's light Types colour before (2f747cf) and after. */
 const TYPES_BEFORE: [number, number, number] = [0x68, 0x68, 0x00];
 const TYPES_AFTER: [number, number, number] = [0x53, 0x62, 0x2c];
@@ -170,12 +207,13 @@ describe('compareScreenshots', () => {
     expect(pixel(result.diffPng, 32, 16)).toEqual([0, 64, 255]);
   });
 
-  it('passes a small strong change: a 2 × 2 dot is the pixel rule’s, under 0.5%', () => {
-    // On the toolbar's 800 × 40 (150 tiles), 4 black pixels move their tile's mean colour far
-    // beyond the tile limit, but pixelmatch counts them, so only the pixel rule applies.
+  it('passes a small strong change: a 3 × 3 dot is the pixel rule’s, under 0.5%', () => {
+    // On the toolbar's 800 × 40 (150 tiles), 9 black pixels on white would move their tile's mean
+    // colour 9/256 = 0.035, 2.3 times the tile limit, but pixelmatch counts them, so only the
+    // pixel rule applies.
     const before = png(800, 40, 0, [255, 255, 255]);
-    const result = compareScreenshots(before, withRect(before, [100, 10, 2, 2], [0, 0, 0]));
-    expect(result).toMatchObject({ diffPixels: 4, changedTiles: 0, passed: true });
+    const result = compareScreenshots(before, withRect(before, [100, 10, 3, 3], [0, 0, 0]));
+    expect(result).toMatchObject({ diffPixels: 9, changedTiles: 0, passed: true });
   });
 
   it('leaves pixels that pixelmatch takes for anti-aliasing to the pixel rule', () => {
@@ -225,6 +263,29 @@ describe('compareScreenshots', () => {
     const before = withRect(png(64, 64, 0, [255, 255, 255]), [0, 20, 64, 1], [200, 200, 200]);
     const result = compareScreenshots(before, withRect(before, [0, 20, 64, 1], [190, 190, 190]));
     expect(result).toMatchObject({ diffPixels: 0, changedTiles: 0, maxTileDistance: 0 });
+  });
+
+  it('judges flatness in the baseline: a recolouring that comes out noisy still fails', () => {
+    // The Types recolouring above, with each channel of the new colour 3 up or down: no pixel of
+    // it is flat in the screenshot, but every one is in the baseline, so the 9 tiles change.
+    const before = withRect(png(96, 96, 0, [255, 255, 255]), [16, 16, 48, 48], TYPES_BEFORE);
+    const result = compareScreenshots(
+      before,
+      noisy(withRect(before, [16, 16, 48, 48], TYPES_AFTER)),
+    );
+    expect(result.diffPixels).toBe(0);
+    expect(result.changedTiles).toBe(9);
+    expect(result.passed).toBe(false);
+  });
+
+  it('counts a pixel on the image’s border as having one more neighbour of its colour', () => {
+    // A 1-pixel line along the top edge has 2 neighbours of its colour and the border, 3: it is
+    // flat (as pixelmatch judges it), so recolouring it moves each tile 16/256 of the 0.0703 of
+    // each pixel. The same line inside the image moves no tile (above).
+    const before = withRect(png(64, 64, 0, [255, 255, 255]), [0, 0, 64, 1], TYPES_BEFORE);
+    const result = compareScreenshots(before, withRect(before, [0, 0, 64, 1], TYPES_AFTER));
+    expect(result).toMatchObject({ diffPixels: 0, changedTiles: 0, passed: true });
+    expect(result.maxTileDistance).toBeCloseTo((16 / 256) * 0.0703, 4);
   });
 
   it('fails a black area one step lighter: near black one step is beyond the limit', () => {
@@ -316,6 +377,20 @@ describe('the limits on the committed baselines', () => {
     expect(five.diffPixels).toBe(0);
     expect(five.passed).toBe(false);
   });
+
+  it.each(baselines)(
+    'changes no tile of %s with text 15% stronger or weaker',
+    (_name, baseline) => {
+      // The anti-aliased pixels are not flat, so they move a tile at most 0.0024 on today's
+      // baselines. pixelmatch counts more than 0.5% of the pixels of linux/chrome-toolbox-errors
+      // 15% weaker: that is the pixel rule's.
+      for (const factor of [0.15, -0.15]) {
+        const result = compareScreenshots(baseline, contrasted(baseline, factor));
+        expect(result.changedTiles).toBe(0);
+        expect(result.maxTileDistance).toBeLessThan(MAX_TILE_DISTANCE / 3);
+      }
+    },
+  );
 
   // The W2 review's recolouring (2f747cf), replayed on today's baselines: Types and Files back to
   // their colours before it, light and dark. Only the pixels of exactly the new colour change (not
