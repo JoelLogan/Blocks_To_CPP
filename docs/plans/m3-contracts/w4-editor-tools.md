@@ -248,7 +248,7 @@ get one (W4E-3):
 
 | Code | Fix | How |
 | --- | --- | --- |
-| `B2C-E0201` (a variable reference) | *Create variable `score`* | a `create` with the reference's symbol ID and last-known name, type `int` (or the last-known type), at the start of the body that holds the reference (its function or *when program starts*) |
+| `B2C-E0201` (a variable reference) | *Create variable `score`* | a `create` with the reference's symbol ID and last-known name, type `int` (the analysis no longer knows its type: a different one is reported on the `create`, where it is changed), at the start of the body that holds the reference (its function or *when program starts*) |
 | `B2C-E0410` | *Add a `return` block at the end* | a `return` with the function's result type's start value, at the end of the function's body |
 | `B2C-W0508` | *Add cases for `List`, `Quit`* | the switch's mutator gains a case per missing enumerator, each set to it |
 | `B2C-E0405` | *Add “when program starts”* | the program block, on the canvas at the view's top left |
@@ -327,25 +327,29 @@ name, no file path).
 * `packages/blockly-ext/src/blocks/labels.ts`, `labelMode.ts` and tests.
 * `packages/blockly-ext/src/fields/type-picker/` (`model.ts`, `parse.ts`,
   `picker.ts`, `index.ts`, tests).
-* `apps/desktop/src/editor/search/`, `quick-insert/`, `quick-fixes/` and
-  `toolbox/search.ts`.
+* `apps/desktop/src/editor/search/`, `quick-insert/` (Quick Insert and
+  the toolbox search field), `quick-fixes/`.
 * `apps/desktop/src/features/build-run/friendly.ts`,
   `apps/desktop/src/features/bug-report/`.
-* E2E: `e2e/specs/flows/type-picker.e2e.ts`, `quick-insert.e2e.ts`,
-  `quick-fix.e2e.ts`, `expert-labels.e2e.ts`.
+* E2E: `e2e/specs/flows/editor-tools.e2e.ts` (the four flows of §8 in one
+  spec).
 * This contract.
 
 ### 3.2 Changed
 
 * `blockly-ext`: `blocks/layout.ts` (parts as a parameter),
-  `blocks/register.ts` (the mode), `fields/dropdown.ts` (C++ option texts),
-  `fields/type.ts` (the picker, C++ names: **tell the coordinator**, §6.2),
-  `index.ts` (exports).
+  `blocks/register.ts` (the mode, the C++ option texts), `blocks/css.ts`
+  (the picker's rules), `fields/values.ts` (C++ type names),
+  `fields/type.ts` (the picker: **tell the coordinator**, §6.2),
+  `mutators/index.ts` (exports `asUndoStep`), `index.ts` (exports).
 * `apps/desktop/src/editor/`: `gating/` (labels re-exported, the audit
-  table), `toolbox/contents.ts`, `plugin.ts`, `presets.ts`, `toolbox.css`,
+  table, `installLabelMode`), `toolbox/contents.ts`, `plugin.ts` (the mode,
+  the search results, the contents context for search and fixes),
+  `landing.ts` (`noteCreatedFromItem`), `reshape.ts` (`giveStartValue`),
   `sync/session.ts` (`relabel`), `EditorWorkspace.tsx` (the mode, Quick
-  Insert's mount), `keyboard/shortcuts.ts` (`Ctrl+Space`, `Ctrl+F`),
-  `menus/` (context-menu items).
+  Insert's and toolbox search's mount). The shortcuts and menu items are
+  registered by the new plugins themselves, not in `keyboard/` or
+  `menus/`.
 * `apps/desktop/src/panels/problems/` (the *Details* actions),
   `apps/desktop/src/features/build-run/` (friendly messages).
 * Outside the listed paths, additive: `apps/desktop/src/app/panels.tsx`
@@ -486,6 +490,23 @@ of §2.1 are the values to write. `E0703` (06 §6.10) reads the same keys.
 | W4E-6 | The bug report's default | Nothing from the project unless ticked; quoted names and paths always replaced |
 | W4E-7 | The type picker's first view | *Common*, *My types*, *Collections*; a search box focused |
 
-## 11. Status
+## 11. Coordination with W3
+
+The rows of `w3-modules.md` §3.3 (on `ccr-01f82d9b-v70u20`, `42a5f16`) that touch this branch's
+paths (asked for on 2026-10-28; the answer is the record). Each says what
+this branch changed there, so W3's packages build on it.
+
+| # | Path | Answer | Notes |
+| --- | --- | --- | --- |
+| 1 | `apps/desktop/src/editor/modules/` | **Agree** | This branch does not change the module strip. |
+| 2 | `editor/sync/session.ts`, `EditorWorkspace.tsx` | **Agree** | This branch adds `EditorSession.relabel()` (the shown module built again with events off, keeping IDs, undo, view and selection) and, in `attachEditor`, `installLabelMode` before the session and the Quick Insert and toolbox search mounts in the canvas portal. The module operations sit beside them; a module switch or reload needs nothing of `relabel`, which reads the shown module only. |
+| 3 | `blockly-ext` `blocks/layout.ts`, `register.ts`, `services.ts` | **Agree**, with one request | `blockLayout(def, parts)` now takes the label parts (Friendly or C++), and `blockDefinition` caches one layout per label mode. Showing `SHARED` must key that cache by the label mode **and** `multiModule()`. For "every definition block laid out again" please use `EditorSession.relabel()` (call it when the module count crosses 1 and 2, as `installLabelMode` calls it on a label change), not a second rebuild path; the toolbox follows through `modeKey`, so put `multiModule` in the toolbox's `dynamicContentsKey` too. |
+| 4 | `editor/sync/workspaceToBdm.ts` | **Agree** | Not changed here. |
+| 5 | `editor/toolbox/contents.ts` | **Agree** | `functionsContents` now reads the editor's mode (`contextMode`) and leaves out entries the gate refuses; keep that, and add the shared functions after the module's own. The search (`editor/search/`) reads `categoryContents`, so the shared calls are found by Quick Insert and toolbox search with no further change; their titles come from the symbols' names. |
+| 6 | `fields/type.ts`, or the type picker | **Agree**: in the picker | The picker takes its list from `SymbolProvider.userTypes()` (the `symbols.ts` provider; `B2cTypeField.pickerContext()`), and `PickerUserType` already carries `module`. Add the headings in `fields/type-picker/model.ts` (a group per other module, e.g. `{ kind: 'type', group: 'mine', module }`, ordered after the shown module's types) and `picker.ts` (one heading per group); `type.ts` needs no change beyond what this branch made (`showEditor_`, `pickerContext`). |
+| 7 | `features/project-settings/` | **Agree** | Not changed here. |
+| 8 | `blocks/namespace.ts`, `fields/namespace.ts`, `checker/` | **Agree**, with one request | New blocks must get a gating decision: the test in `editor/gating/gating.test.ts` fails for a catalog block, dropdown option or type that is neither in `BASIC_BLOCKS` / `BASIC_OPTIONS` / `BASIC_TYPES` nor a row of `REQUIREMENTS` (`editor/gating/table.ts`). Please add *namespace* and *use namespace* there (recommendation: basic, or advanced if 03 §3.7.1 makes them so) and, optionally, their words to `editor/search/synonyms.ts` (`namespace`, `using`). |
+
+## 12. Status
 
 In progress.
