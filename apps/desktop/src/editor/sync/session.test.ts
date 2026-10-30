@@ -682,6 +682,22 @@ describe('relabel (w4-editor-tools.md §2.1)', () => {
     expect(workspace.getBlockById('a')?.getCommentText()).toBeNull();
   });
 
+  it('leaves a clean project clean: a label change has nothing to save', async () => {
+    const workspace = renderedWorkspace();
+    const session = start(listDocument(), workspace);
+    // A rendered canvas settles its loose blocks first; then the project is saved as it is.
+    await vi.advanceTimersByTimeAsync(300);
+    const { actions, project } = useAppStore.getState();
+    actions.updateProject({ savedTextHash: project?.textHash ?? null, dirty: false });
+    for (const mode of ['cpp', 'friendly'] as const) {
+      setBlockLabelMode(mode);
+      session.relabel();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(session.syncPending).toBe(false);
+      expect(useAppStore.getState().project?.dirty, mode).toBe(false);
+    }
+  });
+
   it('does nothing without a project', () => {
     const session = start(twoModules());
     useAppStore.getState().actions.setProject(null);

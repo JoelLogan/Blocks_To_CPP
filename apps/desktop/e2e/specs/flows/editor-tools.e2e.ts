@@ -28,7 +28,7 @@ import {
   varGet,
 } from '../../support/bdm';
 import { currentDocument, fieldOf, showProblems, waitForDelivery } from '../../support/editor';
-import { clickMiddle, textContent } from '../../support/ui';
+import { clickMiddle, testIdText, textContent } from '../../support/ui';
 import { waitFor } from '../../support/wait';
 import { clickBlock } from './lib/editor';
 import { type FlowApp, startFlow } from './lib/launch';
@@ -201,6 +201,12 @@ describe('the editor tools', () => {
       return group === null ? '' : textContent(app.driver, group);
     };
     expect(await label()).toContain('when program starts');
+    /** Whether the title shows unsaved changes (its `•`). */
+    const unsaved = async () => (await testIdText(app.driver, 'project-name')).includes('•');
+    await waitFor(async () => !(await unsaved()), {
+      timeout: UI_TIMEOUT_MS,
+      message: 'the new project to have no unsaved changes',
+    });
     for (const [mode, expected] of [
       ['cpp', 'int main('],
       ['friendly', 'when program starts'],
@@ -219,6 +225,8 @@ describe('the editor tools', () => {
       });
     }
     // A label change is no edit: the project has nothing to save.
+    await waitForDelivery(app.driver);
+    expect(await unsaved()).toBe(false);
     const doc = await currentDocument(app);
     expect(onlyTopBlock(doc, 'program.main').id).toBe(main);
   });
