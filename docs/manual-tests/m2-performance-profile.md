@@ -187,7 +187,7 @@ Monitor 0: 1920x1080 at 0,0, work area 1920x1080, scale 1
 Tauri centres the window (`"center": true` in `tauri.conf.json`) and, once
 W3-3 lands, fits it to the screen (`preventOverflow`) only on the monitor
 GTK calls primary: tao asks `gdk_display_get_primary_monitor` for it
-(tao 0.37.1 `src/platform_impl/linux/event_loop.rs:88-93`, used by
+(tao 0.37.2 `src/platform_impl/linux/event_loop.rs:88-93`, used by
 tauri-runtime-wry 2.12.1 `src/lib.rs:4448-4453`). GTK 3.24's Wayland backend
 does not implement that call, so *Primary monitor: none* is expected under
 Wayland; then Tauri neither centres nor fits the window.

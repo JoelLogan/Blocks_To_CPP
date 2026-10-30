@@ -69,8 +69,8 @@ to the Cargo workspace.
 
 | Crate                                        | Version (released)   | Licence           | Why                                                                                                                                                                                                                                                                                                                                                                                 |
 | -------------------------------------------- | -------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tauri`                                      | 2.12.4 (2026-10-14)  | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../adr/0001-desktop-shell-tauri.md))                                                                                                                                                                                                                                                                                                                  |
-| `tauri-build` (build)                        | 2.7.3 (2026-10-14)   | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources. 2.7.3 replaced its own module that links the C runtime statically into Windows MSVC builds with the `static_vcruntime` crate 3.0.0 (2025-11-25; MIT OR Apache-2.0 OR Zlib, no dependencies, build time only)                                                                                                          |
+| `tauri`                                      | 2.12.5 (2026-10-21)  | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../adr/0001-desktop-shell-tauri.md))                                                                                                                                                                                                                                                                                                                  |
+| `tauri-build` (build)                        | 2.7.4 (2026-10-21)   | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources. 2.7.3 replaced its own module that links the C runtime statically into Windows MSVC builds with the `static_vcruntime` crate 3.0.0 (2025-11-25; MIT OR Apache-2.0 OR Zlib, no dependencies, build time only)                                                                                                          |
 | `tauri-plugin-dialog`                        | 2.8.3 (2026-10-14)   | Apache-2.0 OR MIT | Native open, save and message dialogs, from Rust only (no JavaScript permission). Default features off except `gtk3`: rfd 0.16.1's GTK 3 backend on Linux, no XDG portal and no D-Bus. Brings `tauri-plugin-fs` 2.7.1 (for its `FilePath` type; the fs plugin is not registered)                                                                                                    |
 | `rfd` (Windows only)                         | 0.17.2 (2026-01-12)  | MIT               | The Windows trust dialog with _Stay in Restricted Mode_ as its first and default button (08 §8.3.1). No default features (no XDG portal or Wayland code), `common-controls-v6`. A newer release than the dialog plugin's 0.16.1, so Windows builds compile both (see the notes); its `windows-sys` 0.61.2 is already in the lockfile                                                |
 | `tracing-subscriber`                         | 0.3.23 (2026-03-13)  | MIT               | The span registry under the app's own JSON-lines log layer. Features `registry` and `std` only: no `fmt`, ANSI, `log` bridge or `EnvFilter`                                                                                                                                                                                                                                         |
@@ -224,15 +224,15 @@ build needs.
   `windows-sys` 0.60 on Windows.
 - Cargo has no minimum release age, so `Cargo.lock` holds Tauri's own crates and the crates it
   brought in at their newest versions that were at least 7 days old. Keep it that way when
-  updating them, with `cargo update -p <crate> --precise <version>`. On 2026-10-24 that was
-  `tauri` 2.12.4 with `tauri-build`, `tauri-codegen` and `tauri-macros` 2.7.3, `tauri-runtime` and
-  `tauri-runtime-wry` 2.12.2, `tauri-utils` 2.10.2, `tauri-plugin` 2.7.2 (the plugins' build
-  helper, which only moved to that `tauri-utils`) and `tauri-plugin-fs` 2.7.1 (all 2026-10-14):
-  `tauri` 2.12.5 with the 2.7.4 crates and `tauri-runtime-wry` 2.12.3 came out on 2026-10-21, and
-  `wry` 0.57.1 and `tao` 0.37.2 on 2026-10-23, so `wry` 0.57.0 and `tao` 0.37.1 stay. A plain
-  `cargo update -p tauri --precise 2.12.4` also takes `tauri-codegen` and `tauri-macros` 2.7.4 and
-  `tauri-runtime-wry` 2.12.3, which are set back with `--precise` too; `tauri` 2.12.4 needs
-  `swift-rs` 1.0.9 (2026-10-10, macOS only). Other crates are updated the same way: `tokio` is on
+  updating them, with `cargo update -p <crate> --precise <version>`. On 2026-10-30 that was
+  `tauri` 2.12.5 with `tauri-build`, `tauri-codegen` and `tauri-macros` 2.7.4 and
+  `tauri-runtime-wry` 2.12.3 (all 2026-10-21); `tauri-runtime` 2.12.2, `tauri-utils` 2.10.2,
+  `tauri-plugin` 2.7.2 (the plugins' build helper) and `tauri-plugin-fs` 2.7.1 (2026-10-14) are
+  unchanged, as no newer stable release exists. `wry` 0.57.1 and `tao` 0.37.2 (2026-10-23) are
+  taken by hand, since `tauri-runtime-wry` asks only for 0.57 and 0.37. `tauri-codegen` 2.7.4
+  brings `ico` 0.6.0 (2026-10-10, MIT), and the second copies of `png` (0.17) and `base64` (0.22)
+  are gone. `tauri-plugin-dialog` stays 2.8.3: 2.8.4 (2026-10-28) is too new, and it moves to
+  `rfd` 0.17 (see the `rfd` note above). Other crates are updated the same way: `tokio` is on
   1.53.3 (2026-10-13), which fixes RUSTSEC-2026-0386, because 1.54.0 was yanked and 1.54.1 came
   out on 2026-10-21. A `--precise` update can also move unrelated crates between the `windows-sys`
   (or `syn`) versions already in the lockfile, so read the `Cargo.lock` diff and keep only the

@@ -645,7 +645,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   clean). It brings `markdown-it` 15.0.3 and `smol-toml` 1.9.1 itself, so
   their overrides are gone; a new override moves `re2js` (pinned at 2.8.6 by
   markdownlint 0.42) to 2.8.8 for GHSA-gg6h-894w-4m9c; the `katex` override
-  stays (the math extension still asks for 0.16).
+  stays (the math extension still asks for 0.16). Tauri 2.12.5 (crate; its
+  fixes are in the NSIS installer), `wry` 0.57.1 and `tao` 0.37.2 (Windows
+  scripts now run through WebView2's ExecuteScriptWithResult; Linux and
+  Windows window fixes).
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
