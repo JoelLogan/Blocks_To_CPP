@@ -1352,3 +1352,49 @@ corrected in place and the correction is recorded here with its reason.
 | A reference's `Spelling` is kept in `Program::spellings`, keyed by the referring block and the symbol, not as a field of each SAST reference | a field on every reference node would change every constructor and the SAST snapshots; a table beside the SAST, like the layout, is not serialised and is empty until N2 fills it | §2.12 (P0) |
 | `Layout::flat` gives `module<N>` also to a module whose stem an earlier module already has, and code generation names files only by `ModuleFiles::stem` | `source_path`'s own de-duplication went with it (§3.1); the loader refuses such names, but code generation must never write two files with one name | §3.1 (P0) |
 | `emit::header_file` prints a shared enum's definition only (its `operator<<` and `b2c::to_text` are T's, §1.7) and a shared global as `extern` or `inline constexpr`; a `.cpp` leaves out what its header declares, but still defines a shared global that is not `constexpr` | what P0 prints for each kind `header_order` can list; F and T refine it | §3.1 (P0) |
+
+#### From the W4 and W5 merges
+
+W4's branch (`w4-editor-tools.md` §11) and W5's second part
+(`w5-performance.md` §10) merged before R1. What they ask of W3, and the
+package that takes each:
+
+* **E** (W4 §11 row 3): `blockDefinition` in `blocks/register.ts` now
+  caches one layout per label mode; showing `SHARED` keys that cache by
+  the label mode **and** `services.multiModule()`. When the module count
+  crosses 1 and 2, the definition blocks are laid out again through
+  `EditorSession.relabel()` (as `installLabelMode` does on a label
+  change), not a second rebuild path, and `multiModule` goes into the
+  toolbox's `dynamicContentsKey` beside W4's `modeKey`. T does the same
+  for struct, enum and global in R2.
+* **N1** (W4 §11 row 8): `program.namespace` and `program.use_namespace`
+  each get a gating decision in `editor/gating/table.ts` (`BASIC_BLOCKS`,
+  W4's recommendation, or a `REQUIREMENTS` row if 03 §3.7.1 makes them
+  advanced; the audit test fails for a block with neither, and for a new
+  checkbox not in `BASIC_FIELDS`), and their words (`namespace`,
+  `using`) in `editor/search/synonyms.ts`. S does the same for its
+  blocks.
+* **E** (W5 §10.3): `AnalysisState.scope: ScopeIndex | null`, set by the
+  preview pipeline; `analysisScope` in `services/symbols.ts` reads it and
+  falls back to the core when it is `null`, and the core host's view of
+  the index goes.
+* **E** (W5 §10.4): the hold's one line, `isBusy: () =>
+  isDragging(this.workspace)` in the pipeline options of
+  `EditorSession`'s constructor, beside E's module operations in
+  `sync/session.ts`.
+* **F** (W5 §10.6 row 5): if F makes other modules' shared symbols
+  visible through `ScopeIndex::visible`'s function lists or a list per
+  module, `ScopeIndexParts` (`query.rs`, appended after `impl Analysis`)
+  gains one method, `crates/b2c-core-wasm/src/scope_index.rs` one key and
+  the package's lookup one step; the lookup tests compare with `scope_at`
+  for every block. The integration step's test (§5.3) checks the worker's
+  index includes them.
+* **The integration step** (§5.3):
+  * W5 §10.1, lowering parked stacks (M3-4): W5's exact proposal for
+    `lower/mod.rs`, `scope.rs` and `query.rs`, after N2, the last
+    package to edit those functions.
+  * W5 §10.2, the clipboard arguments of worker.md §5: only if the
+    `copy-1000`, `paste-1000` or `duplicate-1000` benchmarks are over
+    100 ms with the worker on; with the `clipboard.rs` row of §3.3.
+  * W5 §10.5: `pnpm test:tools` (`node --test tools/`) in a CI frontend
+    job, B's `ci.yml` having merged in R0.
