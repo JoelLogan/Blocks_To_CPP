@@ -82,8 +82,6 @@ commit with its checks, no decision needed):
 
 | From       | Update                                             | Then                                                                                                                                                                                                                         |
 | ---------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-10-28 | The CodeQL action 4.39.1                           | With the E2E suites on both systems                                                                                                                                                                                          |
-| 2026-10-30 | `zizmor-action` 0.8.0                              | Dependabot opens these; apply them with the next batch                                                                                                                                                                       |
 | 2026-11-04 | `tauri-plugin-dialog` 2.8.4 (moves to `rfd` ^0.17) | Not as it is: `rfd` 0.17.2 hands GTK the text as a format (TM-M2-9), and the `rfd` tripwire in `dialogs.rs` fails. Take it with an `rfd` 0.17 release that passes the text as an argument, or with the `%` doubling restored |
 
 **Nightly follow-up** (no decision needed): done in `fe2a57b`. The flow

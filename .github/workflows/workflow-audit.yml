@@ -4,8 +4,8 @@
 #   published advisories against the actions we use (for example a pinned action
 #   version that later turns out to be vulnerable).
 # The zizmor version is pinned below. When Dependabot updates zizmor-action, bump
-# `version:` to the newest version the action has a lock file for (support/locks/,
-# where zizmor-latest.txt names it), once that release is at least 7 days old.
+# `version:` to the newest stable version the action has a lock file for (the one
+# support/locks/zizmor-latest.txt names, never a prerelease), once it is at least 7 days old.
 name: Workflow audit
 
 on:
@@ -42,7 +42,7 @@ jobs:
       - name: Run zizmor
         # The action downloads the zizmor wheel for the requested version from PyPI with
         # pip --require-hashes, against the hashes in its own support/locks/ (python3 on the runner).
-        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
         with:
           version: 1.31.1
           persona: auditor
