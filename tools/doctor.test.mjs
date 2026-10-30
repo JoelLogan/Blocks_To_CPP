@@ -1,5 +1,6 @@
-// Tests of tools/doctor.mjs (`pnpm doctor`), with `node --test tools/`: the pins read from the
-// repository, the version checks, and a whole report on a made-up computer.
+// Tests of tools/doctor.mjs (`pnpm doctor`), with `pnpm test:tools`: the pins read from the
+// repository, the version checks, and a whole report on a made-up computer. The script names the
+// files with a pattern Node expands itself: Node 22 takes `node --test tools/` for a module.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

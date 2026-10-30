@@ -1396,5 +1396,5 @@ package that takes each:
   * W5 §10.2, the clipboard arguments of worker.md §5: only if the
     `copy-1000`, `paste-1000` or `duplicate-1000` benchmarks are over
     100 ms with the worker on; with the `clipboard.rs` row of §3.3.
-  * W5 §10.5: `pnpm test:tools` (`node --test tools/`) in a CI frontend
+  * W5 §10.5: `pnpm test:tools` (`node --test "tools/*.test.mjs"`) in a CI frontend
     job, B's `ci.yml` having merged in R0.

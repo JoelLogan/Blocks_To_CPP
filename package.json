@@ -14,7 +14,7 @@
     "desktop:dev": "pnpm --filter @blocks2cpp/desktop run tauri dev",
     "desktop:build": "pnpm --filter @blocks2cpp/desktop run tauri build",
     "doctor": "node tools/doctor.mjs",
-    "test:tools": "node --test tools/",
+    "test:tools": "node --test \"tools/*.test.mjs\"",
     "desktop:check": "pnpm -r --if-present run typecheck && pnpm -r --if-present run lint && pnpm -r --if-present run format:check",
     "test:web": "pnpm -r --if-present run test"
   },
