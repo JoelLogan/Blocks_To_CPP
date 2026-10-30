@@ -415,6 +415,7 @@ impl Analysis {
 
     /// The records of these symbols (each once, unknown ones skipped), sorted.
     fn infos(&self, ids: Vec<&SymbolId>) -> Vec<SymbolInfo> {
+        let shared = shared_symbols(&self.program);
         let mut seen = BTreeSet::new();
         let mut infos: Vec<SymbolInfo> = ids
             .into_iter()
@@ -426,12 +427,33 @@ impl Analysis {
                     .names
                     .get(id)
                     .map_or_else(|| symbol.name.as_str(), String::as_str);
-                SymbolInfo::new(id.clone(), name, symbol)
+                let mut info = SymbolInfo::new(id.clone(), name, symbol)?;
+                info.shared = shared.contains(id);
+                Some(info)
             })
             .collect();
         infos.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         infos
     }
+}
+
+/// The symbols of the program's shared definitions (ADR-0019): the
+/// functions, structs, enums and globals whose items are shared, which only
+/// a project of several modules has.
+fn shared_symbols(program: &Program) -> BTreeSet<&SymbolId> {
+    program
+        .modules
+        .iter()
+        .flat_map(|module| &module.items)
+        .filter(|item| item.shared)
+        .filter_map(|item| match &item.kind {
+            ItemKind::Function(def) => Some(&def.symbol),
+            ItemKind::Struct(def) => Some(&def.symbol),
+            ItemKind::Enum(def) => Some(&def.symbol),
+            ItemKind::Global(def) => Some(&def.symbol),
+            ItemKind::Main(_) | ItemKind::UseHeader { .. } => None,
+        })
+        .collect()
 }
 
 /// Whether a record is a field or an enumerator: a member of a user type.

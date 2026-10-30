@@ -238,6 +238,51 @@ Codes by area:
   block and create it again."
 * **How to fix:** delete the reported block and create it again.
 
+## B2C-E0213 Name of a shared definition
+
+* **Severity:** error
+* **Meaning:** in a project of several modules, a definition that is not
+  shared has the name of a shared definition of the same namespace, in its
+  own module or in another one. Once the module's C++ file includes the
+  other header, both definitions are found by that name and C++ cannot tell
+  which one a use means, so the name is refused in every module, whatever
+  the file includes.
+* **Example:** module `convert` shares `scale`, and module `main` has its
+  own `scale` that it does not share.
+* **How to fix:** rename one of the two, or share the module's own one and
+  use it instead.
+
+## B2C-E0214 Shared definition needs one that is not shared
+
+* **Severity:** error
+* **Meaning:** a shared definition goes into its module's header, and what
+  the header shows of it (a function's inputs, result and default values; a
+  struct's fields and their default values; a constant's or a global's type)
+  names a definition of the module that is not shared. Other modules could
+  not use it.
+* **Example:** a shared function `area` with an input of type `Box`, where
+  the struct `Box` is not shared.
+* **How to fix:** share the definition it names too, or stop sharing the
+  first one.
+
+## B2C-E0215 Name of the standard library
+
+* **Severity:** error
+* **Meaning:** with a `use namespace` block or *Textbook style*, a struct,
+  enum or namespace of the program has a name that a used namespace also
+  declares as a type or a namespace (`list`, `pair`, `chrono`), so C++ would
+  find the standard one where the program means its own. Only the names of
+  the project's C++ standard count.
+* **Example:** a struct `list` with *Textbook style* on.
+* **How to fix:** rename it, for example with a capital letter (`List`).
+
+## B2C-E0219 Namespaces nested too deeply
+
+* **Severity:** error
+* **Meaning:** *namespace* blocks are nested more than 14 deep.
+* **How to fix:** move some of the definitions into a namespace that is
+  nested less deeply.
+
 ## B2C-E0220 Invalid name
 
 * **Severity:** error
@@ -253,6 +298,19 @@ Codes by area:
 * **Example:** `create [int] [2fast]`, or `define [abs]`.
 * **Message:** "`int` can't be used as a name: `int` is a C++ keyword."
 * **How to fix:** choose another name.
+
+## B2C-E0221 Module name kept for Blocks2Cpp
+
+* **Severity:** error
+* **Meaning:** a module's name starts with `b2c` (in any case), which is
+  kept for the files Blocks2Cpp writes itself, such as `b2c_support.hpp`.
+  The project still opens, so the module can be renamed, but it does not
+  build, run or export. Until then its file is shown as `module<N>.cpp`,
+  with `N` the module's place in the project.
+* **Example:** a module called `b2c_tools`.
+* **Message:** "Module names that start with `b2c` are kept for files that
+  Blocks2Cpp writes. Rename the module."
+* **How to fix:** rename the module.
 
 ## B2C-E0301 Wrong type of value
 
@@ -680,6 +738,31 @@ Codes by area:
   included. Use a value, a constant or another function instead."
 * **How to fix:** give one of them a starting value that does not use the
   other, and set it later in `when program starts`.
+
+## B2C-E0422 Modules that need each other's headers
+
+* **Severity:** error
+* **Meaning:** the headers of two or more modules would have to include
+  each other, which C++ cannot do: what one module shares needs something
+  another module shares, and the other way round, though no definition
+  needs itself.
+* **Example:** module `shapes` shares a struct holding a `Palette` of module
+  `colours`, and `colours` shares a constant whose type is an enum of
+  `shapes`.
+* **How to fix:** move one of the definitions into the other module.
+
+## B2C-E0423 Global set from another module's global
+
+* **Severity:** error
+* **Meaning:** a global's starting value uses a global of another module,
+  directly or through the functions it calls. C++ sets the globals of
+  different modules in an order it does not say, so the other global may
+  not have its value yet. A constant whose value is fixed when the program
+  is built is fine.
+* **Example:** `global [std::string] [greeting]` set from `name` of module
+  `people`.
+* **How to fix:** set the global at the start of `when program starts`, or
+  make the other global a constant with a fixed value.
 
 ## B2C-E0424 Not fixed when the program is built
 
@@ -1130,3 +1213,11 @@ Codes by area:
   or 'down to') decides whether the loop counts up or down. With this step
   the loop would never finish or never start."
 * **How to fix:** use a positive step (`step (1)`).
+
+## B2C-I0523 Namespace already in use
+
+* **Severity:** info
+* **Meaning:** a `use namespace` block names a namespace that is already in
+  use at that place, through another such block or *Textbook style*.
+* **How to fix:** remove the block, or leave it: it changes nothing.
+

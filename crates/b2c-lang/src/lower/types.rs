@@ -152,14 +152,23 @@ impl Lowerer<'_> {
                 printable: self.checkbox(block, "PRINTABLE", false),
             }
         };
+        let shared = self.shared_tick(block);
         let symbol = Symbol {
             name: ident,
             kind,
             ty: Type::Named(decl.sym.clone()),
             origin: self.origin(&block.id, field("NAME")),
         };
-        self.insert_symbol(&decl.sym, &decl.name, symbol, name_loc)
-            .then(|| decl.sym.clone())
+        if !self.insert_symbol(&decl.sym, &decl.name, symbol, name_loc) {
+            return None;
+        }
+        if let Some(types) = self.module_types.get_mut(self.module_index) {
+            types.entry(decl.name.clone()).or_insert_with(|| decl.sym.clone());
+        }
+        if shared {
+            self.share(block, &decl.name, &decl.sym);
+        }
+        Some(decl.sym.clone())
     }
 
     /// Declares a struct's fields, in row order: each a valid name, unique in

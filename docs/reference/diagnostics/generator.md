@@ -37,3 +37,14 @@ Blocks2Cpp cannot build yet.*
 
 **How to fix:** remove the libraries from the project's build settings, or
 use a newer version of Blocks2Cpp.
+
+## B2C-E0703: part of the standard library newer than the project's C++
+
+**Severity:** error · **Source:** analyser
+
+**What it means:** the program uses a namespace of the standard library that
+the project's C++ standard does not have yet: `std::ranges`, `std::views` and
+`std::numbers` arrive with C++20.
+
+**How to fix:** choose C++20 or newer in the project settings, or do without
+that namespace.

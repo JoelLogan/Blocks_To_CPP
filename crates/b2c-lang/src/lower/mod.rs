@@ -104,10 +104,9 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
     lowerer
         .index
         .finish(trail, document.modules.len(), functions.chain(user_types));
-    // One `.cpp` per module until shared definitions arrive (ADR-0019), its
-    // declarations in the declaration graph's order (modules.md §4).
-    let mut layout = Layout::flat(&modules, &lowerer.symbols);
-    crate::order::order_declarations(&modules, &lowerer.symbols, &mut layout, &mut lowerer.diags);
+    // Each module's files, what they include and the order of their
+    // declarations (ADR-0019, modules.md §4, w3-modules.md §1.7).
+    let layout = crate::layout::compute_layout(&modules, &lowerer.symbols, &mut lowerer.diags);
     Analysis {
         program: Program {
             standard,
@@ -230,6 +229,19 @@ struct Lowerer<'d> {
     /// The structs and enums of the program, by name (the first one for
     /// duplicates), known before any field, parameter or body is lowered.
     user_types: BTreeMap<String, SymbolId>,
+    /// The structs and enums of each module, by name (the first one for
+    /// duplicates): with `module_functions` and `module_globals`, what a
+    /// module sees of its own definitions (w3-modules.md §2.1).
+    module_types: Vec<BTreeMap<String, SymbolId>>,
+    /// The definition blocks ticked *share with other modules* in a project
+    /// of several modules (ADR-0019): their items are shared.
+    shared_blocks: BTreeSet<BlockId>,
+    /// The program's shared definitions by namespace (`None` for the global
+    /// namespace, the only one until namespaces arrive), then by name, in
+    /// declaration order: what every module sees of the others
+    /// (w3-modules.md §2.1). Packages F and T add the lookups that fall back
+    /// to it when a module has no definition of a name.
+    shared: BTreeMap<Option<SymbolId>, BTreeMap<String, Vec<SymbolId>>>,
     /// The globals' items, lowered before any body so that a constant's
     /// value is known wherever it is used, by defining block.
     global_items: BTreeMap<BlockId, Item>,
@@ -401,6 +413,9 @@ impl<'d> Lowerer<'d> {
             module_globals: vec![BTreeMap::new(); document.modules.len()],
             globals_loaded: None,
             user_types: BTreeMap::new(),
+            module_types: vec![BTreeMap::new(); document.modules.len()],
+            shared_blocks: BTreeSet::new(),
+            shared: BTreeMap::new(),
             global_items: BTreeMap::new(),
             functions: BTreeMap::new(),
             symbols: SymbolTable::default(),
@@ -487,7 +502,8 @@ impl<'d> Lowerer<'d> {
                         (None, false)
                     }
                 };
-                if let Some(item) = item {
+                if let Some(mut item) = item {
+                    item.shared = self.shared_blocks.contains(&block.id);
                     // A global was checked with the others (`lower_globals`).
                     let checked = matches!(item.kind, ItemKind::Global(_));
                     if !checked && self.check_nesting(&item) {
@@ -776,7 +792,11 @@ impl<'d> Lowerer<'d> {
             ty: ret.clone(),
             origin: self.origin(&block.id, field("NAME")),
         };
+        let shared = self.shared_tick(block);
         if self.insert_symbol(&decl.sym, &decl.name, symbol, name_loc) {
+            if shared {
+                self.share(block, &decl.name, &decl.sym);
+            }
             let sig = FuncSig {
                 name: decl.name.clone(),
                 module: self.module_index,
@@ -1512,6 +1532,47 @@ impl<'d> Lowerer<'d> {
         }
     }
 
+    /// Whether a definition block shares its definition with other modules
+    /// (ADR-0019): its *share with other modules* tick, in a project of
+    /// several modules. A single-module project shares nothing whatever the
+    /// tick says (modules.md §2), so there the field is read for its damage
+    /// only.
+    fn shared_tick(&mut self, block: &Block) -> bool {
+        let ticked = self.checkbox(block, "SHARED", false);
+        ticked && self.document.modules.len() > 1
+    }
+
+    /// Records a declared definition as shared: its block's item is shared,
+    /// and other modules find it by name in the table of its namespace (the
+    /// global namespace until namespaces arrive).
+    fn share(&mut self, block: &Block, name: &str, sym: &SymbolId) {
+        self.shared_blocks.insert(block.id.clone());
+        self.shared
+            .entry(None)
+            .or_default()
+            .entry(name.to_owned())
+            .or_default()
+            .push(sym.clone());
+    }
+
+    /// The shared definitions called `name` in a namespace (`None` for the
+    /// global namespace), in declaration order: what a module that has no
+    /// definition of that name sees (w3-modules.md §2.1).
+    #[cfg_attr(not(test), allow(dead_code, reason = "looked up by W3's packages F and T"))]
+    fn shared_definitions(&self, namespace: Option<&SymbolId>, name: &str) -> &[SymbolId] {
+        self.shared
+            .get(&namespace.cloned())
+            .and_then(|names| names.get(name))
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// The struct or enum called `name` that the module with this index
+    /// defines (the first one for duplicates).
+    #[cfg_attr(not(test), allow(dead_code, reason = "looked up by W3's package T"))]
+    fn module_type(&self, module: usize, name: &str) -> Option<&SymbolId> {
+        self.module_types.get(module)?.get(name)
+    }
+
     /// A checkbox field; `default` when absent.
     fn checkbox(&mut self, block: &Block, name: &str, default: bool) -> bool {
         access::bool_field(block, name, default).unwrap_or_else(|_| {
@@ -1646,6 +1707,109 @@ mod context_tests {
         ];
         assert_eq!(reported(&lowerer), expected);
         assert!(lowerer.breakable.is_empty());
+    }
+
+    /// A document of these modules, each with these top-level blocks.
+    fn modules(modules: &[(&str, serde_json::Value)]) -> b2c_model::Document {
+        let modules: Vec<serde_json::Value> = modules
+            .iter()
+            .enumerate()
+            .map(|(index, (name, blocks))| {
+                serde_json::json!({"id": format!("mod_{index}"), "name": name, "workspace": {"blocks": blocks}})
+            })
+            .collect();
+        serde_json::from_value(serde_json::json!({
+            "format": "blocks2cpp/project",
+            "formatVersion": 1,
+            "generator": {"app": "0.1.0", "catalog": "1.0.0"},
+            "project": {"id": "prj_test", "name": "Test", "language": {"standard": "c++20"}},
+            "modules": modules
+        }))
+        .expect("document")
+    }
+
+    /// A definition block of `block_type` declaring `name`, ticked to share
+    /// or not.
+    fn definition(block_type: &str, name: &str, shared: bool) -> serde_json::Value {
+        let mut block = serde_json::json!({
+            "id": format!("b_{name}"), "type": block_type, "v": 1,
+            "fields": {"NAME": {"sym": format!("sym_{name}"), "name": name}, "SHARED": shared}
+        });
+        match block_type {
+            "func.define" => block["extra"] = serde_json::json!({"params": []}),
+            "type.struct" => block["extra"] = serde_json::json!({"fields": []}),
+            "var.global" => {
+                block["fields"]["KIND"] = serde_json::json!("variable");
+                block["fields"]["TYPE"] = serde_json::json!("int");
+            }
+            _ => {}
+        }
+        block
+    }
+
+    #[test]
+    fn shared_definitions_are_found_by_name_in_their_namespace() {
+        let document = modules(&[
+            (
+                "main",
+                serde_json::json!([
+                    {"id": "b_main", "type": "program.main", "v": 1},
+                    definition("func.define", "area", true),
+                    definition("func.define", "helper", false),
+                    definition("type.struct", "Point", true),
+                ]),
+            ),
+            (
+                "utils",
+                serde_json::json!([
+                    definition("var.global", "count", true),
+                    definition("type.struct", "Box", false),
+                ]),
+            ),
+        ]);
+        let sigs = SigTable::empty();
+        let unchecked = BTreeSet::new();
+        let mut lowerer = Lowerer::new(&document, ModuleId::new("mod_0").expect("id"), &sigs, &unchecked);
+        let items = lowerer.program();
+        let sym = |name: &str| SymbolId::new(&format!("sym_{name}")).expect("id");
+        assert_eq!(lowerer.shared_definitions(None, "area"), [sym("area")]);
+        assert_eq!(lowerer.shared_definitions(None, "Point"), [sym("Point")]);
+        assert_eq!(lowerer.shared_definitions(None, "count"), [sym("count")]);
+        assert!(lowerer.shared_definitions(None, "helper").is_empty());
+        assert!(lowerer.shared_definitions(None, "Box").is_empty());
+        assert!(lowerer.shared_definitions(Some(&sym("geo")), "area").is_empty());
+        // Each module's own types, shared or not.
+        assert_eq!(lowerer.module_type(0, "Point"), Some(&sym("Point")));
+        assert_eq!(lowerer.module_type(1, "Box"), Some(&sym("Box")));
+        assert_eq!(lowerer.module_type(0, "Box"), None);
+        assert_eq!(lowerer.module_type(7, "Box"), None);
+        let shared: Vec<(usize, bool)> = items
+            .iter()
+            .enumerate()
+            .flat_map(|(index, module)| module.items.iter().map(move |item| (index, item.shared)))
+            .collect();
+        assert_eq!(
+            shared,
+            [
+                (0, true),
+                (0, true),
+                (0, false),
+                (0, false),
+                (1, false),
+                (1, true)
+            ],
+            "items by block ID: b_Point, b_area, b_helper, b_main; b_Box, b_count"
+        );
+
+        // One module shares nothing, whatever the ticks say.
+        let document = modules(&[(
+            "main",
+            serde_json::json!([definition("func.define", "area", true)]),
+        )]);
+        let mut lowerer = Lowerer::new(&document, ModuleId::new("mod_0").expect("id"), &sigs, &unchecked);
+        let items = lowerer.program();
+        assert!(lowerer.shared.is_empty() && lowerer.shared_blocks.is_empty());
+        assert!(items[0].items.iter().all(|item| !item.shared));
     }
 
     #[test]

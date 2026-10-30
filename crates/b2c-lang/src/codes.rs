@@ -14,7 +14,9 @@ pub(crate) const OUT_OF_SCOPE: &str = "B2C-E0203";
 pub(crate) const UNAVAILABLE: &str = "B2C-E0204";
 /// A reference that C++ would resolve to another symbol with the same name.
 pub(crate) const NAME_HIDDEN: &str = "B2C-E0205";
-/// A function defined in another module.
+/// A reference to another module's definition that it does not share (W3:
+/// functions in package F, types, globals and constants in T; until then,
+/// any use of another module's definition).
 pub(crate) const OTHER_MODULE: &str = "B2C-E0206";
 /// A function used as a value, a variable called, or a function changed.
 pub(crate) const WRONG_KIND: &str = "B2C-E0207";
@@ -25,8 +27,27 @@ pub(crate) const DUPLICATE_NAME: &str = "B2C-E0210";
 pub(crate) const DUPLICATE_FUNCTION: &str = "B2C-E0211";
 /// Two declarations with the same symbol ID (a damaged file).
 pub(crate) const DUPLICATE_SYMBOL_ID: &str = "B2C-E0212";
+/// A non-shared name that is also a shared name of the same namespace, of
+/// any module (w3-modules.md §2.1 with W3M-D10's program-wide rule).
+#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's packages F, T and N"))]
+pub(crate) const SHARED_NAME_CLASH: &str = "B2C-E0213";
+/// A shared definition whose header part names a non-shared definition of
+/// its module (w3-modules.md §1.9).
+#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's packages F and T"))]
+pub(crate) const NOT_SHARED_IN_HEADER: &str = "B2C-E0214";
+/// A type or user namespace whose name a nominated namespace declares where
+/// it is referred to (`list`, `pair`, `chrono`; 06 §6.14.7).
+#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's package N"))]
+pub(crate) const NOMINATED_NAME: &str = "B2C-E0215";
+/// *namespace* blocks nested more deeply than `MAX_NAMESPACE_DEPTH`
+/// (w3-modules.md §2.10).
+#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's package N"))]
+pub(crate) const NAMESPACE_TOO_DEEP: &str = "B2C-E0219";
 /// A name that is not a valid C++ identifier for user code.
 pub(crate) const INVALID_NAME: &str = "B2C-E0220";
+/// A module whose name starts with `b2c`, which is kept for the files
+/// Blocks2Cpp writes (modules.md §2).
+pub(crate) const RESERVED_MODULE_NAME: &str = "B2C-E0221";
 
 // --- Types and conversions (E03xx) -----------------------------------------
 
@@ -87,6 +108,14 @@ pub(crate) const STRUCT_CYCLE: &str = "B2C-E0420";
 /// Any other cycle of the declaration graph, such as two globals set from
 /// each other (modules.md §4.3).
 pub(crate) const DECLARATION_CYCLE: &str = "B2C-E0421";
+/// Modules whose headers would include each other when no cycle of
+/// definitions explains it (w3-modules.md §2.2).
+#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's packages F and T"))]
+pub(crate) const HEADER_CYCLE: &str = "B2C-E0422";
+/// A global set before the program starts from another module's global
+/// that C++ may not have set yet (modules.md §4.4).
+#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's package T"))]
+pub(crate) const INIT_ACROSS_MODULES: &str = "B2C-E0423";
 /// A value that must be fixed when the program is built is not: a `case`
 /// label, or the condition of *check at compile time* (w2.md §2.9).
 pub(crate) const NOT_CONSTANT: &str = "B2C-E0424";
@@ -150,6 +179,18 @@ pub(crate) const BOOL_NUMBER: &str = "B2C-W0519";
 pub(crate) const COMMENT_DROPPED: &str = "B2C-W0521";
 /// A `for` loop step that is zero or negative.
 pub(crate) const BAD_STEP: &str = "B2C-W0522";
+/// A *use namespace* block that another source already covers
+/// (06 §6.14.3 rule 5).
+#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's package N"))]
+pub(crate) const NAMESPACE_IN_USE: &str = "B2C-I0523";
+
+// --- Generating C++ (E07xx), reported by the analyser ----------------------
+
+/// A C++20 standard sub-namespace (`std::ranges`, `std::views`,
+/// `std::numbers`) in a project for an older standard (06 §6.4, §6.14.3).
+/// Documented in `generator.md`, beside `B2C-E0701` and `B2C-E0702`.
+#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's package S"))]
+pub(crate) const NEEDS_CPP20: &str = "B2C-E0703";
 
 #[cfg(test)]
 pub(crate) const ALL: &[&str] = &[
@@ -163,7 +204,12 @@ pub(crate) const ALL: &[&str] = &[
     DUPLICATE_NAME,
     DUPLICATE_FUNCTION,
     DUPLICATE_SYMBOL_ID,
+    SHARED_NAME_CLASH,
+    NOT_SHARED_IN_HEADER,
+    NOMINATED_NAME,
+    NAMESPACE_TOO_DEEP,
     INVALID_NAME,
+    RESERVED_MODULE_NAME,
     CONVERSION,
     BAD_OPERANDS,
     TEXT_PLUS,
@@ -189,6 +235,8 @@ pub(crate) const ALL: &[&str] = &[
     MISSING_RETURN,
     STRUCT_CYCLE,
     DECLARATION_CYCLE,
+    HEADER_CYCLE,
+    INIT_ACROSS_MODULES,
     NOT_CONSTANT,
     DUPLICATE_CASE,
     DEFAULT_ORDER,
@@ -215,6 +263,8 @@ pub(crate) const ALL: &[&str] = &[
     BOOL_NUMBER,
     COMMENT_DROPPED,
     BAD_STEP,
+    NAMESPACE_IN_USE,
+    NEEDS_CPP20,
 ];
 
 #[cfg(test)]
@@ -224,6 +274,17 @@ mod tests {
     use super::ALL;
 
     const REFERENCE: &str = include_str!("../../../docs/reference/diagnostics/analyser.md");
+    /// The reference of the codes of generating C++ (`B2C-E07xx`), which the
+    /// analyser reports too when it can tell before generating
+    /// (`B2C-E0703`). Read when the test runs, so that the WebAssembly
+    /// core's build inputs need not list it.
+    fn generator_reference() -> String {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/reference/diagnostics/generator.md"
+        );
+        std::fs::read_to_string(path).expect("generator.md")
+    }
 
     #[test]
     fn codes_are_unique_and_well_formed() {
@@ -242,10 +303,16 @@ mod tests {
 
     #[test]
     fn every_code_is_documented() {
+        let generator = generator_reference();
         for code in ALL {
+            let documented = if code.starts_with("B2C-E07") {
+                generator.contains(&format!("## {code}:"))
+            } else {
+                REFERENCE.contains(&format!("## {code} "))
+            };
             assert!(
-                REFERENCE.contains(&format!("## {code}")),
-                "{code} is not documented in analyser.md"
+                documented,
+                "{code} is not documented in analyser.md or generator.md"
             );
         }
         // And nothing documented is unknown.

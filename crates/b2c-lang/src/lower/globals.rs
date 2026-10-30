@@ -89,8 +89,7 @@ impl<'d> Lowerer<'d> {
         let name_loc = self.loc(&block.id, field("NAME"));
         let is_const = self.choice(block, "KIND", false, &[("variable", false), ("constant", true)]);
         let ty = self.type_setting(block, "TYPE", "int", TypeUse::Variable);
-        // Read for its damage only: one module shares nothing (modules.md §2).
-        let _ = self.checkbox(block, "SHARED", false);
+        let shared = self.shared_tick(block);
         let Ok(decl) = access::decl_field(block, "NAME") else {
             self.incomplete(name_loc, "This global needs a name.");
             return None;
@@ -107,6 +106,9 @@ impl<'d> Lowerer<'d> {
             return None;
         }
         names.entry(decl.name.clone()).or_insert_with(|| decl.sym.clone());
+        if shared {
+            self.share(block, &decl.name, &decl.sym);
+        }
         let module = self.module_index;
         if let Some(globals) = self.module_globals.get_mut(module) {
             globals
