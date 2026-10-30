@@ -20,7 +20,7 @@ import {
   type DialogService,
 } from '../../app/dialogs';
 import { resetAppStore, useAppStore } from '../../app/store';
-import { documentFixture, settingsFixture } from '../../app/testing/fixtures';
+import { documentFixture, settingsFixture, toolchainFixture } from '../../app/testing/fixtures';
 import { latestTimings, resetTimings } from '../../lib/timing';
 import { setBlockLabelMode } from '@blocks2cpp/blockly-ext';
 import { createSymbolServices, installEditorServices, servicesSessionHooks } from '../services';
@@ -1100,5 +1100,21 @@ describe('the toolbox and the editor mode (w4-editor-tools.md §2.1)', () => {
     setEditorSettings({ blockLabels: 'cpp', showAdvanced: false });
     await settle();
     expect(firstText()).not.toBe('add');
+  });
+
+  it('keeps its blocks when a toolchain is found and nothing it shows changes', async () => {
+    setEditorSettings({ blockLabels: 'friendly', showAdvanced: false });
+    const workspace = attached('continuous');
+    await settle();
+    const ids = () => flyoutBlocks(workspace).map((block) => block.id);
+    const before = ids();
+    useAppStore.setState((state) => ({
+      toolchains: {
+        ...state.toolchains,
+        list: [toolchainFixture({ selected: true, usable: true })],
+      },
+    }));
+    await settle();
+    expect(ids()).toEqual(before);
   });
 });

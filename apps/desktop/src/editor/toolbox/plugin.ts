@@ -375,6 +375,8 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   }
   /** The mode the toolbox definition was installed for (`modeKey`). */
   let installedMode = modeKey(editorMode(store.getState()));
+  /** The toolbox definition installed last, serialised. */
+  let installedDefinition = '';
   /** The toolbox search's query, or `null`. */
   let searchQuery: string | null = null;
   let searchCount = 0;
@@ -403,7 +405,9 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     searchQuery === null
       ? toolboxDefinition(editorMode(store.getState()))
       : resultsDefinition(searchQuery);
-  const installed = setToolbox(workspace, toolboxDefinition(editorMode(store.getState())));
+  const firstDefinition = toolboxDefinition(editorMode(store.getState()));
+  installedDefinition = JSON.stringify(firstDefinition);
+  const installed = setToolbox(workspace, firstDefinition);
   if (installed) {
     builtKey = contentsKey();
     refresh();
@@ -428,8 +432,10 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   /**
    * The editor's mode changed (the label or advanced settings, the project's standard or options,
    * the toolchain): the static categories' blocks and the categories shown may change, so the
-   * toolbox definition is installed again when the mode's key changed; the dynamic categories
-   * follow through their contents key, which holds the mode.
+   * toolbox definition is installed again when it differs from the one installed (a toolchain
+   * found after the project opened changes the mode but, with no gated block, nothing shown; a
+   * definition installed again would build every flyout block again); the dynamic categories follow
+   * through their contents key, which holds the mode.
    */
   const followMode = (): void => {
     const mode = editorMode(store.getState());
@@ -438,7 +444,13 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
       return;
     }
     installedMode = key;
-    if (setToolbox(workspace, currentDefinition())) {
+    const definition = currentDefinition();
+    const serialised = JSON.stringify(definition);
+    if (serialised === installedDefinition) {
+      return;
+    }
+    installedDefinition = serialised;
+    if (setToolbox(workspace, definition)) {
       builtKey = contentsKey();
       refresh();
     }
@@ -453,7 +465,9 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
       if (next === null) {
         searchCount = 0;
       }
-      if (installed && setToolbox(workspace, currentDefinition())) {
+      const definition = currentDefinition();
+      installedDefinition = JSON.stringify(definition);
+      if (installed && setToolbox(workspace, definition)) {
         builtKey = contentsKey();
         refresh();
       }

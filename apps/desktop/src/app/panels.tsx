@@ -33,7 +33,6 @@ import {
 } from '../editor/diagnostics/inputs';
 import { buildProblemItems } from '../editor/diagnostics/problemItems';
 import { selectBlockFromCode, selectBlockFromProblem } from '../editor/highlight/reveal';
-import { quickFixesFor } from '../editor/quick-fixes';
 import { BugReportDialog, type BugReportInput } from '../features/bug-report';
 import { GENERATOR_BUG_LABEL } from '../features/build-run/buildOutput';
 import { consoleBridge } from '../features/build-run/consoleBridge';
@@ -54,6 +53,7 @@ import { useResolvedTheme } from './appearance';
 import { triggerCommand } from './commands';
 import { dialogs } from './dialogs/instance';
 import { getEditorHandle } from './editor-types';
+import { quickFixesOf } from './quickFixes';
 import { type AppState, useAppStore } from './store';
 import { selectedToolchain } from './store/selectors';
 import { useAppStoreWhileShown } from './store/whileShown';
@@ -214,7 +214,7 @@ function showRawMessage(): void {
 
 /** A live row's quick fix on the canvas shown (w4-editor-tools.md §2.5), or `null`. */
 function fixOfProblem(item: ProblemItem): ProblemFix | null {
-  return item.origin === 'live' ? (quickFixesFor(item.diagnostic)[0] ?? null) : null;
+  return item.origin === 'live' ? (quickFixesOf(item.diagnostic)[0] ?? null) : null;
 }
 
 /** Whether a row is a generator bug, which offers *Copy bug report…* (07 §7.5.3). */

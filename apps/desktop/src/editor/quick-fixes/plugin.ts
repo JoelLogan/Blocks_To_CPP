@@ -1,7 +1,8 @@
 /**
  * The quick-fix editor plugin (docs/plans/m3-contracts/w4-editor-tools.md §2.5): a block's menu
  * offers the fix of each of its diagnostics that has one (*Create variable “score”*), and the
- * Problems panel asks {@link quickFixesFor} for a row's. A fix acts on the canvas shown, as one undo
+ * Problems panel asks {@link quickFixesFor} for a row's, through the app's seam (app/quickFixes.ts),
+ * so the dock panels load no Blockly. A fix acts on the canvas shown, as one undo
  * step (./fixes.ts).
  *
  * Blockly's menu registry is global: the item is registered while at least one editor is attached,
@@ -11,6 +12,7 @@ import type { Diagnostic } from '@blocks2cpp/ipc-types';
 import * as Blockly from 'blockly/core';
 
 import type { EditorContext, EditorPlugin } from '../../app/editor-types';
+import { setQuickFixProvider } from '../../app/quickFixes';
 import { toolboxContentsContext } from '../toolbox/plugin';
 import { fixesFor, type FixContext, type QuickFix } from './fixes';
 
@@ -111,6 +113,7 @@ export const quickFixPlugin: EditorPlugin = {
     const { workspace, store } = context;
     if (editors.size === 0) {
       register();
+      setQuickFixProvider(quickFixesFor);
     }
     editors.set(workspace, {
       context: () => {
@@ -125,6 +128,7 @@ export const quickFixPlugin: EditorPlugin = {
       editors.delete(workspace);
       if (editors.size === 0) {
         unregister();
+        setQuickFixProvider(null);
       }
     };
   },
