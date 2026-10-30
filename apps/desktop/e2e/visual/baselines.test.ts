@@ -102,6 +102,9 @@ describe('the summary', () => {
     height: 510,
     diffPixels: 12,
     ratio: 12 / (963 * 510),
+    changedTiles: 0,
+    tileRatio: 0,
+    maxTileDistance: 0,
     passed: true,
     diffPng: Buffer.alloc(0),
   };
