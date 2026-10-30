@@ -106,6 +106,29 @@ describe('the report', () => {
     );
   });
 
+  it('replaces a path with spaces that g++ prints partway through a line', () => {
+    const crashes = [
+      'Preprocessed source stored into /home/jo ann/.cache/blocks2cpp/builds/prj_x-1a2b/debug-12345678/tmp/ccQ1w2e3.out file, please attach this to your bugreport.',
+      'Preprocessed source stored into C:\\Users\\Alice Smith\\AppData\\Local\\blocks2cpp\\builds\\ab12\\tmp\\ccAb.out file, please attach this to your bugreport.',
+    ];
+    for (const line of crashes) {
+      expect(sanitisedMessage(line)).toBe(
+        'Preprocessed source stored into <path> file, please attach this to your bugreport.',
+      );
+      const text = bugReport(
+        { ...input(), diagnostic: { ...input().diagnostic, raw: line } },
+        { includeProject: false },
+      );
+      for (const secret of ['ann', 'Smith', '.cache', 'AppData']) {
+        expect(text, secret).not.toContain(secret);
+      }
+    }
+    // Two paths with a word between them stay two.
+    expect(withoutPaths('cannot find /usr/lib/x.so and /lib/y')).toBe(
+      'cannot find <path> and <path>',
+    );
+  });
+
   it('finds the top block of a nested one', () => {
     expect(topBlockOf(input().document ?? documentFixture(), 'inner')?.id).toBe('top');
     expect(topBlockOf(documentFixture(), 'nowhere')).toBeNull();

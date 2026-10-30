@@ -45,7 +45,9 @@ export const MAX_REPORT_MESSAGE_CHARS = 16 * 1024;
 /**
  * Replaces paths: absolute ones and `~`-ones, Windows and POSIX, by `<path>`, and the folders of a
  * place g++ names at the start of a line (`/home/a b/x/main.cpp:7:5`, spaces included) by
- * `<path>/`.
+ * `<path>/`. A path elsewhere in a line runs on past a space when the next word reaches another
+ * folder separator (`/home/jo ann/.cache/x.out`, `C:\Users\Alice Smith\AppData\…`), so a
+ * folder name with a space is never cut in two; `a/b and /c` stays two paths.
  */
 export function withoutPaths(text: string): string {
   return text
@@ -57,9 +59,12 @@ export function withoutPaths(text: string): string {
       ),
     )
     .join('\n')
-    .replace(/[A-Za-z]:[\\/][^\s:'"‘’`]*/gu, '<path>')
+    .replace(/[A-Za-z]:[\\/](?:[^\s:'"‘’`]| (?=[^\s:'"‘’`\\/]*[\\/]))*/gu, '<path>')
     .replace(/\\\\[^\s:'"‘’`]+/gu, '<path>')
-    .replace(/(^|[\s(`'"‘])(?:~|\/)[^\s:'"‘’`)]*\/[^\s:'"‘’`)]*/gu, '$1<path>');
+    .replace(
+      /(^|[\s(`'"‘])(?:~|\/)(?:[^\s:'"‘’`)]| (?=[^\s:'"‘’`)/]*\/))*\/[^\s:'"‘’`)]*/gu,
+      '$1<path>',
+    );
 }
 
 /** Replaces every name g++ quotes (‘score’, 'score', `f(int)') by `‘…’`. */
