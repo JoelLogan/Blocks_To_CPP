@@ -15,7 +15,7 @@ import type { BdmBlock, BdmDocument, BdmModule } from '@blocks2cpp/b2c-core-wasm
 export const MAX_MODULES = 256;
 
 /** Why a module edit cannot be made. */
-export type ModuleEditProblem = 'tooMany' | 'onlyModule' | 'unknownModule';
+export type ModuleEditProblem = 'tooMany' | 'onlyModule' | 'unknownModule' | 'alreadyThere';
 
 /** What a project's modules allow: thrown by the operations when an edit cannot be made. */
 export class ModuleEditError extends Error {
@@ -33,6 +33,7 @@ export const MODULE_EDIT_PROBLEMS: Readonly<Record<ModuleEditProblem, string>> =
   tooMany: `A project can have at most ${String(MAX_MODULES)} modules.`,
   onlyModule: 'A project needs at least one module.',
   unknownModule: 'The project has no such module.',
+  alreadyThere: 'The project already has this module, or one with the same name.',
 };
 
 /** A deleted module, kept so that *Undo delete* can put it back where it was (W3M-D6). */
@@ -125,11 +126,18 @@ export function deleteModule(
 
 /**
  * `doc` with the deleted module back at its place (or last, when fewer modules are left), with its
- * IDs, so that the other modules' references to its definitions bind again.
+ * IDs, so that the other modules' references to its definitions bind again. Refused when `doc`
+ * already has a module with its ID or its name (ignoring letter case, 05 §5.6): two would not load.
  */
 export function restoreModule(doc: BdmDocument, kept: KeptModule): BdmDocument {
   if (!canAddModule(doc)) {
     throw new ModuleEditError('tooMany');
+  }
+  const name = kept.module.name.toLowerCase();
+  if (
+    doc.modules.some((module) => module.id === kept.module.id || module.name.toLowerCase() === name)
+  ) {
+    throw new ModuleEditError('alreadyThere');
   }
   const modules = [...doc.modules];
   modules.splice(Math.min(Math.max(kept.index, 0), modules.length), 0, kept.module);

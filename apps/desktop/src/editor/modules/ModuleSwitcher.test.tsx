@@ -21,6 +21,7 @@ import { createFakeIpc, documentFixture, projectFixture } from '../../app/testin
 import {
   addModule,
   deleteModule,
+  getModuleEdits,
   installModuleEdits,
   type KeptModule,
   MAX_MODULES,
@@ -32,6 +33,7 @@ import {
 } from '../../features/project/modules';
 import { expectNoAxeViolations } from '../../test/axe';
 import { present, testCore } from '../sync/testing';
+import { openDocumentInEditor } from '../load';
 import { ModuleSwitcher } from './ModuleSwitcher';
 
 const core: CoreWasm | null = await testCore();
@@ -138,6 +140,7 @@ interface Harness {
   readonly dialogs: DialogQueue;
   readonly commands: CommandRegistry;
   readonly editor: ReturnType<typeof fakeEditor>;
+  readonly ctx: FeatureContext;
   readonly uninstall: () => void;
 }
 
@@ -170,7 +173,7 @@ function renderStrip(): Harness {
       <DialogHost queue={dialogs} />
     </>,
   );
-  harness = { dialogs, commands, editor, uninstall };
+  harness = { dialogs, commands, editor, ctx, uninstall };
   return harness;
 }
 
@@ -606,6 +609,47 @@ describe.skipIf(core === null)('the module dialogs (w3-modules.md §2.10, §2.11
     expect(screen.queryByRole('button', { name: 'Undo delete' })).toBeNull();
     expect(statusText()).toBe('');
   });
+
+  it.skipIf(core === null)(
+    'forget a deleted module when the project is loaded again, which may hold it again',
+    async () => {
+      const doc = openWith(['main', 'utils'], 'utils');
+      const { editor, ctx } = renderStrip();
+      const handle = present(useAppStore.getState().project, 'the project').handle;
+      await act(async () => {
+        await harness?.commands.runCommand('module.delete');
+      });
+      expect(screen.queryByRole('button', { name: 'Undo delete' })).not.toBeNull();
+      // *Reload*: the file still holds utils, and the handle stays.
+      const text = JSON.stringify(doc);
+      let loaded = false;
+      await act(async () => {
+        loaded = (
+          await openDocumentInEditor(ctx, {
+            handle,
+            documentText: text,
+            trust: present(useAppStore.getState().project, 'the project').trust,
+            fileName: 'modules.b2c',
+            migratedFrom: null,
+            savedText: text,
+          })
+        ).ok;
+      });
+      expect(loaded).toBe(true);
+      expect(useAppStore.getState().project?.handle).toBe(handle);
+      expect(screen.queryByRole('button', { name: 'Undo delete' })).toBeNull();
+      expect(harness?.commands.hasCommand('module.undoDelete')).toBe(false);
+      expect(statusText()).toBe('');
+      act(() => {
+        getModuleEdits()?.undoDelete();
+      });
+      expect(editor.edits).toEqual(['delete']);
+      expect(useAppStore.getState().project?.document.modules.map((m) => m.id)).toEqual([
+        'mod_main',
+        'mod_utils',
+      ]);
+    },
+  );
 
   it('refuse every module edit, with the banner’s text, while the canvas holds an unchecked change', async () => {
     openWith(['main', 'utils']);

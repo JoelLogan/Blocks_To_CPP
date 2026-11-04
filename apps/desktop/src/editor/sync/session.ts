@@ -560,7 +560,8 @@ export class EditorSession {
    * Refused (`'unchecked'`) while the shown canvas holds a change that cannot be read back (the
    * banner): the document would lose it. Nothing happens (`'busy'`) during a block drag or without
    * a project, and an edit the project's modules do not allow (a 257th module, deleting the only
-   * one, an unknown module) is `'refused'`.
+   * one, an unknown module, a module put back that is there already), or one whose document the
+   * loader would refuse, is `'refused'`.
    */
   private editModules(
     edit: (doc: BdmDocument) => { readonly doc: BdmDocument; readonly show: string | null },
@@ -587,6 +588,10 @@ export class EditorSession {
         return 'refused';
       }
       throw error;
+    }
+    // Never a document that does not load (two modules with one name or ID, say).
+    if (!this.loads(next.doc)) {
+      return 'refused';
     }
     const show = next.show !== null && next.show !== this.shown ? next.show : null;
     if (show !== null && next.doc.modules.some((module) => module.id === this.shown)) {

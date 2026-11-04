@@ -106,6 +106,19 @@ describe('the document operations on modules', () => {
     ]);
   });
 
+  it('refuses to put back a module that is there again, by its ID or its name', () => {
+    const doc = twoModules();
+    const { kept } = deleteModule(doc, 'mod_utils');
+    // A reload of the project brought it back.
+    expect(() => restoreModule(doc, kept)).toThrow(MODULE_EDIT_PROBLEMS.alreadyThere);
+    // Another module has its name, in other letters.
+    const other = addModule(deleteModule(doc, 'mod_utils').doc, 'mod_other', 'Utils');
+    expect(() => restoreModule(other, kept)).toThrow(ModuleEditError);
+    expect(MODULE_EDIT_PROBLEMS.alreadyThere).toBe(
+      'The project already has this module, or one with the same name.',
+    );
+  });
+
   it('refuses a 257th module and deleting the only one, with the strip’s reasons', () => {
     const full = manyModules(MAX_MODULES);
     expect(canAddModule(full)).toBe(false);

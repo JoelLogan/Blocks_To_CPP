@@ -6,9 +6,10 @@
  * makes each edit (`EditorHandle`), so the canvas's latest change is part of it.
  *
  * Every edit is refused, with the text of the banner, while the canvas holds a change that cannot
- * be read back. A deleted module is kept, with its IDs, until the next module edit or until the
- * project closes, so *Undo delete* (in the status message and in `≡`) puts it back where it was and
- * the other modules' references to it bind again. Each edit ends with a status message, read out
+ * be read back. A deleted module is kept, with its IDs, until the next module edit, until the
+ * project closes or until a document is loaded in its place (a reload: the loaded document may hold
+ * the module again), so *Undo delete* (in the status message and in `≡`) puts it back where it was
+ * and the other modules' references to it bind again. Each edit ends with a status message, read out
  * by screen readers; the one for the second module says that the code of the other modules
  * changed (§2.13).
  */
@@ -18,6 +19,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 
 import type { DialogService } from '../../../app/dialogs';
 import type { EditorHandle, ModuleEditOutcome } from '../../../app/editor-types';
+import type { AppEventBus } from '../../../app/events';
 import type { useAppStore } from '../../../app/store';
 import { syncFailedText } from '../../analysis/AnalysisNoticeBanner';
 import { checkModuleName } from './names';
@@ -59,6 +61,8 @@ export interface ModuleEditsDeps {
   readonly dialogs: DialogService;
   readonly editor: () => EditorHandle | null;
   readonly core: () => CoreWasm | null;
+  /** The app's events: a loaded document (`project:loaded`) drops the kept module. */
+  readonly events?: AppEventBus;
   /** A new module ID (`mod_<random>`); the editor's ID source by default. */
   readonly newModuleId?: () => string;
 }
@@ -79,22 +83,32 @@ export class ModuleEdits {
     status: null,
   }));
   private readonly deps: ModuleEditsDeps;
-  private readonly unsubscribe: () => void;
+  private readonly unsubscribers: readonly (() => void)[];
   private serial = 0;
 
   constructor(deps: ModuleEditsDeps) {
     this.deps = deps;
-    // Another project (or none): its kept module and messages go.
-    this.unsubscribe = deps.store.subscribe((state, previous) => {
-      if (state.project?.handle !== previous.project?.handle) {
-        this.state.setState({ kept: null, status: null });
-      }
-    });
+    const forget = (): void => {
+      this.state.setState({ kept: null, status: null });
+    };
+    this.unsubscribers = [
+      // Another project (or none): its kept module and messages go.
+      deps.store.subscribe((state, previous) => {
+        if (state.project?.handle !== previous.project?.handle) {
+          forget();
+        }
+      }),
+      // A document loaded in place of the project's, with the same handle too (a reload): the
+      // kept module belongs to the document before it.
+      deps.events?.on('project:loaded', forget) ?? (() => undefined),
+    ];
   }
 
-  /** Stops following the store. */
+  /** Stops following the store and the app's events. */
   dispose(): void {
-    this.unsubscribe();
+    for (const unsubscribe of this.unsubscribers) {
+      unsubscribe();
+    }
   }
 
   /** Asks for a name and adds an empty module with it, which is then shown. */

@@ -8,12 +8,12 @@ import type { AppEvent, Handle } from '@blocks2cpp/ipc-types';
 
 /**
  * Events that start in the frontend. `project:changedOnDisk`: `project_save` was refused with
- * `changedOnDisk`, so the external-change feature takes over (04 §4.10).
+ * `changedOnDisk`, so the external-change feature takes over (04 §4.10). `project:loaded`: a
+ * document went through the loader and replaced the open project's (open, new, reload, recovery),
+ * with the same handle or another, so what was kept of the document before it no longer applies.
  */
-export interface LocalAppEvent {
-  kind: 'project:changedOnDisk';
-  handle: Handle;
-}
+export type LocalAppEvent =
+  { kind: 'project:changedOnDisk'; handle: Handle } | { kind: 'project:loaded'; handle: Handle };
 
 /** Every event on the bus. */
 export type BusEvent = AppEvent | LocalAppEvent;

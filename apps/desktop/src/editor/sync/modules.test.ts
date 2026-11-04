@@ -267,6 +267,31 @@ describe('module edits of the editing session (w3-modules.md §1.2)', () => {
     expect(session.workspace.getBlockById(TOO_DEEP)).not.toBeNull();
   });
 
+  it('never makes a document that does not load: a module put back twice, or a refused one', async () => {
+    const session = start(twoModules());
+    await vi.advanceTimersByTimeAsync(0);
+    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_utils' });
+    const keptModule = present(session.deleteModule('mod_utils').kept, 'the kept module');
+    expect(session.restoreModule(keptModule)).toBe('done');
+    // The module is there again (as after a reload of the project): not a second time.
+    const before = documentNow();
+    expect(session.restoreModule(keptModule)).toBe('refused');
+    expect(documentNow()).toBe(before);
+    expect(modulesNow()).toEqual(['mod_main:main', 'mod_utils:utils']);
+    // A module the loader refuses is not put back either.
+    const refused = {
+      module: {
+        id: 'mod_odd',
+        name: 'odd',
+        workspace: { blocks: [{ id: TOO_DEEP, type: 'control.forever', v: 1, x: 0, y: 0 }] },
+      },
+      index: 2,
+    };
+    expect(session.restoreModule(refused)).toBe('refused');
+    expect(documentNow()).toBe(before);
+    expect(useAppStore.getState().analysis.notice).toBeNull();
+  });
+
   it('shows SHARED on the shown defines when a second module is added, and hides it again', async () => {
     const session = start(
       project([{ id: 'mod_main', name: 'main', blocks: [define('blk_area', 's_area', 'area')] }]),

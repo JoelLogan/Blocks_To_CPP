@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vite
 
 import { setCore } from '../app/core';
 import type { EditorHandle } from '../app/editor-types';
+import { type AppEventBus, createAppEventBus } from '../app/events';
 import type { FeatureContext } from '../app/features';
 import { resetAppStore, useAppStore } from '../app/store';
 import { NO_MODULE_EDITS } from '../app/testing/fixtures';
@@ -25,11 +26,16 @@ const TRUSTED = {
 } as const;
 const HANDLE = 'ph_0123456789abcdef0123456789abcdef';
 
-function context(wasm: CoreWasm | null, editor: EditorHandle | null = null): FeatureContext {
+function context(
+  wasm: CoreWasm | null,
+  editor: EditorHandle | null = null,
+  events: AppEventBus = createAppEventBus(),
+): FeatureContext {
   return {
     store: useAppStore,
     core: () => wasm,
     editor: () => editor,
+    events,
   } as unknown as FeatureContext;
 }
 
@@ -78,8 +84,13 @@ describe.skipIf(core === null)('opening a document', () => {
       return;
     }
     const { editor, loadDocument } = fakeEditor();
-    const result = await openDocumentInEditor(context(core, editor), args());
+    const events = createAppEventBus();
+    const loaded = vi.fn();
+    events.on('project:loaded', loaded);
+    const result = await openDocumentInEditor(context(core, editor, events), args());
     expect(result).toEqual({ ok: true });
+    // The features hear of it once the project is shown.
+    expect(loaded).toHaveBeenCalledWith({ kind: 'project:loaded', handle: HANDLE });
     const { project, ui } = useAppStore.getState();
     const expected = loadText(core, args().documentText);
     expect(project?.document).toEqual(expected);
@@ -119,14 +130,18 @@ describe.skipIf(core === null)('opening a document', () => {
 
   it("returns the loader's problems and leaves the editor alone", async () => {
     const { editor, loadDocument } = fakeEditor();
+    const events = createAppEventBus();
+    const loaded = vi.fn();
+    events.on('project:loaded', loaded);
     const result = await openDocumentInEditor(
-      context(core, editor),
+      context(core, editor, events),
       args({ documentText: '{"format": "blocks2cpp/project", "formatVersion": 1}' }),
     );
     expect(result.ok).toBe(false);
     expect(result.ok ? [] : result.diagnostics.map((d) => d.code)).not.toEqual([]);
     expect(useAppStore.getState().project).toBeNull();
     expect(loadDocument).not.toHaveBeenCalled();
+    expect(loaded).not.toHaveBeenCalled();
     expect(useAppStore.getState().ui.screen).toBe('start');
   });
 

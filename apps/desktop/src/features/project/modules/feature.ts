@@ -18,6 +18,7 @@ export function installModuleEdits(
     dialogs: ctx.dialogs,
     editor: ctx.editor,
     core: ctx.core,
+    events: ctx.events,
     ...options,
   });
   setModuleEdits(edits);

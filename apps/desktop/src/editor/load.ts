@@ -64,7 +64,8 @@ async function withCore<T>(
 
 /**
  * Loads `documentText` with the compiler core, makes it the open project in the store, shows it in
- * the editor (with an empty undo history) and switches to the editor screen.
+ * the editor (with an empty undo history), switches to the editor screen and tells the features
+ * (`project:loaded`).
  *
  * The hashes of its canonical text become the project's; it has unsaved changes when that text
  * differs from the canonical form of `savedText` (compared by their hashes). Reopening the project
@@ -125,5 +126,6 @@ export async function openDocumentInEditor(
   // Without a mounted editor, the editor shows the store's project when it mounts.
   ctx.editor()?.loadDocument(document, { clearUndo: true });
   actions.setUi({ screen: 'editor' });
+  ctx.events.emit({ kind: 'project:loaded', handle: args.handle });
   return { ok: true };
 }
