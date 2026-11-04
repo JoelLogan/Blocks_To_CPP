@@ -26,6 +26,15 @@
 //! Each of these walks is iterative and stops at [`MAX_BLOCK_DEPTH`], like the
 //! lowering, so a block nested too deeply anywhere gives no answer.
 //!
+//! In a project of several modules a module also sees the functions the
+//! other modules share (w3-modules.md §2.1), after its own definitions: a
+//! name resolves first to the module's own definition, so another module's
+//! shared function is listed only when the module has no definition of its
+//! name, and, like the module's own functions, only where no local name
+//! hides it. The index keeps one program-wide list of shared functions with
+//! their module, so it still grows with the declarations, not with their
+//! product with the modules.
+//!
 //! The answer also lists the fields of each struct and the enumerators of
 //! each enum it lists, with their owner (types.md §2.4): blocks refer to
 //! them through their type, and a paste binds them through it. No name
@@ -87,9 +96,14 @@ pub(crate) struct ScopeIndex {
     trail: Trail,
     /// Recorded positions, by block.
     blocks: BTreeMap<BlockId, BlockPoints>,
-    /// The functions that calls in each module can use, by module index:
-    /// `(name, symbol)` in symbol order.
+    /// The definitions of each module that are visible everywhere in it,
+    /// by module index: `(name, symbol)` in symbol order. Its functions,
+    /// structs, enums and globals.
     functions: Vec<Vec<(String, SymbolId)>>,
+    /// The functions the modules share (w3-modules.md §2.1): `(module index,
+    /// name, symbol)`, in symbol order. Each module sees those of the
+    /// others whose names it has no definition of.
+    shared: Vec<(usize, String, SymbolId)>,
     /// The user's name of every symbol in the table, when it differs from the
     /// C++ name there (an invalid name gets a placeholder in the table).
     names: BTreeMap<SymbolId, String>,
@@ -207,13 +221,15 @@ impl ScopeIndex {
         self.names.insert(sym.clone(), name.to_owned());
     }
 
-    /// Completes the index with the scope stack's trail and the functions of
-    /// each module (`(module index, name, symbol)`, in any order).
+    /// Completes the index with the scope stack's trail, the definitions of
+    /// each module and the functions the modules share (each as `(module
+    /// index, name, symbol)`, in any order).
     pub(crate) fn finish<'a>(
         &mut self,
         trail: Trail,
         modules: usize,
         functions: impl IntoIterator<Item = (usize, &'a str, &'a SymbolId)>,
+        shared: impl IntoIterator<Item = (usize, &'a str, &'a SymbolId)>,
     ) {
         self.trail = trail;
         self.functions = vec![Vec::new(); modules];
@@ -225,6 +241,12 @@ impl ScopeIndex {
         for list in &mut self.functions {
             list.sort_by(|a, b| a.1.cmp(&b.1));
         }
+        self.shared = shared
+            .into_iter()
+            .filter(|(module, _, _)| *module < modules)
+            .map(|(module, name, sym)| (module, name.to_owned(), sym.clone()))
+            .collect();
+        self.shared.sort_by(|a, b| a.2.cmp(&b.2));
     }
 
     /// The position a query asks about: the statement list or value input
@@ -238,10 +260,12 @@ impl ScopeIndex {
     }
 
     /// The symbols visible at a position, innermost first, then the
-    /// functions of its module. A name declared again in an inner list hides
-    /// the outer symbol (C++ would find the inner one, and the analyser
-    /// reports a reference to the outer one), and a local name hides a
-    /// function with that name.
+    /// definitions of its module, then the functions other modules share. A
+    /// name declared again in an inner list hides the outer symbol (C++
+    /// would find the inner one, and the analyser reports a reference to the
+    /// outer one), a local name hides a definition with that name, and a
+    /// definition of the module hides another module's shared function with
+    /// its name (w3-modules.md §2.1).
     fn visible(&self, point: Point) -> Vec<&SymbolId> {
         let mut names: BTreeSet<&str> = BTreeSet::new();
         let mut found = Vec::new();
@@ -259,9 +283,18 @@ impl ScopeIndex {
             // from looping.
             node = step.parent.filter(|parent| *parent < index);
         }
-        for (name, sym) in self.functions.get(point.module).into_iter().flatten() {
+        let own = self.functions.get(point.module).map_or(&[][..], Vec::as_slice);
+        for (name, sym) in own {
             if !names.contains(name.as_str()) {
                 found.push(sym);
+            }
+        }
+        if self.shared.iter().any(|(module, _, _)| *module != point.module) {
+            let own: BTreeSet<&str> = own.iter().map(|(name, _)| name.as_str()).collect();
+            for (module, name, sym) in &self.shared {
+                if *module != point.module && !names.contains(name.as_str()) && !own.contains(name.as_str()) {
+                    found.push(sym);
+                }
             }
         }
         found
@@ -276,8 +309,10 @@ impl Analysis {
     ///   block, the result is what is visible **at the block**: the variables
     ///   declared before it in the same and the enclosing statement lists, the
     ///   counter of each `for` loop it is inside, the parameters of the
-    ///   function it is inside, and every function of its module (definition
-    ///   order never matters). Inside the starting value of a `create`
+    ///   function it is inside, and every definition of its module
+    ///   (definition order never matters), then each function another module
+    ///   shares that has the name of none of the module's definitions
+    ///   (w3-modules.md §2.1). Inside the starting value of a `create`
     ///   block, or the start, end and step of a `for` loop, the variable
     ///   being created and any outer variable with its name are left out.
     /// * With the name of one of the block's statement inputs (`BODY`, `DO0`,
@@ -287,8 +322,9 @@ impl Analysis {
     /// For an attached block, exactly the symbols that the analyser accepts a
     /// reference to at that point are listed: a symbol that a newer
     /// declaration with the same name hides is left out, and so are
-    /// declarations in disabled blocks, functions of other modules and
-    /// functions hidden by a local name.
+    /// declarations in disabled blocks, functions other modules do not
+    /// share, those hidden by a definition of the module, and functions
+    /// hidden by a local name.
     ///
     /// With a struct or an enum, the answer lists its fields or enumerators
     /// too (`field` and `enumerator` records, with their `owner`): blocks
@@ -697,7 +733,7 @@ mod tests {
             node(Some(1), "f", None),
         ];
         let functions = [(0, "f", &sym("f")), (0, "g", &sym("g")), (1, "h", &sym("h"))];
-        index.finish(trail, 2, functions);
+        index.finish(trail, 2, functions, []);
         let at = |node, module| index.visible(Point { node, module });
         assert_eq!(ids(&at(None, 0)), ["f", "g"]);
         assert_eq!(ids(&at(None, 1)), ["h"]);
@@ -712,11 +748,51 @@ mod tests {
         assert_eq!(ids(&at(Some(99), 0)), ["f", "g"], "a node outside the trail");
     }
 
+    /// A module sees the functions other modules share, after its own
+    /// definitions, unless it has a definition of that name or a local name
+    /// hides it (w3-modules.md §2.1).
+    #[test]
+    fn other_modules_shared_functions_come_after_the_own_definitions() {
+        let mut index = ScopeIndex::default();
+        let trail = vec![node(None, "total", Some("total_local"))];
+        let own = [
+            (0, "area", &sym("area_main")),
+            (1, "scale", &sym("scale_utils")),
+            (1, "area", &sym("area_utils")),
+        ];
+        let shared = [
+            (1, "area", &sym("area_utils")),
+            (1, "total", &sym("total_utils")),
+            (1, "round", &sym("round_utils")),
+            (2, "round", &sym("round_more")),
+            (7, "lost", &sym("lost")),
+        ];
+        index.finish(trail, 3, own, shared);
+        let at = |node, module| index.visible(Point { node, module });
+        // `main`'s own `area` hides `utils`' shared one.
+        assert_eq!(
+            ids(&at(None, 0)),
+            ["area_main", "round_more", "round_utils", "total_utils"]
+        );
+        // A local name hides a shared function as it hides an own one.
+        assert_eq!(
+            ids(&at(Some(0), 0)),
+            ["total_local", "area_main", "round_more", "round_utils"]
+        );
+        // A module never lists its own shared functions twice.
+        assert_eq!(ids(&at(None, 1)), ["area_utils", "scale_utils", "round_more"]);
+        assert_eq!(
+            index.shared.len(),
+            4,
+            "a module the program does not have is left out"
+        );
+    }
+
     #[test]
     fn a_corrupted_trail_cannot_loop() {
         let mut index = ScopeIndex::default();
         let trail = vec![node(Some(1), "a", Some("a")), node(Some(0), "b", Some("b"))];
-        index.finish(trail, 0, []);
+        index.finish(trail, 0, [], []);
         let found = index.visible(Point {
             node: Some(1),
             module: 0,
@@ -919,6 +995,7 @@ mod tests {
             ],
             1,
             [(0, "Point", &pt), (0, "Color", &col), (0, "area", &area)],
+            [],
         );
         Analysis {
             program: Program {

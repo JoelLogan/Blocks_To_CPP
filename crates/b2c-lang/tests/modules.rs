@@ -168,21 +168,45 @@ fn definitions_are_shared_only_in_a_project_of_several_modules() {
 }
 
 #[test]
-fn every_program_keeps_the_flat_layout_until_headers_arrive() {
+fn only_shared_functions_have_headers_until_types_and_globals_do() {
+    // Package F puts shared functions into headers; shared structs, enums
+    // and globals wait for package T (w3-modules.md §1.2, §1.3).
     let analysis = analyze(&doc_modules(vec![
-        ("main", vec![main(vec![]), define("helper", false)]),
-        ("utils", vec![define("tool", true)]),
+        (
+            "main",
+            vec![main(vec![]), define("helper", false), global("count", true)],
+        ),
+        ("utils", vec![define("tool", true), structure("Point", true)]),
     ]));
+    assert!(analysis.diagnostics.is_empty(), "{:?}", analysis.diagnostics);
     let layout = &analysis.program.layout;
     assert!(layout.multi_module());
+    let main_files = &layout.modules[0];
+    assert!(!main_files.header);
+    assert!(main_files.header_order.is_empty() && main_files.source_includes.is_empty());
+    let utils = &layout.modules[1];
+    assert!(utils.header);
+    let header: Vec<&str> = utils
+        .header_order
+        .iter()
+        .map(|index| match &analysis.program.modules[1].items[*index].kind {
+            ItemKind::Function(def) => analysis
+                .program
+                .symbols
+                .get(&def.symbol)
+                .expect("symbol")
+                .name
+                .as_str(),
+            other => panic!("{other:?} in the header"),
+        })
+        .collect();
+    assert_eq!(header, ["tool"]);
+    assert_eq!(utils.source_includes, [analysis.program.modules[1].id.clone()]);
     for files in &layout.modules {
-        assert!(!files.header, "{}", files.stem.as_str());
-        assert!(files.header_order.is_empty());
         assert!(files.header_includes.is_empty() && files.forward.is_empty());
-        assert!(files.source_includes.is_empty());
     }
-    assert_eq!(layout.modules[0].source_order.len(), 1);
-    assert_eq!(layout.modules[1].source_order.len(), 1);
+    assert_eq!(layout.modules[0].source_order.len(), 2);
+    assert_eq!(layout.modules[1].source_order.len(), 2);
     // No namespace and no spelling other than the default.
     assert!(analysis.program.spellings.is_empty());
     let items = analysis.program.modules.iter().flat_map(|module| &module.items);

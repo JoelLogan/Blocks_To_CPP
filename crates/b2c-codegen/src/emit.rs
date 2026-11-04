@@ -283,7 +283,8 @@ pub(crate) fn source_file(
 /// items of `header_order` in their namespaces, each after the forward
 /// declarations of the module's structs it needs (they belong to the item
 /// that needs them, not to the struct they declare): a function's
-/// declaration with its default values, a struct's or enum's definition (a
+/// declaration with its default values (a run of them in one section, as
+/// in a `.cpp`), a struct's or enum's definition (a
 /// shared enum's print support is package T's), a global's `extern`
 /// declaration or a `constexpr` constant's `inline constexpr` definition.
 /// Never a `using` directive.
@@ -324,14 +325,22 @@ pub(crate) fn header_file(
         }
         emitter.enter(&Region::default());
     }
+    // As in a `.cpp`, a run of function declarations is one section.
+    let mut last: Option<(&CDecl, Region)> = None;
     for item in plan.header_order {
         for decl in module.decls.iter().filter(|decl| decl.item == Some(*item)) {
             let region = Region {
                 anonymous: false,
                 ..decl.region.clone()
             };
+            let same_run = last.as_ref().is_some_and(|(node, at)| {
+                *at == region && matches!((node, &decl.node), (CDecl::Function(_), CDecl::Function(_)))
+            });
             emitter.enter(&region);
-            emitter.p.section();
+            if !same_run {
+                emitter.p.section();
+            }
+            last = Some((&decl.node, region));
             match &decl.node {
                 CDecl::Type(CTypeDef::Enum(def)) => emitter.enum_definition(def),
                 CDecl::Type(def) => emitter.type_def(def),
@@ -1195,6 +1204,10 @@ impl Emitter {
             CExprKind::Call { callee, args } => {
                 match callee {
                     Callee::User(name) => self.p.ident(name),
+                    Callee::Global(name) => {
+                        self.p.fixed("::");
+                        self.p.ident(name);
+                    }
                     Callee::Fixed(name) => self.p.fixed(name),
                     Callee::Template(name, types) => {
                         self.p.fixed(name);
@@ -1316,6 +1329,7 @@ fn flat_width(expr: &CExpr) -> usize {
         CExprKind::Call { callee, args } => {
             let name = match callee {
                 Callee::User(name) => name.as_str().len(),
+                Callee::Global(name) => name.as_str().len() + 2,
                 Callee::Fixed(name) => name.len(),
                 Callee::Template(name, types) => {
                     name.len()

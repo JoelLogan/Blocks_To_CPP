@@ -40,18 +40,19 @@ mod w3_tests;
 use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::headers::{Header, ItemHeaders};
-use b2c_ir::ids::SymbolId;
-use b2c_ir::layout::ModuleFiles;
+use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
+use b2c_ir::layout::Layout;
 use b2c_ir::sast::{
     Block, CppStandard, FunctionDef, Item, ItemKind, MainDef, Module, PassMode, Program, Symbol, SymbolKind,
     SymbolTable,
 };
+use b2c_ir::spelling::{Spelling, Spellings};
 use b2c_ir::text::{Ident, NumLit};
 use b2c_ir::types::{Type, TypeFacts, UserKind};
 
 use crate::cast::{
-    BinOp, CBlock, CExpr, CExprKind, CFunction, CGlobal, CParam, CStmt, CStmtKind, CType, CTypeDef, Init,
-    ParamStyle,
+    BinOp, CBlock, CExpr, CExprKind, CFunction, CGlobal, CParam, CStmt, CStmtKind, CType, CTypeDef, Callee,
+    Init, ParamStyle,
 };
 use crate::helpers::Helper;
 
@@ -157,16 +158,18 @@ pub(crate) enum CDecl {
     Function(usize),
 }
 
-/// Desugars one module of a program, whose files are `files` (`None` when
-/// the layout has no entry for it). `multi_module` puts the module's
-/// non-shared definitions into the anonymous namespace (w3-modules.md §1.7).
+/// Desugars one module of a program whose files are laid out by `layout`
+/// (the module's entry gives its order of declarations; none: M2's order).
+/// `multi_module` puts the module's non-shared definitions into the
+/// anonymous namespace (w3-modules.md §1.7).
 pub(crate) fn lower_module(
     program: &Program,
+    layout: &Layout,
     module: &Module,
-    files: Option<&ModuleFiles>,
     multi_module: bool,
 ) -> LoweredModule {
-    let mut lowerer = Lowerer::new(program);
+    let files = layout.modules.iter().find(|files| files.module == module.id);
+    let mut lowerer = Lowerer::for_module(program, layout, module, multi_module);
     let mut mains = Vec::new();
     // The declarations in the declaration graph's order, which the analysis
     // puts in the module's layout (modules.md §4). A type or global the
@@ -281,6 +284,47 @@ pub(crate) fn lower_module(
     }
 }
 
+/// The names of the shared definitions that the headers the `.cpp` of
+/// module `id` includes declare, directly or through the headers they
+/// include (the layout's `source_includes` and `header_includes`).
+fn included_names<'a>(program: &'a Program, layout: &Layout, id: &ModuleId) -> BTreeSet<&'a str> {
+    let files_of = |id: &ModuleId| layout.modules.iter().find(|files| files.module == *id);
+    let mut seen: BTreeSet<&ModuleId> = BTreeSet::new();
+    let mut queue: Vec<&ModuleId> = files_of(id)
+        .map(|f| f.source_includes.iter().collect())
+        .unwrap_or_default();
+    let mut names = BTreeSet::new();
+    while let Some(next) = queue.pop() {
+        if !seen.insert(next) {
+            continue;
+        }
+        let Some(files) = files_of(next) else {
+            continue;
+        };
+        queue.extend(&files.header_includes);
+        let Some(module) = program.modules.iter().find(|module| module.id == *next) else {
+            continue;
+        };
+        for item in files
+            .header_order
+            .iter()
+            .filter_map(|index| module.items.get(*index))
+        {
+            let symbol = match &item.kind {
+                ItemKind::Function(def) => &def.symbol,
+                ItemKind::Struct(def) => &def.symbol,
+                ItemKind::Enum(def) => &def.symbol,
+                ItemKind::Global(def) => &def.symbol,
+                ItemKind::Main(_) | ItemKind::UseHeader { .. } => continue,
+            };
+            if let Some(symbol) = program.symbols.get(symbol) {
+                names.insert(symbol.name.as_str());
+            }
+        }
+    }
+    names
+}
+
 /// Sorts the function definitions (by name, then signature, then block ID:
 /// definition order never depends on canvas position, spec §6.7) and points
 /// each function declaration at its definition's new place.
@@ -350,11 +394,21 @@ struct Lowerer<'a> {
     symbols: &'a SymbolTable,
     /// The standard the program is generated for.
     standard: CppStandard,
-    /// Names of every function in the program (visible everywhere).
+    /// Names of every function in the program, which a fresh name avoids.
     function_names: BTreeSet<&'a str>,
-    /// The names that more than one function has (overloads, w2.md §2.8),
-    /// whose calls cast their arguments to the parameters' types.
+    /// The names that more than one function the module can call has
+    /// (overloads, w2.md §2.8): its own functions and those other modules
+    /// share (w3-modules.md §2.1). Calls to them cast their arguments to the
+    /// parameters' types.
     overloaded: BTreeSet<&'a str>,
+    /// How the analyser spelled each reference (w3-modules.md §2.12).
+    spellings: &'a Spellings,
+    /// The functions in the module's anonymous namespace: those it does not
+    /// share, in a project of several modules.
+    private_functions: BTreeSet<&'a SymbolId>,
+    /// The names the headers the module's `.cpp` includes declare, directly
+    /// or through the headers they include.
+    header_names: BTreeSet<&'a str>,
     /// Names of every global in the program (visible in their module, and a
     /// fresh name must not hide one).
     global_names: BTreeSet<&'a str>,
@@ -379,7 +433,8 @@ struct Lowerer<'a> {
 }
 
 impl<'a> Lowerer<'a> {
-    /// A lowerer for the modules of `program`.
+    /// A lowerer for the modules of `program`, each of which may call every
+    /// function (as in a single-module program).
     fn new(program: &'a Program) -> Self {
         let mut function_names = BTreeSet::new();
         let mut overloaded = BTreeSet::new();
@@ -402,6 +457,9 @@ impl<'a> Lowerer<'a> {
             standard: program.standard,
             function_names,
             overloaded,
+            spellings: &program.spellings,
+            private_functions: BTreeSet::new(),
+            header_names: BTreeSet::new(),
             global_names,
             usage: Usage::default(),
             part: ItemPart::Body,
@@ -411,6 +469,62 @@ impl<'a> Lowerer<'a> {
             in_main: false,
             scopes: Vec::new(),
             depth: 0,
+        }
+    }
+
+    /// A lowerer for `module`, laid out by `layout`: its calls see its own
+    /// functions and those the other modules share (w3-modules.md §2.1).
+    fn for_module(program: &'a Program, layout: &Layout, module: &'a Module, multi_module: bool) -> Self {
+        let mut lowerer = Lowerer::new(program);
+        if !multi_module {
+            return lowerer;
+        }
+        let function = |item: &'a Item| match &item.kind {
+            ItemKind::Function(def) => Some(&def.symbol),
+            _ => None,
+        };
+        let shared: BTreeSet<&SymbolId> = program
+            .modules
+            .iter()
+            .flat_map(|m| &m.items)
+            .filter(|item| item.shared)
+            .filter_map(function)
+            .collect();
+        lowerer.private_functions = module
+            .items
+            .iter()
+            .filter(|item| !item.shared)
+            .filter_map(function)
+            .collect();
+        let mut visible = BTreeSet::new();
+        lowerer.overloaded.clear();
+        for (id, symbol) in &program.symbols.symbols {
+            if matches!(symbol.kind, SymbolKind::Function { .. })
+                && (symbol.origin.module == module.id || shared.contains(id))
+                && !visible.insert(symbol.name.as_str())
+            {
+                lowerer.overloaded.insert(symbol.name.as_str());
+            }
+        }
+        lowerer.header_names = included_names(program, layout, &module.id);
+        lowerer
+    }
+
+    /// How a call from `block` names the user function `function`, called
+    /// `name`: as the analyser spelled it (w3-modules.md §2.12), but never
+    /// `::name` for a function of the module's anonymous namespace that a
+    /// header the module's `.cpp` includes also declares (§2.1): there
+    /// `::name` would silently call the header's function. The analyser
+    /// reports such a name (`B2C-E0213`), so the plain name, which C++
+    /// refuses as ambiguous, is the safe text.
+    pub(crate) fn user_callee(&self, block: &BlockId, function: &SymbolId, name: &Ident) -> Callee {
+        let spelling = self.spellings.reference(block, function);
+        let guarded = self.private_functions.contains(function) && self.header_names.contains(name.as_str());
+        match spelling {
+            Spelling::Global if !guarded => Callee::Global(name.clone()),
+            Spelling::Plain | Spelling::Global | Spelling::Qualified | Spelling::Full => {
+                Callee::User(name.clone())
+            }
         }
     }
 

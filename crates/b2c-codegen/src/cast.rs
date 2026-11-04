@@ -319,6 +319,11 @@ pub(crate) enum Prec {
 pub(crate) enum Callee {
     /// A user function.
     User(Ident),
+    /// A user function of the global namespace, or of the file's anonymous
+    /// namespace, named from the global namespace: `::name` (w3-modules.md
+    /// §2.12), where the lookup model finds another entity by the plain
+    /// name.
+    Global(Ident),
     /// A standard-library function or support helper chosen by the generator
     /// (e.g. `std::to_string`, `b2c::random_int`).
     Fixed(&'static str),

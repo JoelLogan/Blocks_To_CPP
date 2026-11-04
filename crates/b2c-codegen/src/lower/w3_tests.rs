@@ -488,7 +488,8 @@ fn school_module() -> Value {
 fn tally_module() -> Value {
     json!([
         {"id": "b_tally", "type": "type.struct", "v": 1,
-         "fields": {"NAME": {"sym": "s_Tally", "name": "Tally"}, "COMPARABLE": false, "PRINTABLE": false},
+         "fields": {"NAME": {"sym": "s_Tally", "name": "Tally"}, "COMPARABLE": false, "PRINTABLE": false,
+                    "SHARED": true},
          "extra": {"fields": [{"sym": "s_size", "name": "size", "type": "int"}]},
          "inputs": {"DEFAULT0": {"block": {"id": "b_count_call", "type": "func.call", "v": 1,
             "extra": {"argCount": 1},
@@ -613,4 +614,223 @@ fn a_header_forward_declares_its_own_structs_before_their_use() {
         "4\n",
         "Number? colour Green 4\n",
     );
+}
+
+// --- Package F: functions across modules (w3-modules.md §5.2 F) ---------------
+
+/// `define <name>(<params>) returns <ret>` with block ID `b_<sym>`, ticked
+/// to share or not; `params` are `(symbol, name, type)` copies.
+#[allow(clippy::needless_pass_by_value, reason = "built in place by each caller")]
+fn define(
+    sym: &str,
+    name: &str,
+    ret: &str,
+    params: &[(&str, &str, &str)],
+    body: Value,
+    shared: bool,
+) -> Value {
+    let params: Vec<Value> = params
+        .iter()
+        .map(|(sym, name, ty)| json!({"mode": "copy", "name": name, "sym": sym, "type": ty}))
+        .collect();
+    json!({"id": format!("b_{sym}"), "type": "func.define", "v": 1,
+           "fields": {"NAME": {"sym": sym, "name": name}, "RETURNS": ret, "SHARED": shared},
+           "extra": {"params": params},
+           "statements": {"BODY": body}})
+}
+
+/// `return <tokens>` with block ID `b_<id>`.
+#[allow(clippy::needless_pass_by_value, reason = "built in place by each caller")]
+fn give(id: &str, tokens: Value) -> Value {
+    json!([{"id": format!("b_{id}"), "type": "func.return", "v": 1, "inputs": {"VALUE": {"expr": tokens}}}])
+}
+
+/// `when program starts` printing these slots, each in a block of its own.
+fn printing(slots: &[Value]) -> Value {
+    let body: Vec<Value> = slots
+        .iter()
+        .enumerate()
+        .map(|(index, tokens)| {
+            json!({"id": format!("b_print{index}"), "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+                   "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "out"},
+                   "inputs": {"ITEM0": {"expr": tokens}}})
+        })
+        .collect();
+    json!({"id": "b_main", "type": "program.main", "v": 1, "statements": {"BODY": body}})
+}
+
+/// A file's text.
+fn text<'p>(project: &'p GeneratedProject, path: &str) -> &'p str {
+    &project
+        .files
+        .iter()
+        .find(|file| file.path == path)
+        .unwrap_or_else(|| panic!("no {path}:\n{}", render(project)))
+        .contents
+}
+
+/// `geometry` shares `area` with a default value (`scale` = 2, the default
+/// of its second input), which the header declares and the `.cpp` defines
+/// without; `main` calls it with one argument and with two. Both modules
+/// have a `twice` they do not share, each called in its module, and a
+/// third module, `notes`, generates nothing but its comment.
+#[test]
+fn shared_functions_are_declared_in_the_header_with_their_default_values() {
+    let twice = |sym: &str, factor: &str| {
+        define(
+            sym,
+            "twice",
+            "int",
+            &[(&format!("{sym}_n"), "n", "int")],
+            give(
+                &format!("{sym}_r"),
+                json!([{"ref": format!("{sym}_n")}, {"op": "*"}, {"num": factor}]),
+            ),
+            false,
+        )
+    };
+    let mut area = define(
+        "s_area",
+        "area",
+        "int",
+        &[("s_side", "side", "int"), ("s_scale", "scale", "int")],
+        give(
+            "area_r",
+            json!([{"ref": "s_twice_geo"}, {"op": "("}, {"ref": "s_side"}, {"op": ")"}, {"op": "*"}, {"ref": "s_scale"}]),
+        ),
+        true,
+    );
+    area["inputs"] = json!({"DEFAULT1": {"expr": [{"num": "2"}]}});
+    let program = analyse(
+        &project(&[
+            (
+                "mod_main",
+                "main",
+                json!([
+                    printing(&[
+                        json!([{"ref": "s_area"}, {"op": "("}, {"num": "3"}, {"op": ")"}]),
+                        json!([{"ref": "s_area"}, {"op": "("}, {"num": "3"}, {"op": ","}, {"num": "1"}, {"op": ")"}]),
+                        json!([{"ref": "s_twice_main"}, {"op": "("}, {"num": "5"}, {"op": ")"}]),
+                    ]),
+                    twice("s_twice_main", "2")
+                ]),
+            ),
+            (
+                "mod_geometry",
+                "geometry",
+                json!([area, twice("s_twice_geo", "3")]),
+            ),
+            ("mod_notes", "notes", json!([])),
+        ]),
+        &[],
+    );
+    let project = generate(&program);
+    let paths: Vec<&str> = project.files.iter().map(|file| file.path.as_str()).collect();
+    assert_eq!(paths, ["main.cpp", "geometry.cpp", "geometry.hpp", "notes.cpp"]);
+    assert!(text(&project, "geometry.hpp").contains("int area(int side, int scale = 2);\n"));
+    assert!(text(&project, "geometry.cpp").contains("int area(int side, int scale) {\n"));
+    assert!(!text(&project, "geometry.cpp").contains("= 2"));
+    assert!(text(&project, "main.cpp").contains("#include \"geometry.hpp\"\n"));
+    // Neither `twice` is called with casts: a module's calls see its own
+    // functions and the shared ones, so these are no overload set.
+    assert!(text(&project, "main.cpp").contains("std::cout << twice(5) << '\\n';"));
+    // A module with nothing to generate: its comment only.
+    assert_eq!(
+        text(&project, "notes.cpp"),
+        "// Generated by Blocks2Cpp 1.0.0 from project \"Colours\", module \"notes\".\n\
+         // Edit the blocks, not this file – changes here are overwritten.\n"
+    );
+    insta::assert_snapshot!("w3_f_shared_functions", render(&project));
+    let compilers = compilers();
+    if compilers.is_empty() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    headers_compile_alone(&project, &compilers, &dir.path().join("alone"));
+    compile_and_run(&project, &compilers, &dir.path().join("run"), "", "18\n9\n10\n");
+}
+
+/// Code generation never writes `::name` for a function of the module's
+/// anonymous namespace that a header its `.cpp` includes also declares
+/// (w3-modules.md §2.1): `::scale` would silently call `convert`'s shared
+/// `scale`. The analyser reports that name (`B2C-E0213`); where the lookup
+/// model asks for `::name` anywhere else, it is written.
+#[test]
+fn a_call_is_never_written_global_where_an_included_header_declares_the_name() {
+    let mut program = analyse(
+        &project(&[
+            (
+                "mod_main",
+                "main",
+                json!([
+                    printing(&[
+                        json!([{"ref": "s_scale_main"}, {"op": "("}, {"num": "2"}, {"op": ")"}]),
+                        json!([{"ref": "s_half"}, {"op": "("}, {"num": "8"}, {"op": ")"}]),
+                        json!([{"ref": "s_to_celsius"}, {"op": "("}, {"num": "50"}, {"op": ")"}]),
+                    ]),
+                    define(
+                        "s_scale_main",
+                        "scale",
+                        "int",
+                        &[("s_sm_n", "n", "int")],
+                        give("sm_r", json!([{"ref": "s_sm_n"}, {"op": "*"}, {"num": "10"}])),
+                        false
+                    ),
+                    define(
+                        "s_half",
+                        "half",
+                        "int",
+                        &[("s_h_n", "n", "int")],
+                        give("h_r", json!([{"ref": "s_h_n"}, {"op": "/"}, {"num": "2"}])),
+                        false
+                    )
+                ]),
+            ),
+            (
+                "mod_convert",
+                "convert",
+                json!([
+                    define(
+                        "s_scale_convert",
+                        "scale",
+                        "int",
+                        &[("s_sc_n", "n", "int")],
+                        give("sc_r", json!([{"ref": "s_sc_n"}, {"op": "*"}, {"num": "100"}])),
+                        true
+                    ),
+                    define(
+                        "s_to_celsius",
+                        "to_celsius",
+                        "int",
+                        &[("s_tc_f", "f", "int")],
+                        give(
+                            "tc_r",
+                            json!([{"op": "("}, {"ref": "s_tc_f"}, {"op": "-"}, {"num": "32"}, {"op": ")"},
+                                               {"op": "/"}, {"num": "2"}])
+                        ),
+                        true
+                    )
+                ]),
+            ),
+        ]),
+        &["B2C-E0213"],
+    );
+    // As the lookup model of package N would spell both calls.
+    let calls = [("b_print0", "s_scale_main"), ("b_print1", "s_half")];
+    for (block, symbol) in calls {
+        program.spellings.references.insert(
+            (
+                b2c_ir::ids::BlockId::new(block).unwrap(),
+                SymbolId::new(symbol).unwrap(),
+            ),
+            b2c_ir::spelling::Spelling::Global,
+        );
+    }
+    let project = generate(&program);
+    let main = text(&project, "main.cpp");
+    assert!(main.contains("#include \"convert.hpp\"\n"), "{main}");
+    assert!(main.contains("std::cout << scale(2) << '\\n';"), "{main}");
+    assert!(!main.contains("::scale"), "{main}");
+    assert!(main.contains("std::cout << ::half(8) << '\\n';"), "{main}");
+    insta::assert_snapshot!("w3_f_global_guard", main);
 }

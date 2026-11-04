@@ -192,7 +192,7 @@ pub fn generate_with_report(program: &Program, options: &CodegenOptions) -> Gene
         });
     };
     for (module, module_files) in program.modules.iter().zip(&layout.modules) {
-        let lowered = lower::lower_module(program, module, Some(module_files), multi_module);
+        let lowered = lower::lower_module(program, layout, module, multi_module);
         helpers_used.extend(lowered.usage.helpers.iter().copied());
         let plan = emit::FilePlan {
             module_name: &module.name,

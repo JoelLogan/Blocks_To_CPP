@@ -406,15 +406,23 @@ fn duplicate_functions() {
 
 #[test]
 fn duplicate_functions_in_different_modules() {
-    // Every function is generated with external linkage, so the same name in
-    // two modules would not link.
+    // Functions that are not shared are in their file's anonymous namespace
+    // (w3-modules.md §2.1), so two modules may each have one with a name.
+    let other = |shared: bool| {
+        json!({"id": "fn_h2", "type": "func.define", "v": 1,
+               "fields": {"NAME": {"sym": "sym_helper2", "name": "helper"}, "RETURNS": "void", "SHARED": shared}})
+    };
+    let mut shared_helper = func("helper", "void", &[], vec![]);
+    shared_helper["fields"]["SHARED"] = json!(true);
     let d = doc_modules(vec![
         ("main", vec![main(vec![]), func("helper", "void", &[], vec![])]),
-        (
-            "util",
-            vec![json!({"id": "fn_h2", "type": "func.define", "v": 1,
-                        "fields": {"NAME": {"sym": "sym_helper2", "name": "helper"}, "RETURNS": "void"}})],
-        ),
+        ("util", vec![other(false)]),
+    ]);
+    assert_clean(&analyze(&d));
+    // Two shared ones are not: an overload set lives in one module.
+    let d = doc_modules(vec![
+        ("main", vec![main(vec![]), shared_helper]),
+        ("util", vec![other(true)]),
     ]);
     let a = analyze(&d);
     let e = only(&a, "B2C-E0211");
@@ -422,7 +430,11 @@ fn duplicate_functions_in_different_modules() {
         e.primary.block.as_ref().map(b2c_ir::BlockId::as_str),
         Some("fn_h2")
     );
-    assert!(e.message.contains("in module `main`"), "{}", e.message);
+    assert_eq!(
+        e.message,
+        "`helper` is already shared by module `main`. Overloads of a shared function must be in one module, so \
+         rename this one."
+    );
     // Different names in different modules are fine.
     let d = doc_modules(vec![
         ("main", vec![main(vec![]), func("helper", "void", &[], vec![])]),

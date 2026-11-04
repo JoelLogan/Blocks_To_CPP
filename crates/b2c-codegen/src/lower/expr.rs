@@ -6,7 +6,7 @@ use b2c_ir::types::Type;
 
 use super::scan::MAX_DEPTH;
 use super::{Lowerer, bool_token, int_literal};
-use crate::cast::{BinOp, CExpr, CExprKind, CType, Callee, UnOp};
+use crate::cast::{BinOp, CExpr, CExprKind, CType, UnOp};
 use crate::helpers::Helper;
 
 /// The C++ unary operator for a SAST operator.
@@ -193,7 +193,7 @@ impl Lowerer<'_> {
                         )
                         .collect();
                     CExpr::new(CExprKind::Call {
-                        callee: Callee::User(symbol.name.clone()),
+                        callee: self.user_callee(&expr.origin.block, function, &symbol.name),
                         args,
                     })
                 }

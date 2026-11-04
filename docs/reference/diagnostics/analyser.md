@@ -144,18 +144,21 @@ Codes by area:
 ## B2C-E0206 Function of another module
 
 * **Severity:** error
-* **Meaning:** a call refers to a function defined in another module. Sharing
-  functions between modules needs headers, which arrive in a later version.
-  The same holds for a global of another module, and for a type (of a
-  variable, an input, a field or *new … with*) that names another module's
-  struct or enum.
-* **Message:** "`helper` is a function of another module (`utils`). Using
-  functions from other modules isn't supported yet, so move it into this
-  module." For a type: "`Student` is a struct of another module (`util`).
-  Using structs and enums from other modules isn't supported yet, so move it
-  into this module."
-* **How to fix:** move the function, global, struct or enum into the module
-  that uses it.
+* **Meaning:** a call refers to a function of another module that the
+  module does not share. A module calls its own functions and the functions
+  the other modules share (*share with other modules* on their *define*
+  block), which their headers declare. Using a global of another module, or
+  a type (of a variable, an input, a field or *new … with*) that names
+  another module's struct or enum, isn't supported yet.
+* **Message:** "`helper` belongs to module `utils`, which does not share
+  it. To use it here, tick 'share with other modules' on its 'define'
+  block." For a global: "`count` is a global of another module (`utils`).
+  Using globals from other modules isn't supported yet, so move it into
+  this module." For a type: "`Student` is a struct of another module
+  (`util`). Using structs and enums from other modules isn't supported yet,
+  so move it into this module."
+* **How to fix:** share the function in its module, or move the global,
+  struct or enum into the module that uses it.
 
 ## B2C-E0207 Wrong kind of symbol
 
@@ -213,16 +216,19 @@ Codes by area:
   list of input types (counting inputs with default values, and ignoring
   whether an input is a copy, editable or read-only). Functions with one name
   and different inputs (overloads) are fine: `area` of two `int`s and `area`
-  of two `double`s. Two modules can't define functions with the same name
-  yet, whatever their inputs.
+  of two `double`s. Also two modules that both share a function with one
+  name, whatever their inputs: the functions of one name that are shared
+  must be in one module, since otherwise what a call means would depend on
+  which headers its file includes. Functions that are not shared may have
+  the same name in different modules.
 * **Example:** `define [area] with ([int] w) ([int] h)` twice, or `define
   [show] with ([int] n)` beside `define [show] with ([int] n) ([int] width =
   (0))`, since `show (1)` fits both.
 * **Message:** "Two functions called `area` take the same inputs (int, int),
   so a call could not tell them apart." / "Two functions called `beep` can
   both be called with no inputs, so a call could not tell them apart." /
-  "There is already a function called `area` in module `shapes`. Functions
-  of different modules can't share a name yet, so rename one of them."
+  "`show` is already shared by module `report`. Overloads of a shared
+  function must be in one module, so rename this one."
 * **How to fix:** change the inputs of one of the functions, or rename one,
   e.g. `circle_area` and `rectangle_area`.
 
@@ -249,6 +255,17 @@ Codes by area:
   the file includes.
 * **Example:** module `convert` shares `scale`, and module `main` has its
   own `scale` that it does not share.
+* **Message:** "`scale` is also shared by module `convert`. A function that
+  is not shared can't have the name of a shared function of any module: once
+  this file includes `convert.hpp`, C++ could not tell the two apart. Rename
+  this `scale`." When the file does include that header, the message says
+  why, and the problem's related places show the use and each header on the
+  way: "`scale` is also shared by module `convert`, whose header
+  `convert.hpp` this file includes because it uses `to_celsius`. Rename this
+  `scale`." / "… this file includes through `table.hpp`, which it includes
+  because it uses `print_table`. …" / in the same module: "`pick` is also
+  the name of a function this module shares, and C++ could not tell the two
+  apart. Rename one of them, or share this one too."
 * **How to fix:** rename one of the two, or share the module's own one and
   use it instead.
 
@@ -262,6 +279,13 @@ Codes by area:
   not use it.
 * **Example:** a shared function `area` with an input of type `Box`, where
   the struct `Box` is not shared.
+* **Message:** "`area` is shared, but its input `box` has the type `Box`,
+  which is not. Share `Box` too." / "`kind_of` is shared, but the type of
+  its input `boxes` uses `Box`, which is not. Share `Box` too." / "`kind_of`
+  is shared, but its result has the type `Kind`, which is not. Share `Kind`
+  too." / "`scaled` is shared, but the default value of its input `x` uses
+  `unit`, which is not. Share `unit` too." What a function's body uses never
+  counts: the body is only in the module's own file.
 * **How to fix:** share the definition it names too, or stop sharing the
   first one.
 
@@ -726,7 +750,9 @@ Codes by area:
   A global's starting value also needs every global that the functions it
   calls read (through every call), and a default value of a function input
   needs the functions it calls declared first. So a default value cannot
-  call its own function, which C++ declares only after its inputs.
+  call its own function, which C++ declares only after its inputs, and
+  shared functions of different modules cannot have default values that
+  call each other.
 * **Example:** `global [int] [a] = (b + 1)` and `global [int] [b] = (a + 1)`.
 * **Message:** "These definitions each need the next one first, in a circle
   that C++ cannot put in order: `a` needs `b` needs `a`. Change one of them
@@ -748,7 +774,15 @@ Codes by area:
   needs itself.
 * **Example:** module `shapes` shares a struct holding a `Palette` of module
   `colours`, and `colours` shares a constant whose type is an enum of
-  `shapes`.
+  `shapes`. Or module `a` shares `f`, whose default value calls `g` of
+  module `b`, and `b` shares `h`, whose default value calls `k` of `a`.
+* **Message:** "`a.hpp` would need `b.hpp`, because the default value of
+  `f` uses `g` of module `b`, but `b.hpp` already needs `a.hpp`. Two headers
+  can't each include the other. Move `f` into module `b`, or `h` into module
+  `a`." Round more headers: "… but `b.hpp` already needs `a.hpp` through
+  `c.hpp`. Two headers can't each include the other. Move one of these
+  shared functions into another module." The problem's related places show
+  the rest of the circle.
 * **How to fix:** move one of the definitions into the other module.
 
 ## B2C-E0423 Global set from another module's global

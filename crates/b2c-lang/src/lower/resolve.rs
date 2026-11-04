@@ -29,6 +29,15 @@ impl Lowerer<'_> {
             .map_or_else(|| String::from("an unknown name"), |d| quoted(&d.name))
     }
 
+    /// A module's name for messages, in backticks.
+    pub(super) fn module_name(&self, module: usize) -> String {
+        self.document
+            .modules
+            .get(module)
+            .map(|m| quoted(&m.name))
+            .unwrap_or_default()
+    }
+
     /// The symbol that C++ name lookup finds for `name` here.
     fn binding(&self, name: &str) -> Option<&SymbolId> {
         self.pending
@@ -39,9 +48,16 @@ impl Lowerer<'_> {
             .or_else(|| self.scopes.lookup(name))
     }
 
-    /// Whether a function of the current module is declared with this ID.
-    fn local_function(&self, sym: &SymbolId) -> Option<&FuncSig> {
-        self.functions.get(sym).filter(|f| f.module == self.module_index)
+    /// The function declared with this ID if the current module may call
+    /// it (w3-modules.md §2.1): one of its own, or one that another module
+    /// shares. Blocks name functions by ID, so another module's shared
+    /// function is found even where the module has a definition of its
+    /// name; such a definition is reported where it is defined
+    /// (`B2C-E0211`, `B2C-E0213`).
+    fn visible_function(&self, sym: &SymbolId) -> Option<&FuncSig> {
+        self.functions
+            .get(sym)
+            .filter(|f| f.module == self.module_index || f.shared)
     }
 
     /// Reads a variable, parameter or counter: its type, or `None` after
@@ -84,7 +100,7 @@ impl Lowerer<'_> {
             }
             return Some(self.symbols.get(sym).map_or(Type::Error, |s| s.ty.clone()));
         }
-        if self.local_function(sym).is_some() {
+        if self.visible_function(sym).is_some() {
             let message = format!(
                 "{} is a function, not a value. To run it and use its result, call it: use its call block or \
                  write {}() in an expression.",
@@ -111,7 +127,7 @@ impl Lowerer<'_> {
             }
             return Some(self.symbols.get(sym).map_or(Type::Error, |s| s.ty.clone()));
         }
-        if self.local_function(sym).is_some() {
+        if self.visible_function(sym).is_some() {
             let message = format!(
                 "{} is a function; only variables can be changed.",
                 self.name_of(sym)
@@ -203,7 +219,7 @@ impl Lowerer<'_> {
             self.diags.error(codes::WRONG_KIND, location.clone(), message);
             return None;
         }
-        if let Some(sig) = self.local_function(sym).cloned() {
+        if let Some(sig) = self.visible_function(sym).cloned() {
             if let Some(hiding) = self.binding(&sig.name).cloned() {
                 let message = format!(
                     "This calls the function {name}, but a variable called {name} hides it here, so C++ would \
@@ -274,28 +290,24 @@ impl Lowerer<'_> {
                      so it doesn't exist when the program runs."
                 ),
             ),
-            (DeclStatus::Active, DeclKind::Function | DeclKind::Global)
-                if decl.module != self.module_index =>
-            {
-                let module = self
-                    .document
-                    .modules
-                    .get(decl.module)
-                    .map(|m| quoted(&m.name))
-                    .unwrap_or_default();
-                let what = if decl.kind == DeclKind::Global {
-                    "a global"
-                } else {
-                    "a function"
-                };
-                (
-                    codes::OTHER_MODULE,
-                    format!(
-                        "{name} is {what} of another module ({module}). Using {what}s from other modules \
-                         isn't supported yet, so move it into this module."
-                    ),
-                )
-            }
+            // Another module's function that it does not share
+            // (w3-modules.md §2.1, §1.9).
+            (DeclStatus::Active, DeclKind::Function) if decl.module != self.module_index => (
+                codes::OTHER_MODULE,
+                format!(
+                    "{name} belongs to module {}, which does not share it. To use it here, tick 'share \
+                     with other modules' on its 'define' block.",
+                    self.module_name(decl.module)
+                ),
+            ),
+            (DeclStatus::Active, DeclKind::Global) if decl.module != self.module_index => (
+                codes::OTHER_MODULE,
+                format!(
+                    "{name} is a global of another module ({}). Using globals from other modules isn't \
+                     supported yet, so move it into this module.",
+                    self.module_name(decl.module)
+                ),
+            ),
             (DeclStatus::Active, DeclKind::Variable) if self.scopes.encloses(&decl.path) => (
                 codes::USED_BEFORE_DECLARATION,
                 format!(

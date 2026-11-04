@@ -101,9 +101,16 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
         )
         .then(|| (module, symbol.name.as_str(), sym))
     });
+    // Other modules see a module's shared functions where they have no
+    // definition of that name (w3-modules.md §2.1).
+    let shared = lowerer
+        .functions
+        .iter()
+        .filter(|(_, sig)| sig.shared)
+        .map(|(sym, sig)| (sig.module, sig.name.as_str(), sym));
     lowerer
         .index
-        .finish(trail, document.modules.len(), functions.chain(user_types));
+        .finish(trail, document.modules.len(), functions.chain(user_types), shared);
     // Each module's files, what they include and the order of their
     // declarations (ADR-0019, modules.md §4, w3-modules.md §1.7).
     let layout = crate::layout::compute_layout(&modules, &lowerer.symbols, &mut lowerer.diags);
@@ -130,6 +137,9 @@ struct FuncSig {
     name: String,
     /// Index of the defining module.
     module: usize,
+    /// Whether its module shares it with the others (ADR-0019), which then
+    /// call it too (w3-modules.md §2.1).
+    shared: bool,
     /// Return type.
     ret: Type,
     /// Parameters that were declared successfully.
@@ -456,9 +466,11 @@ impl<'d> Lowerer<'d> {
         // Globals next: their types may be user types, and every function's
         // parameters, defaults and body see them (w2.md §2.7).
         let globals = self.declare_globals();
-        // Function names are unique in the whole program: every function is
-        // generated with external linkage, so two modules defining the same
-        // name would not link.
+        // The functions of the whole program by name: a module's own
+        // functions with one name are overloads, which calls must tell
+        // apart, and two modules may not share functions with one name
+        // (w3-modules.md §2.1). Functions that are not shared are in their
+        // file's anonymous namespace, so two modules may each have one.
         let mut names = BTreeMap::new();
         for (index, module) in document.modules.iter().enumerate() {
             self.enter_module(index, &module.id);
@@ -776,8 +788,9 @@ impl<'d> Lowerer<'d> {
         let ret = self.type_setting(block, "RETURNS", "void", TypeUse::Result);
         let params = self.declare_params(block, &decl.name);
         let required = self.check_default_order(&params, &decl.name);
+        let shared = self.shared_tick(block);
         let others = names.get(&decl.name).cloned().unwrap_or_default();
-        self.check_overloads(&others, &decl.name, &params, required, &name_loc);
+        self.check_overloads(&others, &decl.name, shared, &params, required, &name_loc);
         names.entry(decl.name.clone()).or_default().push(decl.sym.clone());
         let symbol = Symbol {
             name: ident,
@@ -792,7 +805,6 @@ impl<'d> Lowerer<'d> {
             ty: ret.clone(),
             origin: self.origin(&block.id, field("NAME")),
         };
-        let shared = self.shared_tick(block);
         if self.insert_symbol(&decl.sym, &decl.name, symbol, name_loc) {
             if shared {
                 self.share(block, &decl.name, &decl.sym);
@@ -800,6 +812,7 @@ impl<'d> Lowerer<'d> {
             let sig = FuncSig {
                 name: decl.name.clone(),
                 module: self.module_index,
+                shared,
                 ret,
                 params,
                 required,
@@ -811,15 +824,20 @@ impl<'d> Lowerer<'d> {
 
     /// Reports a function named like one declared before it (`others`) that
     /// a call could not tell apart from it (`B2C-E0211`, w2.md §2.8): in
-    /// another module, any one of that name (functions have external
-    /// linkage, and other modules' functions can't be called yet); in this
-    /// module, one whose inputs give the same list of types for some number
-    /// of arguments that both take, counting default values and ignoring how
-    /// the inputs are passed.
+    /// another module, a shared one when this one is shared too, since an
+    /// overload set lives in one module (w3-modules.md §2.1: a call's
+    /// meaning would otherwise depend on which headers its file includes);
+    /// in this module, one whose inputs give the same list of types for some
+    /// number of arguments that both take, counting default values and
+    /// ignoring how the inputs are passed. Functions of different modules
+    /// that are not both shared are fine here: those that are not shared are
+    /// in their file's anonymous namespace, and one that has the name of a
+    /// shared function is `B2C-E0213` (`crate::layout`).
     fn check_overloads(
         &mut self,
         others: &[SymbolId],
         name: &str,
+        shared: bool,
         params: &[ParamSig],
         required: usize,
         location: &Location,
@@ -828,12 +846,15 @@ impl<'d> Lowerer<'d> {
             let module = self.decls.get(other).map(|d| d.module);
             let message = match module {
                 Some(module) if module != self.module_index => {
-                    let module = self.document.modules.get(module).map(|m| quoted(&m.name));
+                    let other_shared = self.functions.get(other).is_some_and(|sig| sig.shared);
+                    if !shared || !other_shared {
+                        continue;
+                    }
                     format!(
-                        "There is already a function called {} in module {}. Functions of different modules \
-                         can't share a name yet, so rename one of them.",
+                        "{} is already shared by module {}. Overloads of a shared function must be in one \
+                         module, so rename this one.",
                         quoted(name),
-                        module.unwrap_or_default()
+                        self.module_name(module)
                     )
                 }
                 _ => {
