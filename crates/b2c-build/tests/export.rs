@@ -20,8 +20,20 @@ use b2c_ir::source_map::{FileKind, GeneratedFile, GeneratedProject, SourceMap};
 use common::repo_root;
 use common::run_data::RunData;
 
-/// The examples built here: plain output, input, vectors and text.
-const EXAMPLES: [&str; 4] = ["hello_world", "greeting", "matrix_sum", "palindrome"];
+/// The examples built here: plain output, input, vectors and text, and
+/// each example of several modules (w3-modules.md §2.8): `unit_converter`,
+/// with two headers and `b2c_support.hpp`.
+const EXAMPLES: [&str; 5] = [
+    "hello_world",
+    "greeting",
+    "matrix_sum",
+    "palindrome",
+    "unit_converter",
+];
+
+/// The examples of several modules, which CMake builds too.
+#[cfg(unix)]
+const MULTI_MODULE: [&str; 1] = ["unit_converter"];
 
 /// A command for a build tool. Production code spawns processes only
 /// through b2c-process; tests drive the tools directly.
@@ -129,7 +141,7 @@ fn exported_examples_build_with_cmake() {
     if common::gxx().is_none() || !available("cmake") {
         return;
     }
-    for name in &EXAMPLES[..2] {
+    for name in EXAMPLES[..2].iter().chain(&MULTI_MODULE) {
         let dir = tempfile::tempdir().unwrap();
         let folder = dir.path().join("export");
         let export = exported(name, &folder);

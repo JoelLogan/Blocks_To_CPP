@@ -283,6 +283,13 @@ fn examples_generate_cpp_that_compiles() {
             .filter(|file| file.kind == FileKind::Source)
             .collect();
         assert!(!sources.is_empty(), "{name}: no source files");
+        // The generated files side by side, where a `.cpp` of several
+        // modules finds the headers it includes.
+        let folder = std::env::temp_dir().join(format!("b2c-lang-examples-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&folder).expect("a folder for the generated files");
+        for file in &project.files {
+            std::fs::write(folder.join(&file.path), &file.contents).expect("a generated file");
+        }
         for file in sources {
             assert!(
                 !file.contents.contains("/* error */"),
@@ -290,12 +297,13 @@ fn examples_generate_cpp_that_compiles() {
                 file.path,
                 file.contents
             );
-            if let Err(messages) = common::gxx::syntax_check(&file.contents, true) {
+            if let Err(messages) = common::gxx::syntax_check_in(&file.contents, true, &folder) {
                 panic!(
                     "g++ rejected {name} ({}):\n{messages}\n--- source ---\n{}",
                     file.path, file.contents
                 );
             }
         }
+        std::fs::remove_dir_all(&folder).expect("the generated files removed");
     }
 }

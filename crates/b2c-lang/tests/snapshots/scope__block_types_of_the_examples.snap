@@ -107,6 +107,13 @@ times_table.b2c:
   (no value blocks)
 tricky_text.b2c:
   b004: "char"
+unit_converter.b2c:
+  b105: "double"
+  b106: "double"
+  b107: "double"
+  b110: "double"
+  b111: "double"
+  b212: "int"
 weather.b2c:
   b001: "bool"
   b002: "bool"

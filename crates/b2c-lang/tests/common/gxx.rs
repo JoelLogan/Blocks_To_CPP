@@ -47,6 +47,22 @@ pub(crate) fn syntax_check(source: &str, warnings_are_errors: bool) -> Result<()
     run_syntax_check(source, args)
 }
 
+/// [`syntax_check`] for a file of a program of several modules: the
+/// project headers it includes (`#include "<stem>.hpp"`) are found in
+/// `headers`, the folder that holds the program's generated files.
+pub(crate) fn syntax_check_in(
+    source: &str,
+    warnings_are_errors: bool,
+    headers: &std::path::Path,
+) -> Result<(), String> {
+    let folder = headers.to_string_lossy().into_owned();
+    let mut args = vec!["-std=c++20", "-Wall", "-Wextra", "-iquote", folder.as_str()];
+    if warnings_are_errors {
+        args.push("-Werror");
+    }
+    run_syntax_check(source, args)
+}
+
 /// [`syntax_check`] under another standard (`c++17`, `c++20`), with
 /// `-Wpedantic` too, warnings allowed.
 pub(crate) fn syntax_check_with(source: &str, standard: &str) -> Result<(), String> {
