@@ -144,7 +144,7 @@ the package that builds each one and adds what they leave open.
 | Add, rename and delete modules | The module strip above the canvas (shown from one module on, not two as now) with ⊕ *Add module* and one *Module actions* menu for the shown module: *Rename…*, *Delete…*, *Move left*, *Move right* (the moves are an addition to ADR-0019 §9, §6 W3M-D9). Dialogs check the name as the loader and `E0221` do (§2.10). Deleting a module with blocks asks first and can be undone with *Undo delete* (§6 W3M-D6). ⊕ is disabled at 256 modules (*A project can have at most 256 modules*); *Delete…* is disabled on the only module (*A project needs at least one module*); deleting the module that holds *when program starts* says so in its dialog (the program then has no start, `E0405`). Every module edit is refused, with the banner's text, while the canvas holds a change that cannot be read back | each module its `<stem>.cpp` (an empty module too, with its header comment); the first module names the program. Adding the second module changes the first module's `main.cpp` (§2.13) | loader rules; `E0221` | E |
 | *share with other modules* on *define* | A checkbox at the end of `func.define`, as on `type.struct`; shown only in a multi-module project, kept when hidden | a shared function's declaration (with its default values) in `<stem>.hpp`, its definition in `<stem>.cpp` | — | P0 (catalog), E (shown) |
 | Calling another module's shared function | *Your functions* lists the module's own functions, then each other module's shared functions not hidden by an own name, under that module's heading; the call block looks as any call | `#include "utils.hpp"` in the calling module's `.cpp` | `E0206` for a non-shared one, new text and quick fix *Share* (W4) | F |
-| Non-shared functions | Same-named helpers in two modules are fine | in an anonymous namespace in their `.cpp` | `E0213` when a non-shared name meets a shared name of a header its `.cpp` includes, for whatever reason (§2.1, W3M-D10) | F |
+| Non-shared functions | Same-named helpers in two modules are fine | in an anonymous namespace in their `.cpp` | `E0213` when a non-shared name is a shared name of any module, its own or another (program-wide, §2.1, W3M-D10) | F |
 | A shared function whose inputs or result name something not shared | The *define* block's error | — | `E0214` (signature, default values) | F |
 | `main` in any module | *when program starts* may be in any module | `int main()` last, at global scope, in that module's `.cpp` | `E0405`, `E0406` unchanged | F |
 | `b2c_support.hpp` | The C++ tab lists it last | written when the project has two or more modules and some file uses a helper; single-module projects keep the inline section | — | P0 |
@@ -337,7 +337,7 @@ the `allow`.
 | `B2C-E0206` | reused, new text | a reference to another module's definition that it does not share: *"`helper` belongs to module `utils`, which does not share it. To use it here, tick 'share with other modules' on its 'define' block."* (functions in F; types, globals, constants in T; §7.1) | F, T |
 | `B2C-E0210` | reused | two shared definitions with one name in one namespace of the project; a user namespace with the name of any definition, shared or not, of any module in the same enclosing namespace (program-wide, so it never depends on includes); non-shared definitions of different modules no longer clash | F, T, N |
 | `B2C-E0211` | reused, new texts | two shared functions with one name in different modules (§2.1: an overload set lives in one module); the M2 cross-module text goes | F |
-| `B2C-E0213` | first emitted | a non-shared name that is also a shared name of its own module or of a module whose header its `.cpp` includes, directly or through other headers, for whatever reason the header is included (06 §6.14.7); for namespace members, the namespace's shared members so reached. The message names the cause (§2.1). If the owner chooses W3M-D10's alternative, any module's shared name in that namespace | F (functions), T (types, globals), N (namespace members) |
+| `B2C-E0213` | first emitted | a non-shared name that is also a shared name of any module in the same namespace, its own or another, whether or not its `.cpp` includes that module's header (program-wide, W3M-D10; 06 §6.14.7); for namespace members, any module's shared members of that namespace. The message names the cause when the header is included, and otherwise the header that would bring the clash (§2.1) | F (functions), T (types, globals), N (namespace members) |
 | `B2C-E0214` | first emitted | a shared definition's header part names a non-shared definition of its module: *"`area` is shared, but its input `box` has the type `Box`, which is not. Share `Box` too."* A shared constant's value never draws it (§1.3) | F (signatures, default values), T (fields, field defaults, constant and variable types) |
 | `B2C-E0215` | first emitted | a namespace-scope type, or a user namespace, whose name a nominated namespace declares where it is referred to (`list`, `pair`, `chrono`), using only the names of the project's standard | N |
 | `B2C-E0219` | new | a *namespace* block nested more than 14 deep (`MAX_NAMESPACE_DEPTH`, §2.12) | N |
@@ -391,21 +391,24 @@ package adds its blocks"*, next steps §3.8; P0).
     using an unrelated definition of another module.
   * Non-shared definitions of different modules may share a name with each
     other.
-  * A non-shared name may not be a shared name of its own module or of a
-    module whose header its `.cpp` includes, directly or transitively
-    (`E0213`). C++ cannot do otherwise: once `utils.hpp` is included,
-    `scale(…)` is ambiguous between `::scale` and the anonymous namespace's
-    `scale`, and `::scale` silently reaches the other module's (§0). Since
-    includes follow use, `E0213` can appear on a definition the student did
-    not touch, when the module starts using an unrelated shared definition
-    of `utils` or of a module whose header `utils.hpp` includes. Its message
-    therefore names the cause: *"`scale` is also shared by module
-    `convert`, whose header `convert.hpp` this file includes because it
-    uses `to_celsius`. Rename this `scale`."*, with related locations on
-    that use, on the shared definition and, when transitive, on each
-    include of the chain. Quick fixes (W4): rename, or *Share* when the
-    shared one is in its own module. W3M-D10 asks the owner whether to
-    apply `E0213` program-wide instead, which never depends on use.
+  * A non-shared name may not be a shared name of any module, its own or
+    another, in the same namespace (`E0213`, program-wide: W3M-D10). C++
+    cannot do otherwise once the header is included: `scale(…)` is then
+    ambiguous between `::scale` and the anonymous namespace's `scale`, and
+    `::scale` silently reaches the other module's (§0). Includes follow
+    use, so a rule that followed them would make `E0213` appear on a
+    definition the student did not touch, when the module starts using an
+    unrelated shared definition; the program-wide rule never depends on
+    use. The message names the cause when the module's `.cpp` does include
+    the header: *"`scale` is also shared by module `convert`, whose header
+    `convert.hpp` this file includes because it uses `to_celsius`. Rename
+    this `scale`."*, with related locations on that use, on the shared
+    definition and, when the header is reached through other headers, on
+    each include of the chain. Otherwise it names the header that would
+    bring the clash: *"… once this file includes `convert.hpp`, C++ could
+    not tell the two apart."* In the module that shares the name it says
+    *"Rename one of them, or share this one too."* Quick fixes (W4):
+    rename, or *Share* when the shared one is in its own module.
   * Codegen never writes `::name` to reach an anonymous-namespace entity
     that an included header also declares (a guard with a test, F): the
     analyser has already reported `E0213` there.
@@ -1161,7 +1164,8 @@ build tests (§5.2, C).
 * **N2.**
   * Analyser: `geo::area` in the scope query; one namespace in two modules;
     `E0210` for a name taken in a namespace; `E0213` for a non-shared member
-    meeting a shared member through a header; `E0215` for `list`, `pair`,
+    with the name of any module's shared member of that namespace, with and
+    without an include of its header (program-wide, W3M-D10); `E0215` for `list`, `pair`,
     `chrono` only with a directive and only in the project's standard;
     `I0523` for each redundancy case of 06 §6.14.3 rule 5 that M3 can
     build; `E0203` for a namespace the file cannot see; the lookup model's
@@ -1352,7 +1356,7 @@ corrected in place and the correction is recorded here with its reason.
 | A reference's `Spelling` is kept in `Program::spellings`, keyed by the referring block and the symbol, not as a field of each SAST reference | a field on every reference node would change every constructor and the SAST snapshots; a table beside the SAST, like the layout, is not serialised and is empty until N2 fills it | §2.12 (P0) |
 | `Layout::flat` gives `module<N>` also to a module whose stem an earlier module already has, and code generation names files only by `ModuleFiles::stem` | `source_path`'s own de-duplication went with it (§3.1); the loader refuses such names, but code generation must never write two files with one name | §3.1 (P0) |
 | `emit::header_file` prints a shared enum's definition only (its `operator<<` and `b2c::to_text` are T's, §1.7) and a shared global as `extern` or `inline constexpr`; a `.cpp` leaves out what its header declares, but still defines a shared global that is not `constexpr` | what P0 prints for each kind `header_order` can list; F and T refine it | §3.1 (P0) |
-| `B2C-E0213` is program-wide (W3M-D10): a function that is not shared may not have the name of any module's shared function. Its message names the cause when the module's `.cpp` does include that header (the use, and each header on the way as related locations); otherwise it names the header that would bring the clash (*"once this file includes `convert.hpp`, C++ could not tell the two apart"*); in the module that shares the name it says *"Rename one of them, or share this one too."* It is computed with the layout, after the includes | the owner's answer to W3M-D10; the cause needs the includes, which the layout computes | §1.9, §2.1 (F) |
+| `B2C-E0213` is program-wide (W3M-D10): a function that is not shared may not have the name of any module's shared function. Its message names the cause when the module's `.cpp` does include that header (the use, and each header on the way as related locations); otherwise it names the header that would bring the clash (*"once this file includes `convert.hpp`, C++ could not tell the two apart"*); in the module that shares the name it says *"Rename one of them, or share this one too."* It is computed with the layout, after the includes | the owner's answer to W3M-D10; the cause needs the includes, which the layout computes | §1.2, §1.9, §2.1, §5.2 N2 (F) |
 | `B2C-E0206`'s text for a function adds how to fix it: *"`helper` belongs to module `utils`, which does not share it. To use it here, tick 'share with other modules' on its 'define' block."*; the global's text stays M2's until T | the *Share* quick fix is W4's; until it exists the message says what to do | §1.9 (F) |
 | `B2C-E0214` for a function counts only definitions of its own module (another module's that is not shared is `B2C-E0206` where it is named) and names exactly the input, the result or the default value. A shared function that names a *shared* struct, enum or global of its module draws no `B2C-E0214`, but its header lacks that definition until T turns types and globals on (`TYPES_AND_GLOBALS_IN_HEADERS`); the editor shows `SHARED` on those blocks only from T on | headers hold functions only in R1 | §1.3, §1.9 (F) |
 | `B2C-E0421` across modules for functions comes from a graph of the program's functions and the calls in their default values, built in `layout.rs`; circles inside one module stay the module graph's, so a function on one is not reported again when a wider circle across modules holds it. `B2C-E0422` is reported on each header need inside a circle of headers that no such circle of functions explains (a need through a call between two functions of one such circle is explained; every shared function whose default value makes the need is reported, not only the first), with the way back round the circle as related locations; the message names one function to move on each side only when each side's need has one | `order.rs` is T's: T's program graph replaces both | §2.2 (F) |
