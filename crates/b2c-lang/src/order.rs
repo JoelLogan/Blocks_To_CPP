@@ -311,6 +311,13 @@ impl Graph {
     /// of any other cycle. A message shows at most [`SHOWN_STEPS`] steps of
     /// a long cycle.
     pub(crate) fn report_cycles(&self, diags: &mut Diags) {
+        self.report_cycles_except(&BTreeSet::new(), diags);
+    }
+
+    /// [`Graph::report_cycles`], with nothing reported at the nodes of
+    /// `skip` (reported elsewhere already); the paths round each cycle still
+    /// go through them.
+    pub(crate) fn report_cycles_except(&self, skip: &BTreeSet<usize>, diags: &mut Diags) {
         for cycle in self.cycles() {
             let members: BTreeSet<usize> = cycle.iter().copied().collect();
             // One walk round the cycle serves every node on it; a node off
@@ -325,7 +332,7 @@ impl Graph {
                 && round.iter().all(|dep| dep.field);
             let on_round: BTreeMap<usize, usize> =
                 round.iter().enumerate().map(|(at, dep)| (dep.on, at)).collect();
-            for &node in &cycle {
+            for &node in cycle.iter().filter(|node| !skip.contains(node)) {
                 let path: Vec<&Dep> = match on_round.get(&node) {
                     _ if Some(node) == start => round.clone(),
                     Some(&at) => round[at + 1..]

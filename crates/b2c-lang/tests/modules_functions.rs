@@ -818,6 +818,40 @@ fn e0422_names_the_way_round_a_circle_of_three_headers() {
     assert_eq!(related(found[0]).len(), 2);
 }
 
+#[test]
+fn e0421_once_for_a_circle_within_a_module_that_a_wider_circle_holds() {
+    // `f` and `g` call each other in module `a` (the module's own
+    // `B2C-E0421`), and `g` → `h` → `f` crosses into `b`.
+    let document = doc_modules(vec![
+        ("main", vec![main_block(vec![])]),
+        (
+            "a",
+            vec![
+                with_default("s_f", "f", call("s_g", &[]), true),
+                with_default(
+                    "s_g",
+                    "g",
+                    json!({"expr": [r("s_f"), op("("), op(")"), op("+"), r("s_h"), op("("), op(")")]}),
+                    true,
+                ),
+            ],
+        ),
+        ("b", vec![with_default("s_h", "h", call("s_f", &[]), true)]),
+    ]);
+    let analysis = analyze(&document);
+    let codes: Vec<&str> = analysis.diagnostics.iter().map(|d| d.code.0.as_str()).collect();
+    assert_eq!(codes, ["B2C-E0421"; 3], "{}", render_all(&analysis));
+    let blocks: BTreeSet<(String, String)> = analysis.diagnostics.iter().map(at).collect();
+    assert_eq!(
+        blocks,
+        BTreeSet::from([
+            (String::from("mod_1"), String::from("fn_s_f")),
+            (String::from("mod_1"), String::from("fn_s_g")),
+            (String::from("mod_2"), String::from("fn_s_h")),
+        ])
+    );
+}
+
 // --- main and the layout ----------------------------------------------------------------
 
 #[test]

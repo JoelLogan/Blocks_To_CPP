@@ -555,8 +555,9 @@ fn named_in<'e>(root: &'e Expr, symbols: &SymbolTable) -> Vec<(&'e SymbolId, Loc
 /// Reports functions of different modules whose default values call each
 /// other in a circle (`B2C-E0421`, w3-modules.md §2.2): each needs the
 /// other's declaration first, which no order of headers gives. A circle
-/// within one module is the declaration graph's, reported with the module.
-/// Returns the modules of each circle reported, which explain the headers
+/// within one module is the declaration graph's, reported with the module,
+/// so a function on one is not reported again when a wider circle across
+/// modules holds it (one code per cycle). Returns the modules of each circle reported, which explain the headers
 /// that would include each other because of it (`B2C-E0422` is not
 /// reported again for them).
 fn check_function_cycles(program: &ProgramView<'_>, diags: &mut Diags) -> Vec<BTreeSet<usize>> {
@@ -615,8 +616,16 @@ fn check_function_cycles(program: &ProgramView<'_>, diags: &mut Diags) -> Vec<BT
     if crossing.is_empty() {
         return Vec::new();
     }
+    // The functions on a circle within one module, which its declaration
+    // graph has reported.
+    let mut local = graph.clone();
+    for (node, deps) in local.deps.iter_mut().enumerate() {
+        deps.retain(|dep| places[dep.on].0 == places[node].0);
+    }
+    let reported: BTreeSet<usize> = local.cycles().into_iter().flatten().collect();
     // Only the circles that cross a module, alone in a graph of their own.
     let mut circles = Graph::default();
+    let mut skipped = BTreeSet::new();
     let mut explained = Vec::new();
     for cycle in graph.cycles() {
         let members: BTreeSet<usize> = cycle.iter().copied().collect();
@@ -631,6 +640,12 @@ fn check_function_cycles(program: &ProgramView<'_>, diags: &mut Diags) -> Vec<BT
             .iter()
             .map(|&node| (node, circles.add(graph.nodes[node].clone())))
             .collect();
+        skipped.extend(
+            renumbered
+                .iter()
+                .filter(|(old, _)| reported.contains(old))
+                .map(|(_, &new)| new),
+        );
         for (&old, &new) in &renumbered {
             for dep in &graph.deps[old] {
                 if let Some(&on) = renumbered.get(&dep.on) {
@@ -639,7 +654,7 @@ fn check_function_cycles(program: &ProgramView<'_>, diags: &mut Diags) -> Vec<BT
             }
         }
     }
-    circles.report_cycles(diags);
+    circles.report_cycles_except(&skipped, diags);
     explained
 }
 
