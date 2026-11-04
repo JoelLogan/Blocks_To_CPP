@@ -239,8 +239,9 @@ build needs.
   unchanged, as no newer stable release exists. `wry` 0.57.1 and `tao` 0.37.2 (2026-10-23) are
   taken by hand, since `tauri-runtime-wry` asks only for 0.57 and 0.37. `tauri-codegen` 2.7.4
   brings `ico` 0.6.0 (2026-10-10, MIT), and the second copies of `png` (0.17) and `base64` (0.22)
-  are gone. `tauri-plugin-dialog` stays 2.8.3: 2.8.4 (2026-10-28) is too new, and it moves to
-  `rfd` 0.17 (see the `rfd` note above). Other crates are updated the same way: `tokio` is on
+  are gone. `tauri-plugin-dialog` stays 2.8.3: 2.8.4 (2026-10-28) has been old enough since
+  2026-11-04, but it moves to `rfd` 0.17, so it waits for an `rfd` 0.17 release that passes the
+  text after `"%s"` (see the `rfd` note above). Other crates are updated the same way: `tokio` is on
   1.53.3 (2026-10-13), which fixes RUSTSEC-2026-0386, because 1.54.0 was yanked and 1.54.1 came
   out on 2026-10-21. A `--precise` update can also move unrelated crates between the `windows-sys`
   (or `syn`) versions already in the lockfile, so read the `Cargo.lock` diff and keep only the
