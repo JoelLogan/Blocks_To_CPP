@@ -11,6 +11,7 @@ import * as Blockly from 'blockly/core';
 
 import { createCatalogField, registerB2cFields } from '../fields/register';
 import { BLOCK_DEFS, type BlockDefJson } from '../generated/catalog';
+import { multiModule } from '../services';
 import { registerExpressionShadows } from '../shadows/register';
 import { visibleInvisibles } from '../text';
 import { blockStyleFor } from '../theme/themes';
@@ -52,16 +53,20 @@ export function registerB2cBlocks(): void {
 /**
  * The Blockly definition (`init`) of one catalog block. A block is laid out in the label mode in
  * effect when it is built (./labelMode.ts): in the C++ mode from its C++ template when that names
- * every part, with its menus' C++ option texts (./labels.ts). Both layouts have the same fields and
- * inputs, so a block's state does not depend on the mode.
+ * every part, with its menus' C++ option texts (./labels.ts). In a project with several modules
+ * (the services' `multiModule`), a definition shows its *share with other modules* checkbox
+ * (./layout.ts, `SHARED_SHOWN_ON`); otherwise the checkbox is there but hidden. Every layout has the
+ * same fields and inputs, so a block's state depends on neither.
  */
 export function blockDefinition(def: BlockDefJson): { init: (this: Blockly.Block) => void } {
-  const layouts = new Map<LabelMode, BlockLayout>();
-  const layoutIn = (mode: LabelMode): BlockLayout => {
-    let layout = layouts.get(mode);
+  // One layout per label mode and module count (one or several), made when first needed.
+  const layouts = new Map<string, BlockLayout>();
+  const layoutIn = (mode: LabelMode, several: boolean): BlockLayout => {
+    const key = `${mode}:${several ? 'modules' : 'module'}`;
+    let layout = layouts.get(key);
     if (layout === undefined) {
-      layout = blockLayout(def, blockLabelParts(def, mode));
-      layouts.set(mode, layout);
+      layout = blockLayout(def, blockLabelParts(def, mode), { multiModule: several });
+      layouts.set(key, layout);
     }
     return layout;
   };
@@ -70,7 +75,7 @@ export function blockDefinition(def: BlockDefJson): { init: (this: Blockly.Block
   return {
     init(this: Blockly.Block): void {
       const mode = blockLabelMode();
-      buildInputs(this, def, layoutIn(mode), mode);
+      buildInputs(this, def, layoutIn(mode, multiModule()), mode);
       applyShownWhileTicked(this);
       applyShape(this, def.shape);
       this.setStyle(blockStyleFor(def.category, def.shape));
@@ -146,7 +151,7 @@ function appendItem(
   const field = createCatalogField(shown, catalogFieldOptions(block.type, fieldDef.name));
   input.appendField(field, fieldDef.name);
   if (item.hidden === true) {
-    // Kept with its value, not shown (the SHARED field, w2.md §2.1).
+    // Kept with its value, not shown (the SHARED field of a single-module project, w2.md §2.1).
     field.setVisible(false);
   }
 }

@@ -120,8 +120,11 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
   const services = createSymbolServices({
     core: () => deps.host.current(),
     preview: () => deps.store.getState().analysis.preview,
+    scope: () => deps.store.getState().analysis.scope,
     workspace,
     activeModule: () => deps.store.getState().project?.activeModuleId ?? null,
+    // Definitions show *share with other modules* only then (w3-modules.md §1.2).
+    multiModule: () => (deps.store.getState().project?.document.modules.length ?? 0) > 1,
   });
   const uninstallServices = installEditorServices({
     symbols: services.symbols,

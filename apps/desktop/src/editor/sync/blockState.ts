@@ -24,7 +24,9 @@ import { type BlockOrigin, originOf } from './origin';
 
 /**
  * The block's fields as a project stores them. A field without a value (a reference with nothing
- * chosen) is left out, and so is a field the block's file left out while it still has its default.
+ * chosen) is left out, and so is a field the block's file left out while it still has its default,
+ * and a field of a new block that the catalog writes only when it differs from its default
+ * (`omitDefault`) while it has it.
  */
 export function readFields(
   block: Blockly.Block,
@@ -39,11 +41,11 @@ export function readFields(
     if (value === null) {
       continue;
     }
-    if (
-      origin !== null &&
-      !origin.fields.has(name) &&
-      stableJson(value) === stableJson(fieldDefault(definition))
-    ) {
+    // Left out while at its default: a field the block's file left out, and on a new block a field
+    // the catalog writes only when it differs from its default (`omitDefault`: SHARED, W3M-D11),
+    // so a project that shares nothing stays readable by M2.
+    const leftOut = origin === null ? definition.omitDefault === true : !origin.fields.has(name);
+    if (leftOut && stableJson(value) === stableJson(fieldDefault(definition))) {
       continue;
     }
     fields[name] = value;

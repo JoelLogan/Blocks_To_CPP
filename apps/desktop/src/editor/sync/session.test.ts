@@ -23,6 +23,7 @@ import {
 } from '../../app/testing/fixtures';
 import { attachHighlightTracking } from '../highlight/tracking';
 import { createCoreHost } from '../preview/coreHost';
+import type { PreviewService } from '../preview/service';
 import { SyncError } from './errors';
 import { EditorSession, FIRST_VIEW_MARGIN, type SessionHooks } from './session';
 import {
@@ -620,6 +621,50 @@ describe('the editing session', () => {
     dragging.mockReturnValue(false);
     await vi.advanceTimersByTimeAsync(60);
     expect(useAppStore.getState().project?.dirty).toBe(true);
+  });
+});
+
+describe('the hold (w5-performance.md §10.4)', () => {
+  it('applies a preview that comes during a block drag once the drag has ended', async () => {
+    const workspace = renderedWorkspace();
+    const core = stubCore();
+    setCore(core);
+    const doc = twoModules();
+    useAppStore
+      .getState()
+      .actions.setProject(projectFixture({ document: doc, activeModuleId: 'mod_main' }));
+    const host = createCoreHost({
+      initCore: () => Promise.resolve(core),
+      resetCore: () => undefined,
+      getCore,
+      setCore,
+    });
+    let answer: (() => void) | null = null;
+    const service: PreviewService = {
+      thread: () => 'worker',
+      update: (json, options) =>
+        new Promise((resolve) => {
+          answer = () => {
+            resolve({
+              result: core.update(json, options),
+              scope: null,
+              timing: { startedAt: 0, updateMs: 0, indexMs: 0 },
+            });
+          };
+        }),
+      recover: () => Promise.resolve(),
+    };
+    const session = new EditorSession({ workspace, store: useAppStore, host, service });
+    sessions.push(session);
+    await vi.advanceTimersByTimeAsync(0);
+    const dragging = vi.spyOn(workspace, 'isDragging').mockReturnValue(true);
+    expect(answer).not.toBeNull();
+    (answer as unknown as () => void)();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(useAppStore.getState().analysis.preview).toBeNull();
+    dragging.mockReturnValue(false);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(useAppStore.getState().analysis.preview).not.toBeNull();
   });
 });
 

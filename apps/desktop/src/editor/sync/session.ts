@@ -215,6 +215,8 @@ export class EditorSession {
       store: options.store,
       host: options.host,
       read: this.readLive,
+      // An answer that comes while a block is dragged waits for the drop (w5-performance.md §10.4).
+      isBusy: () => isDragging(this.workspace),
       ...(options.service === undefined ? {} : { service: options.service }),
       ...(options.debounceMs === undefined ? {} : { debounceMs: options.debounceMs }),
       onCommitted: (doc) => this.hooks.onCommitted?.(doc),

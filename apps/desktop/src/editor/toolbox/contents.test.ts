@@ -32,6 +32,7 @@ import {
   variableGroups,
   variablesContents,
   withLabelMode,
+  withModuleCount,
   type ContentsContext,
   type ModuleInfo,
 } from './contents';
@@ -826,6 +827,82 @@ describe('the Functions category and Your functions', () => {
     expect(typesOf(empty)).toEqual(['func.define', 'func.return']);
   });
 
+  it('lists the other modules’ shared functions under their modules, unless an own name hides them', () => {
+    const modules = [
+      { id: 'mod_main', name: 'main' },
+      { id: 'mod_utils', name: 'utils' },
+      { id: 'mod_extra', name: 'helpers' },
+    ];
+    const fn = (id: string, name: string, module: string, shared: boolean) =>
+      symbolFixture(id, name, {
+        kind: 'function',
+        params: [],
+        returns: 'void',
+        type: 'void',
+        module,
+        ...(shared ? { shared: true } : {}),
+      });
+    const all = [
+      factorial,
+      n,
+      fn('s_greet', 'greet', 'mod_utils', true),
+      fn('s_hidden', 'factorial', 'mod_utils', true),
+      fn('s_private', 'helper', 'mod_utils', false),
+      fn('s_report', 'report', 'mod_extra', true),
+    ];
+    const items = functionsContents(context({ all, modules, active: 'mod_main' }));
+    expect(labelsOf(items)).toEqual([
+      YOUR_FUNCTIONS_HEADING,
+      'Module: main',
+      'Module: utils',
+      'Module: helpers',
+    ]);
+    expect(
+      blocksOf(items)
+        .slice(2)
+        .map((call): unknown => call.fields?.['FUNC']),
+    ).toEqual([{ ref: 's_fact' }, { ref: 's_greet' }, { ref: 's_report' }]);
+    // In helpers, utils' `factorial` is not hidden: helpers has no function of that name.
+    const extra = functionsContents(context({ all, modules, active: 'mod_extra', main: false }));
+    expect(labelsOf(extra)).toEqual([YOUR_FUNCTIONS_HEADING, 'Module: helpers', 'Module: utils']);
+    expect(
+      blocksOf(extra)
+        .slice(2)
+        .map((call): unknown => call.fields?.['FUNC']),
+    ).toEqual([{ ref: 's_report' }, { ref: 's_greet' }, { ref: 's_hidden' }]);
+    // A module with no functions of its own lists what the others share after its hint.
+    const none = functionsContents(
+      context({ all: all.slice(2), modules, active: 'mod_main', main: false }),
+    );
+    expect(labelsOf(none)).toEqual([
+      YOUR_FUNCTIONS_HEADING,
+      'Module: main',
+      ...NO_FUNCTIONS_HINT,
+      'Module: utils',
+      'Module: helpers',
+    ]);
+  });
+
+  it('marks define for a project with several modules, so the flyout builds it again', () => {
+    const two = context({
+      modules: [
+        { id: 'mod_main', name: 'main' },
+        { id: 'mod_extra', name: 'helpers' },
+      ],
+    });
+    const define = (items: readonly Item[]) =>
+      blocksOf(items).find((block) => block.type === 'func.define') as unknown as
+        Record<string, unknown> | undefined;
+    expect(define(functionsContents(context()))?.['modules']).toBeUndefined();
+    const marked = withModuleCount(functionsContents(two), true);
+    expect(define(marked)?.['modules']).toBe('several');
+    // Only define shows the checkbox; the other blocks are not marked.
+    expect(
+      blocksOf(marked).filter((block) => (block as unknown as Record<string, unknown>)['modules']),
+    ).toHaveLength(1);
+    expect(withModuleCount(functionsContents(two), false)).toEqual(functionsContents(two));
+  });
+
   it('labels each of several functions with one name by its parameters (overloads)', () => {
     const w = symbolFixture('s_w', 'w', { kind: 'parameter', mode: 'copy', type: 'double' });
     const words = symbolFixture('s_words', 'words', {
@@ -979,6 +1056,31 @@ describe('the key of what the dynamic categories show', () => {
       ]),
     ).toEqual([['main', count]]);
     expect(dynamicContentsKey(ctx)).toBe(key);
+  });
+});
+
+describe('the key and the module count (w3-modules.md §7.1)', () => {
+  it('changes when the project gains its second module or another module shares a function', () => {
+    const one = dynamicContentsKey(context());
+    const twoModules = [
+      { id: 'mod_main', name: 'main' },
+      { id: 'mod_extra', name: 'helpers' },
+    ];
+    const two = dynamicContentsKey(context({ modules: twoModules }));
+    expect(two).not.toBe(one);
+    const greet = (shared: boolean) =>
+      symbolFixture('s_greet', 'greet', {
+        kind: 'function',
+        params: [],
+        returns: 'void',
+        module: 'mod_extra',
+        ...(shared ? { shared: true } : {}),
+      });
+    const unshared = dynamicContentsKey(context({ modules: twoModules, all: [greet(false)] }));
+    expect(unshared).toBe(two);
+    expect(dynamicContentsKey(context({ modules: twoModules, all: [greet(true)] }))).not.toBe(
+      unshared,
+    );
   });
 });
 

@@ -53,7 +53,8 @@ import {
 
 import type { AnalysisNotice, useAppStore } from '../../app/store';
 import { recordSpan, startSpan, timed } from '../../lib/timing';
-import { type CoreHost, NO_SCOPE } from './coreHost';
+import { NO_SCOPE } from '../../app/store';
+import type { CoreHost } from './coreHost';
 import { mainThreadPreviewService, type PreviewAnswer, type PreviewService } from './service';
 
 /** How long the pipeline waits after the last change before it runs (02 §2.4.1). */
@@ -228,14 +229,16 @@ export class PreviewPipeline {
     this.epoch += 1;
     this.dropHeld();
     if (options.newDocument === true) {
-      this.options.host.applyScope?.(this.service.thread() === 'worker' ? NO_SCOPE : null);
+      this.options.store
+        .getState()
+        .actions.setAnalysis({ scope: this.service.thread() === 'worker' ? NO_SCOPE : null });
     }
   }
 
   /** Stops for good. */
   dispose(): void {
     this.invalidate();
-    this.options.host.applyScope?.(null);
+    this.options.store.getState().actions.setAnalysis({ scope: null });
     this.disposed = true;
     this.unsubscribe();
   }
@@ -415,10 +418,10 @@ export class PreviewPipeline {
     });
     timed('b2c:preview:publish', () => {
       const { analysis, actions } = this.options.store.getState();
-      // The index first, so a subscriber that builds a menu at once reads the new one.
-      this.options.host.applyScope?.(answer.scope);
+      // The index with its preview, so a subscriber that builds a menu at once reads the new one.
       actions.setAnalysis({
         preview: result,
+        scope: answer.scope,
         notice: trapped
           ? 'trapRecovered'
           : analysis.notice === 'syncFailed'

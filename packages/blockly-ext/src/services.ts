@@ -128,6 +128,13 @@ export interface SymbolProvider {
    * function's parameter types on the block; without it, a call shows the bare name.
    */
   sharesName?(funcId: string): boolean;
+  /**
+   * Optional: whether the open project has several modules, so that a definition can be shared
+   * with the others (docs/plans/m3-contracts/w3-modules.md §1.2). Blocks show their *share with
+   * other modules* checkbox only then ({@link multiModule}); without it, a project counts as having
+   * one module.
+   */
+  multiModule?(): boolean;
 }
 
 /**
@@ -279,6 +286,19 @@ export function nameOf(symId: string): string | null {
     return typeof name === 'string' ? name : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Whether the open project has several modules ({@link SymbolProvider.multiModule}); false when the
+ * provider does not say or fails. Blocks read it when they are built, as they read the label mode,
+ * so the editor builds the shown blocks again when it changes (`blocks/register.ts`).
+ */
+export function multiModule(): boolean {
+  try {
+    return current.symbols.multiModule?.() === true;
+  } catch {
+    return false;
   }
 }
 

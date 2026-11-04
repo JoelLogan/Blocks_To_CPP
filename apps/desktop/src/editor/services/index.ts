@@ -2,10 +2,11 @@
  * The editor services: symbol names and scope, static types, dialogs, and the session hooks that
  * keep them current (docs/spec/03-block-language.md §3.6, 06 §6.5).
  */
-import type { CoreWasm, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
+import type { CoreWasm, PreviewResult, ScopeIndex } from '@blocks2cpp/b2c-core-wasm';
 import { refreshMutatorLabels, refreshSymbolNames } from '@blocks2cpp/blockly-ext';
 import type * as Blockly from 'blockly/core';
 
+import type { NO_SCOPE } from '../../app/store';
 import type { SessionHooks } from '../sync/session';
 import { SymbolNames } from './names';
 import { createSymbolProvider, createTypeOracle } from './symbols';
@@ -39,9 +40,13 @@ export interface EditorSymbolServices {
 export function createSymbolServices(deps: {
   readonly core: () => CoreWasm | null;
   readonly preview: () => PreviewResult | null;
+  /** The latest preview's scope index (`AnalysisState.scope`); the core answers without it. */
+  readonly scope?: () => ScopeIndex | typeof NO_SCOPE | null;
   readonly workspace: Blockly.Workspace;
   /** The ID of the module the canvas shows, or `null` when none is. */
   readonly activeModule: () => string | null;
+  /** Whether the open project has several modules; one when absent. */
+  readonly multiModule?: () => boolean;
 }): EditorSymbolServices {
   const names = new SymbolNames();
   return {
@@ -49,11 +54,18 @@ export function createSymbolServices(deps: {
     symbols: createSymbolProvider({
       core: deps.core,
       preview: deps.preview,
+      ...(deps.scope === undefined ? {} : { scope: deps.scope }),
       names,
       workspace: deps.workspace,
       activeModule: deps.activeModule,
+      ...(deps.multiModule === undefined ? {} : { multiModule: deps.multiModule }),
     }),
-    types: createTypeOracle({ preview: deps.preview, core: deps.core, workspace: deps.workspace }),
+    types: createTypeOracle({
+      preview: deps.preview,
+      core: deps.core,
+      workspace: deps.workspace,
+      ...(deps.scope === undefined ? {} : { scope: deps.scope }),
+    }),
   };
 }
 

@@ -34,6 +34,7 @@ export {
 export {
   DEFAULT_EDITOR_SERVICES,
   getEditorServices,
+  multiModule,
   resetEditorServices,
   setEditorServices,
   setToolboxSymbols,

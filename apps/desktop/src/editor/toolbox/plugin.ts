@@ -73,15 +73,20 @@ export interface ToolboxPluginOptions {
 
 /**
  * The symbols of the latest analysis, as the editor's symbol provider reads them
- * (`analysisScope`, ../services/symbols.ts): the scope query of the running compiler core (the
- * shell's current core, which replaces a trapped one) and the preview's symbol list. Before the
+ * (`analysisScope`, ../services/symbols.ts): the scope query of the preview's scope index (the
+ * worker's) or of the running compiler core (the shell's current core, which replaces a trapped
+ * one), and the preview's symbol list. Before the
  * project's first analysis there are none. Never throws.
  *
  * The toolbox resolves the positions it asks about itself (./scope.ts), so it reads the analysis
  * without the provider's own resolution of each block.
  */
 export function analysisSymbolSource(store: Store, core: () => CoreWasm | null): SymbolSource {
-  return analysisScope({ core, preview: () => store.getState().analysis.preview });
+  return analysisScope({
+    core,
+    preview: () => store.getState().analysis.preview,
+    scope: () => store.getState().analysis.scope,
+  });
 }
 
 /** The project's modules, in document order. */
