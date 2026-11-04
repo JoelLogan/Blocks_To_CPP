@@ -289,14 +289,18 @@ pub(crate) struct Reason<'p> {
     by: Option<&'p SymbolId>,
 }
 
-/// What each module's files need of the other modules' headers, with the
-/// first reason for each (w3-modules.md §2.4).
+/// What each module's files need of the other modules' headers
+/// (w3-modules.md §2.4): for a `.cpp`, the first reason for each; for a
+/// header, the first reason of each shared function whose default values
+/// need it, in order, since `B2C-E0422` goes on each of them. The first
+/// reason is the one the include and the chain of `B2C-E0213` name.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Needs<'p> {
     /// By module index: the modules whose headers its `.cpp` needs.
     source: Vec<BTreeMap<usize, Reason<'p>>>,
-    /// By module index: the modules whose headers its header needs.
-    header: Vec<BTreeMap<usize, Reason<'p>>>,
+    /// By module index: the modules whose headers its header needs, each
+    /// with at least one reason.
+    header: Vec<BTreeMap<usize, Vec<Reason<'p>>>>,
 }
 
 impl<'p> Needs<'p> {
@@ -352,17 +356,20 @@ impl<'p> Needs<'p> {
                 && def.module != m
                 && program.item(def).is_some_and(goes_into_header)
             {
-                let list = if header {
-                    &mut self.header
-                } else {
-                    &mut self.source
+                let reason = Reason {
+                    location: expr.origin.location(),
+                    used: function,
+                    by,
                 };
-                if let Some(list) = list.get_mut(m) {
-                    list.entry(def.module).or_insert_with(|| Reason {
-                        location: expr.origin.location(),
-                        used: function,
-                        by,
-                    });
+                if header {
+                    if let Some(list) = self.header.get_mut(m) {
+                        let reasons = list.entry(def.module).or_default();
+                        if !reasons.iter().any(|known| known.by == by) {
+                            reasons.push(reason);
+                        }
+                    }
+                } else if let Some(list) = self.source.get_mut(m) {
+                    list.entry(def.module).or_insert(reason);
                 }
             }
             let mut children = crate::flow::children(expr);
@@ -725,8 +732,11 @@ fn check_header_cycles(
             continue;
         }
         for &a in &members {
-            for (&b, reason) in needs.header.get(a).into_iter().flatten() {
-                if members.contains(&b) {
+            for (&b, reasons) in needs.header.get(a).into_iter().flatten() {
+                if !members.contains(&b) {
+                    continue;
+                }
+                for reason in reasons {
                     report_header_cycle(program, layout, needs, &members, (a, b, reason), diags);
                 }
             }
@@ -752,7 +762,10 @@ fn report_header_cycle(
         if m == a {
             break;
         }
-        for (&n, why) in needs.header.get(m).into_iter().flatten() {
+        for (&n, whys) in needs.header.get(m).into_iter().flatten() {
+            let Some(why) = whys.first() else {
+                continue;
+            };
             if members.contains(&n) && n != b && !came.contains_key(&n) {
                 came.insert(n, (m, why));
                 queue.push_back(n);
@@ -781,8 +794,17 @@ fn report_header_cycle(
     } else {
         format!(" through {}", listing(&through))
     };
+    // One function to move on each side only when each side's need has a
+    // single reason: with two, moving one leaves the other's need.
+    let single = |from: usize, to: usize| {
+        needs
+            .header
+            .get(from)
+            .and_then(|list| list.get(&to))
+            .is_some_and(|reasons| reasons.len() == 1)
+    };
     let fix = match back.as_slice() {
-        [(_, _, only)] => format!(
+        [(_, _, only)] if single(a, b) && single(b, a) => format!(
             "Move {by} into module {}, or {} into module {}.",
             program.module_name(b),
             program.name(only.by.unwrap_or(only.used)),
@@ -856,7 +878,10 @@ fn reached<'n, 'p>(layout: &Layout, needs: &'n Needs<'p>, m: usize) -> BTreeMap<
         }
     }
     while let Some(h) = queue.pop_front() {
-        for (&n, reason) in needs.header.get(h).into_iter().flatten() {
+        for (&n, reasons) in needs.header.get(h).into_iter().flatten() {
+            let Some(reason) = reasons.first() else {
+                continue;
+            };
             if let std::collections::btree_map::Entry::Vacant(entry) = found.entry(n) {
                 entry.insert(Link::Through(h, reason));
                 queue.push_back(n);

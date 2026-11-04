@@ -819,6 +819,51 @@ fn e0422_names_the_way_round_a_circle_of_three_headers() {
 }
 
 #[test]
+fn e0422_on_each_shared_function_whose_default_value_closes_the_circle() {
+    let document = doc_modules(vec![
+        ("main", vec![main_block(vec![])]),
+        (
+            "a",
+            vec![
+                with_default("s_f", "f", call("s_g", &[]), true),
+                with_default("s_f2", "f2", call("s_g", &[]), true),
+                simple("s_k", "k", true),
+            ],
+        ),
+        (
+            "b",
+            vec![
+                simple("s_g", "g", true),
+                with_default("s_h", "h", call("s_k", &[]), true),
+            ],
+        ),
+    ]);
+    let analysis = analyze(&document);
+    let found = with_code(&analysis, "B2C-E0422");
+    assert_eq!(analysis.diagnostics.len(), 3, "{}", render_all(&analysis));
+    let places: Vec<(String, String)> = found.iter().map(|d| at(d)).collect();
+    assert_eq!(
+        places,
+        [
+            (String::from("mod_1"), String::from("fn_s_f")),
+            (String::from("mod_1"), String::from("fn_s_f2")),
+            (String::from("mod_2"), String::from("fn_s_h")),
+        ]
+    );
+    // Moving `f` alone into `b` would leave `f2`'s need, so no single move
+    // is named.
+    for diagnostic in &found {
+        assert!(
+            diagnostic
+                .message
+                .ends_with("Move one of these shared functions into another module."),
+            "{}",
+            diagnostic.message
+        );
+    }
+}
+
+#[test]
 fn e0421_once_for_a_circle_within_a_module_that_a_wider_circle_holds() {
     // `f` and `g` call each other in module `a` (the module's own
     // `B2C-E0421`), and `g` → `h` → `f` crosses into `b`.
