@@ -35,8 +35,8 @@ overrides:
 auditConfig:
   # GHSA-g3hv-75wg-m249 (moderate; minimatch <11.0.1): 10.2.6 through ESLint,
   # @eslint/config-array and typescript-eslint, and 3.1.5 through eslint-plugin-jsx-a11y,
-  # all lint tooling. The slow path needs optimizationLevel 2, which none of them sets, and
-  # 3.x has no such code. Only minimatch 11 fixes it, which none of them accepts yet.
+  # all lint tooling. The slow path needs optimizationLevel 2 or higher, which none of them
+  # sets, and 3.x has no such code. Only minimatch 11 fixes it, which none of them accepts yet.
   # Review by 2027-02-04, with the same entry in osv-scanner.toml.
   ignoreGhsas:
     - GHSA-g3hv-75wg-m249
