@@ -26,6 +26,7 @@ import {
   currentDocument,
   dragFromToolbox,
   fieldOf,
+  foldCodePanel,
   showCodePanel,
   showProblems,
   waitForDelivery,
@@ -217,6 +218,9 @@ describe('Modules', () => {
     const [stripBottom, canvasTop, canvasHeight] = room as [number, number, number];
     expect(canvasTop).toBeGreaterThanOrEqual(stripBottom - 1);
     expect(canvasHeight).toBeGreaterThanOrEqual(CANVAS_MIN_HEIGHT);
+    // The toolbox's flyout stays open over the canvas's left part: the C++ panel folds away, as
+    // in the other flows, so the drags have room; (4) shows it again.
+    await foldCodePanel(app);
 
     // (1) Add module utils: it is shown.
     await clickTestId(driver, 'module-add');
@@ -268,13 +272,14 @@ describe('Modules', () => {
     await waitForCode(app, '#include "utils.hpp"');
     await runAndSee(app, 1);
 
-    // (4) The C++ tab lists main.cpp, then utils.cpp and utils.hpp under utils; clicking the
-    // header's declaration selects the define in utils.
+    // (4) The C++ tab lists main.cpp, then utils.cpp and utils.hpp under utils (no
+    // b2c_support.hpp: a print of a text uses no helper); clicking the header's declaration
+    // selects the define in utils.
     await showCodePanel(app);
     await waitFor(
       async () =>
         JSON.stringify(await fileList(driver)) ===
-        JSON.stringify(['main.cpp', 'Module utils: utils.cpp, utils.hpp', 'b2c_support.hpp'])
+        JSON.stringify(['main.cpp', 'Module utils: utils.cpp, utils.hpp'])
           ? true
           : null,
       {
@@ -288,13 +293,19 @@ describe('Modules', () => {
         By.css('[data-testid="code-panel"] select option[value="utils.hpp"]'),
       )
     ).click();
+    // The click lands on the declaration's name: the middle of the whole line is past its end,
+    // where the caret is after the declaration's range.
     const declaration = await waitFor(
       async () => {
         for (const line of await driver.findElements(
           By.css('[data-testid="code-panel"] .cm-line'),
         )) {
           if ((await textContent(driver, line)).includes(`${name}(`)) {
-            return line;
+            for (const token of await line.findElements(By.css('span'))) {
+              if ((await textContent(driver, token)) === name) {
+                return token;
+              }
+            }
           }
         }
         return null;
