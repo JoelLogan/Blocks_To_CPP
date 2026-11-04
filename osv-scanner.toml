@@ -37,3 +37,19 @@ reason = "Unmaintained build-time proc-macro helper used by gtk-rs 0.18 macros; 
 id = "GHSA-qwgh-2vcv-g2f7"
 ignoreUntil = 2027-01-27T00:00:00Z
 reason = "block-buffer 0.10.4 via Tauri's sha2 0.10 only; sha2's compression callback cannot panic and no caller catches a panic around a hasher. No fixed 0.10 release."
+
+# minimatch (GHSA-g3hv-75wg-m249, CVE-2026-118764, medium): at
+# `optimizationLevel` 2 or higher, a glob pattern with many `**/..` portions
+# makes minimatch's pattern preprocessing use a lot of time and memory. The
+# lockfile holds 10.2.6 (through ESLint 10.13, @eslint/config-array 0.23.5 and
+# typescript-eslint's typescript-estree 8.72) and 3.1.5 (through
+# eslint-plugin-jsx-a11y 6.10.2): lint tooling only, never shipped. None of
+# them sets `optimizationLevel`, so minimatch's default of 1 never runs that
+# code, 3.x has no such code, and every pattern comes from our own lint
+# configuration (checked 2026-11-04). Only minimatch 11.0.1 and later fix it,
+# a new major that none of them accepts yet (ESLint 10.14 asks for ^10.2.6).
+# Remove this when the lockfile has no minimatch below 11.0.1.
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2027-02-04T00:00:00Z
+reason = "minimatch 10.2.6 and 3.1.5 in lint tooling only (ESLint, typescript-eslint, jsx-a11y); none sets optimizationLevel 2, the only path to the slow preprocessing, and 3.x has no such code. Fixed only in minimatch 11."

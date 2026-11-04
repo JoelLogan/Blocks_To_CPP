@@ -159,6 +159,14 @@ build needs.
   The other changes since 20.14.5 are security fixes (cookie scope, the server renderer's proxy
   and redirects, opaque-origin iframes) and a server-renderer option. The tests pass unchanged, and
   the tracked exceptions are gone.
+- **`minimatch` and GHSA-g3hv-75wg-m249** (medium, published 2026-10-30): only minimatch 11.0.1
+  and later fix it, and no 3.x, 9.x or 10.x release does. The lockfile's 10.2.6 (ESLint,
+  `@eslint/config-array`, typescript-eslint) and 3.1.5 (`eslint-plugin-jsx-a11y`) are lint tooling
+  only, and the slow preprocessing runs only at `optimizationLevel` 2, which none of them sets
+  (3.x has no such code). An override onto 11 would go against their ^10 ranges, change ESLint's
+  partial matching of the folders it walks and bring a new dependency,
+  `@isaacs/nonrecursive-glob-match` (first published 2026-10-26). So `osv-scanner.toml` and
+  `auditConfig.ignoreGhsas` track it until 2027-02-04, or until they move to minimatch 11.
 - **`pixelmatch` 8.0.0** (Dependabot's pull request #22) measures a pixel's colour difference as an
   OKLab HyAB distance instead of a YIQ one, on the same 0-to-1 scale, so the visual diff's threshold
   of 0.1 (`e2e/visual/compare.ts`) is now a perceptual distance. On all 47 committed baselines (31

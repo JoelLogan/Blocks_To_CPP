@@ -651,6 +651,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   Windows window fixes), `@tauri-apps/cli` 2.12.4 (its bundler's `zip` fixes
   RUSTSEC-2026-0367/0368/0369; a build tool only), and the CodeQL action
   4.39.1 (CodeQL 2.27.3) and zizmor-action 0.8.0 (zizmor stays 1.31.1).
+- Dependencies on 2026-11-04: GHSA-g3hv-75wg-m249 (medium) in `minimatch`,
+  which only the lint tools use (ESLint, typescript-eslint,
+  `eslint-plugin-jsx-a11y`), is a tracked exception in `osv-scanner.toml`
+  and `pnpm audit` until 2027-02-04: the slow path needs an option none of
+  them sets, and only `minimatch` 11 fixes it.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.

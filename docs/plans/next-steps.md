@@ -77,12 +77,13 @@ gated on `webview.drag-5000.frame-p95-all`, the p95 over every frame of a
 run's timed drags, whose history starts with its first nightly run. 4–7 and
 9 remain.
 
-**Dated follow-ups** (held by the 7-day release age; each is a small
-commit with its checks, no decision needed):
+**Dated follow-ups** (held by the 7-day release age or by an upstream
+release; each is a small commit with its checks, no decision needed):
 
-| From       | Update                                             | Then                                                                                                                                                                                                                         |
-| ---------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-11-04 | `tauri-plugin-dialog` 2.8.4 (moves to `rfd` ^0.17) | Not as it is: `rfd` 0.17.2 hands GTK the text as a format (TM-M2-9), and the `rfd` tripwire in `dialogs.rs` fails. Take it with an `rfd` 0.17 release that passes the text as an argument, or with the `%` doubling restored |
+| From       | Update                                                                                                                 | Then                                                                                                                                                                                                                                                            |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-04 | `tauri-plugin-dialog` 2.8.4 (moves to `rfd` ^0.17)                                                                     | Not as it is: `rfd` 0.17.2 hands GTK the text as a format (TM-M2-9), and the `rfd` tripwire in `dialogs.rs` fails. Take it with an `rfd` 0.17 release that passes the text as an argument, or with the `%` doubling restored                                    |
+| 2026-11-11 | ESLint, `@eslint/config-array`, typescript-eslint and `eslint-plugin-jsx-a11y` on `minimatch` 11 (GHSA-g3hv-75wg-m249) | Take each release that asks for `minimatch` ^11.0.1 once it is 7 days old. When the lockfile holds no `minimatch` below 11.0.1, remove the exceptions in `osv-scanner.toml` and `auditConfig.ignoreGhsas`. Otherwise re-check weekly; both expire on 2027-02-04 |
 
 **Nightly follow-up** (no decision needed): done in `fe2a57b`. The flow
 launcher (`e2e/specs/flows/lib/launch.ts`) retries a launch once when
