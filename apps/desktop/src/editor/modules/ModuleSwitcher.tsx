@@ -59,10 +59,23 @@ export interface ModuleFileLabel {
   readonly refused: boolean;
 }
 
+/** Whether `file` is the layout's fallback for a module at `place`: `<place>.cpp` or `<place>_<n>.cpp`. */
+function isFallbackOf(file: string, place: string): boolean {
+  if (!file.startsWith(place) || !file.endsWith('.cpp')) {
+    return false;
+  }
+  const rest = file.slice(place.length, -'.cpp'.length);
+  return rest === '' || /^_[0-9]+$/u.test(rest);
+}
+
 /**
  * The file each module's button shows: its `.cpp` as the latest preview names it (the layout's
  * `FileStem`, `module<N>` for a name that cannot be a file name), or before a preview, its name,
- * with `module<N>` for a name that starts with `b2c` (`B2C-E0221`).
+ * with `module<N>` for a name that starts with `b2c` (`B2C-E0221`). The preview's name counts
+ * only while it fits the module as it is now (its name, or for a `b2c` name the `module<N>` of its
+ * place): until
+ * the preview of a rename or a move arrives, the name decides, so a renamed module is never
+ * marked for the name it had.
  */
 export function moduleFileLabels(
   project: ProjectState | null,
@@ -70,14 +83,19 @@ export function moduleFileLabels(
 ): ModuleFileLabel[] {
   const modules = project?.document.modules ?? NO_MODULES;
   return modules.map((module, index) => {
+    const own = `${module.name}.cpp`;
+    const place = `module${String(index + 1)}`;
+    const named = module.name.slice(0, 3).toLowerCase() === 'b2c' ? `${place}.cpp` : own;
     const generated = files?.find(
       (file) => file.module === module.id && file.path.endsWith('.cpp'),
     )?.path;
-    const fallback = `module${String(index + 1)}.cpp`;
-    const file =
-      generated ??
-      (module.name.slice(0, 3).toLowerCase() === 'b2c' ? fallback : `${module.name}.cpp`);
-    return { file, refused: file !== `${module.name}.cpp` };
+    // The loader refuses every other name the layout cannot use, so only a `b2c` name has a
+    // fallback.
+    const current =
+      generated !== undefined &&
+      (generated === own || (named !== own && isFallbackOf(generated, place)));
+    const file = current ? generated : named;
+    return { file, refused: file !== own };
   });
 }
 

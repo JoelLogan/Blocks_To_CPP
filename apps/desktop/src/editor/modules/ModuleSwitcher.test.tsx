@@ -34,7 +34,7 @@ import {
 import { expectNoAxeViolations } from '../../test/axe';
 import { present, testCore } from '../sync/testing';
 import { openDocumentInEditor } from '../load';
-import { ModuleSwitcher } from './ModuleSwitcher';
+import { moduleFileLabels, ModuleSwitcher } from './ModuleSwitcher';
 
 const core: CoreWasm | null = await testCore();
 
@@ -487,6 +487,48 @@ describe('the module strip', () => {
     });
     expect(moduleButtons().map((b) => b.textContent)).toEqual(['main.cpp', '⚠ module2.cpp']);
     await expectNoAxeViolations(screen.getByTestId('module-strip'));
+  });
+
+  it('names a renamed module by its new name until the preview of the rename arrives', () => {
+    const doc = openWith(['main', 'tools', 'b2c_io']);
+    const project = useAppStore.getState().project;
+    const file = (path: string, module: string) => ({ path, module });
+    // The preview from before: `tools` was `utils`, `b2c_io` was `io`.
+    const before = [
+      file('main.cpp', 'mod_main'),
+      file('utils.cpp', 'mod_tools'),
+      file('io.cpp', 'mod_b2c_io'),
+    ];
+    expect(moduleFileLabels(project, before)).toEqual([
+      { file: 'main.cpp', refused: false },
+      { file: 'tools.cpp', refused: false },
+      { file: 'module3.cpp', refused: true },
+    ]);
+    // A module renamed from a name the layout refused: no mark for its old file.
+    const renamed = {
+      ...doc,
+      modules: doc.modules.map((m) => ({ ...m, name: m.name.replace('b2c_', '') })),
+    };
+    const refusedBefore = [file('main.cpp', 'mod_main'), file('module2.cpp', 'mod_tools')];
+    expect(
+      moduleFileLabels(project === null ? null : { ...project, document: renamed }, refusedBefore),
+    ).toEqual([
+      { file: 'main.cpp', refused: false },
+      { file: 'tools.cpp', refused: false },
+      { file: 'io.cpp', refused: false },
+    ]);
+    // The layout's own fallback for a `b2c` name still counts, with its suffix.
+    expect(
+      moduleFileLabels(project, [
+        file('main.cpp', 'mod_main'),
+        file('module2.cpp', 'mod_tools'),
+        file('module3_2.cpp', 'mod_b2c_io'),
+      ]),
+    ).toEqual([
+      { file: 'main.cpp', refused: false },
+      { file: 'tools.cpp', refused: false },
+      { file: 'module3_2.cpp', refused: true },
+    ]);
   });
 });
 
