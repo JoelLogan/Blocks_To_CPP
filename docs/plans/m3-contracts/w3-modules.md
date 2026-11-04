@@ -701,10 +701,10 @@ package adds its blocks"*, next steps §3.8; P0).
   *Delete module* is a confirmation dialog naming the module, how many
   top-level blocks it holds and, if so, that it holds *when program
   starts*, with *Cancel* the default.
-* Status messages go to the existing status region: *Module `utils`
-  added; the code of the other modules changed* (for the second module,
-  §2.13), *renamed to `tools`*, *deleted* with an *Undo delete* button
-  (§6 W3M-D6).
+* Status messages go to the strip's own polite status region (the app has
+  no window-wide one): *Module `utils` added; the code of the other
+  modules changed* (for the second module, §2.13), *renamed to `tools`*,
+  *deleted* with an *Undo delete* button beside it (§6 W3M-D6).
 * The *share with other modules* checkbox has its words as its accessible
   name, in Friendly and C++ mode.
 * The settings page's *Name* field and *Write `using namespace std;`*
@@ -1103,8 +1103,8 @@ build tests (§5.2, C).
     declaration selects the *define* block in `utils`; rename `utils` to
     `tools` and run again (`#include "tools.hpp"`); untick *share* and see
     `E0206` in Problems under module `main`, choose it and land on the
-    call; delete the module (confirm) and see `E0201` on the call; *Undo
-    delete* and see it run again; at 800 × 560 the canvas keeps its minimum
+    call; tick *share* again, delete the module (confirm) and see `E0201`
+    on the call; *Undo delete* and see it run again; at 800 × 560 the canvas keeps its minimum
     height with the strip shown.
   * E2E `project-name.e2e.ts`: change the name on the settings page, save,
     see the new name and `•` in the top bar and in the C++ header comment;
@@ -1362,6 +1362,17 @@ corrected in place and the correction is recorded here with its reason.
 | The scope index gains one program-wide list, `shared`, of `(module, name, symbol)` (`ScopeIndexParts::shared`, `scope_index.rs`'s key `shared`, one step of the Rust and TypeScript lookups), not a list per module | a list per module of the others' shared functions grows with modules times shared functions; one list keeps the index linear. The TypeScript reader takes an index without the key as sharing nothing (W5's `workerService.test.ts` writes one) | §3.3 W5 rows, "From the W4 and W5 merges" (F) |
 | `golden.rs`: a golden folder holds exactly the generated files and the run data (a stale `.cpp` or `.hpp` fails, `B2C_UPDATE_GOLDEN=1` deletes it), each header compiles alone with the debug configuration's flags and warnings as errors, and the module documentation states M2's rule for several files (each generated file matches its copy; any warning fails, so every non-shared function is used in its module). `crates/b2c-lang/tests/examples.rs` and its `gxx.rs` check each `.cpp` with the generated headers beside it; the export test builds the examples of several modules with CMake too | the M2 checks read one `main.cpp` per folder | §3.2 F, §5.2 F (F) |
 | P0's tests that pinned M2's rule were rewritten: `names.rs` (two modules' functions of one name: fine unless both are shared), `modules.rs` (shared functions get a header), `w3_tests.rs`'s `Tally` is ticked shared (else `B2C-E0214`) | the rules of §2.1 replace M2's | §5.2 F (F) |
+| Status messages go to the strip's own polite status region, with *Undo delete* beside it, not to an app-wide one | the app has no window-wide status region | §2.11 (E) |
+| `AnalysisState.scope` is `ScopeIndex \| 'none' \| null` (`NO_SCOPE`, now in `app/store`) | while the worker previews and no index fits (another document loaded), nothing may answer: the main core has not seen the document (`c355679`); `null` alone would ask it | "From the W4 and W5 merges" (W5 §10.3) (E) |
+| The modules flow ticks *share* again after landing on the call, before the delete | with *share* unticked, *Undo delete* brings back an unshared function and the program cannot "run again" | §5.2 E (E) |
+| The refusal while the canvas holds an unchecked change is an alert dialog titled *The modules cannot be changed now* with the banner's text (`syncFailedText`) | one accessible place for the text | §1.2 (E) |
+| Adding shows the new module; *Undo delete* shows the restored module; deleting the shown module shows the module that takes its place (or the one before) | the student works in the module just made or brought back | §1.2, §2.9 (E) |
+| *Move left* and *Move right* are disabled past the ends, with a reason (*This module is already the first.*, *…the last.*) | as the other disabled items (§2.11) | §1.2 (E) |
+| `EditorHandle` gains `addModule`, `renameModule`, `deleteModule`, `restoreModule` and `moveModule` (each returns a `ModuleEditOutcome`); the commands are `module.add`, `module.rename`, `module.delete`, `module.moveLeft`, `module.moveRight` and `module.undoDelete`, the last registered only while a deleted module is kept, so `≡` lists it then | the features reach the editor only through the handle | §3.2 E (E) |
+| The *Name* field shows the project's name as it is until edited; its problem shows as the person types | it follows a top-bar rename made while the page is open | §1.5 (E) |
+| `CodePanel` gains `fileGroups` and reports the clicked file with `onSelectBlock(blockId, path)` | the grouping, and the header click keeping the header shown | §2.5 (E) |
+| The checkbox's accessible name is given by the keyboard announcer (`editor/keyboard/labels.ts`) | Blockly fields have no ARIA name of their own | §2.11 (E) |
+| `SHARED` written only when true is done in `sync/blockState.ts`'s `readFields` (which `workspaceToBdm.ts` calls): a new block leaves out an `omitDefault` field at its default, and a value a file holds is written back as it was | a file with `SHARED: false` must read back unchanged, or it would load as a placeholder | §3.2 E, §3.3 (E) |
 
 #### From the W4 and W5 merges
 
@@ -1387,7 +1398,10 @@ package that takes each:
 * **E** (W5 §10.3): `AnalysisState.scope: ScopeIndex | null`, set by the
   preview pipeline; `analysisScope` in `services/symbols.ts` reads it and
   falls back to the core when it is `null`, and the core host's view of
-  the index goes.
+  the index goes. *Done by E:* `AnalysisState.scope` is `ScopeIndex |
+  'none' | null` (`NO_SCOPE`, now in `app/store`): `'none'` while the
+  worker previews and no index fits, so nothing answers rather than the
+  main core, which has not seen that document.
 * **E** (W5 §10.4): the hold's one line, `isBusy: () =>
   isDragging(this.workspace)` in the pipeline options of
   `EditorSession`'s constructor, beside E's module operations in
