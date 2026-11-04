@@ -35,6 +35,7 @@ import {
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 
+import { focusIsLost } from '../../app/layout/focus';
 import { type ProjectState, useAppStore } from '../../app/store';
 import {
   getModuleEdits,
@@ -138,6 +139,9 @@ export function ModuleSwitcher() {
   /** The module button with the roving Tab stop, and the module shown when it got it. */
   const [focused, setFocusedState] = useState<{ id: string; shown: string | null } | null>(null);
   const [menu, setMenu] = useState<OpenMenu>(null);
+  /** Counts the deletions chosen from a strip menu that have ended; see the effect below. */
+  const [deletions, setDeletions] = useState(0);
+  const deletionsSeen = useRef(0);
   const [overflowing, setOverflowing] = useState(false);
   const overflowSeen = useRef(false);
   const strip = useRef<HTMLDivElement>(null);
@@ -191,6 +195,19 @@ export function ModuleSwitcher() {
       observer.disconnect();
     };
   }, [ids.length, labels]);
+
+  // A deletion chosen from a module's own menu takes away the button that had the focus: once it
+  // has ended (and the strip shows the modules left), the shown module's button gets it.
+  useEffect(() => {
+    if (deletions === deletionsSeen.current) {
+      return;
+    }
+    deletionsSeen.current = deletions;
+    const button = active === null ? undefined : buttons.current.get(active);
+    if (button !== undefined && focusIsLost()) {
+      button.focus();
+    }
+  }, [deletions, active]);
 
   const closeMenu = useCallback((returnFocus: boolean) => {
     setMenu(null);
@@ -283,7 +300,11 @@ export function ModuleSwitcher() {
       {
         key: 'delete',
         label: 'Delete…',
-        onChoose: () => void edits.remove(id),
+        onChoose: () => {
+          void edits.remove(id).finally(() => {
+            setDeletions((count) => count + 1);
+          });
+        },
         disabledReason: ids.length <= 1 ? MODULE_EDIT_PROBLEMS.onlyModule : null,
       },
       {

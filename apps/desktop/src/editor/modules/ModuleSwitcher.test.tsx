@@ -320,6 +320,55 @@ describe('the module strip', () => {
     );
   });
 
+  it('gives the focus back to the strip after a menu item, its dialog or a deletion', async () => {
+    openWith(['main', 'utils', 'extra']);
+    renderStrip();
+    const button = (name: string): HTMLElement => screen.getByRole('button', { name });
+    const choose = async (name: string, item: string): Promise<void> => {
+      const target = button(name);
+      target.focus();
+      fireEvent.keyDown(target, { key: 'F10', shiftKey: true });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('menuitem', { name: item }));
+        await Promise.resolve();
+      });
+    };
+    // Rename… and its dialog, cancelled: back on the module's button.
+    await choose('utils.cpp', 'Rename…');
+    expect(dialog().textContent).toContain('Rename module “utils”');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(button('utils.cpp'));
+    // Move left: the module's button keeps it.
+    await choose('utils.cpp', 'Move left');
+    expect(useAppStore.getState().project?.document.modules.map((m) => m.name)).toEqual([
+      'utils',
+      'main',
+      'extra',
+    ]);
+    expect(document.activeElement).toBe(button('utils.cpp'));
+    // An empty module, deleted at once: its button is gone, so the shown module's gets it.
+    await choose('extra.cpp', 'Delete…');
+    await waitFor(() => {
+      expect(statusText()).toBe('Module “extra” deleted.');
+    });
+    expect(document.activeElement).toBe(button('main.cpp'));
+    // The shown module, with blocks, after its dialog: the module shown now.
+    await choose('main.cpp', 'Delete…');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete module' }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(statusText()).toBe('Module “main” deleted.');
+    });
+    expect(useAppStore.getState().project?.activeModuleId).toBe('mod_utils');
+    expect(document.activeElement).toBe(button('utils.cpp'));
+  });
+
   it('acts on the shown module from Module actions; Delete… is disabled on the only module', async () => {
     openWith(['main']);
     renderStrip();

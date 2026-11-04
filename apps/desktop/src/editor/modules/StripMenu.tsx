@@ -3,7 +3,8 @@
  * following the app's menu pattern (app/layout/MainMenu.tsx, WAI-ARIA's menu): it opens with the
  * focus on its first item (or the checked one), `↑`/`↓` move with wrap-around, `Home`/`End` jump,
  * `Escape` closes and returns the focus to what opened it, `Tab` closes and moves on, and a press
- * outside closes it. With `typeAhead`, typing moves to the next item whose label starts with what
+ * outside closes it. Choosing an item closes the menu and returns the focus to what opened it
+ * before the item acts, so that a dialog the item opens gives the focus back there when it closes. With `typeAhead`, typing moves to the next item whose label starts with what
  * was typed. A disabled item keeps the focus in the arrow keys' path and gives its reason as its
  * accessible description and tooltip; choosing it does nothing.
  */
@@ -188,7 +189,7 @@ export function StripMenu({
               if (reason !== null) {
                 return;
               }
-              onClose(false);
+              onClose(true);
               item.onChoose();
             }}
           >
