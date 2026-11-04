@@ -398,9 +398,12 @@ pub(crate) struct Binding {
     pub(crate) unresolved: Vec<Unresolved>,
 }
 
-/// The kind of a visible symbol, as a payload names it.
-fn ref_kind(info: &SymbolInfo) -> RefKind {
-    match info.kind {
+/// The kind of a visible symbol, as a payload names it; `None` for a
+/// namespace, which no payload names yet: a pasted *use namespace* keeps the
+/// namespace's symbol ID it holds (w3-modules.md §2.9), and package N2 adds
+/// namespace-qualified names (§3.3).
+fn ref_kind(info: &SymbolInfo) -> Option<RefKind> {
+    Some(match info.kind {
         // A global reads as a variable (see the module docs).
         SymbolInfoKind::Variable { .. } | SymbolInfoKind::Global { .. } => RefKind::Variable,
         SymbolInfoKind::Parameter { .. } => RefKind::Parameter,
@@ -410,7 +413,8 @@ fn ref_kind(info: &SymbolInfo) -> RefKind {
         SymbolInfoKind::Enum { .. } => RefKind::Enum,
         SymbolInfoKind::Field { .. } => RefKind::Field,
         SymbolInfoKind::Enumerator { .. } => RefKind::Enumerator,
-    }
+        SymbolInfoKind::Namespace { .. } => return None,
+    })
 }
 
 /// Whether a visible symbol is the one a payload's `refs` entry names: the
@@ -423,7 +427,7 @@ fn names(reference: &ClipboardRef, info: &SymbolInfo) -> bool {
 /// `kind`. A field or an enumerator is never matched by name alone: it is
 /// bound again through its owner ([`bind_member`]).
 fn named(name: &str, kind: RefKind, info: &SymbolInfo) -> bool {
-    if ref_kind(info) != kind {
+    if ref_kind(info) != Some(kind) {
         return false;
     }
     match kind {
@@ -473,7 +477,7 @@ fn bind_member(sym: &SymbolId, reference: &ClipboardRef, visible: &[SymbolInfo])
     };
     let own_owner = visible
         .iter()
-        .find(|info| info.id == *sym && ref_kind(info) == reference.kind)
+        .find(|info| info.id == *sym && ref_kind(info) == Some(reference.kind))
         .and_then(member_owner);
     let owners: Vec<&SymbolId> = visible
         .iter()
@@ -492,7 +496,7 @@ fn bind_member(sym: &SymbolId, reference: &ClipboardRef, visible: &[SymbolInfo])
     let members: Vec<&SymbolInfo> = visible
         .iter()
         .filter(|info| {
-            ref_kind(info) == reference.kind && member_owner(info) == Some(owner) && info.name == member
+            ref_kind(info) == Some(reference.kind) && member_owner(info) == Some(owner) && info.name == member
         })
         .collect();
     match members.as_slice() {
@@ -550,7 +554,7 @@ pub(crate) fn rebind(
             [only] => {
                 binding.rebound.insert(sym.clone(), only.id.clone());
             }
-            [] if itself.is_some_and(|info| ref_kind(info) == reference.kind) => {}
+            [] if itself.is_some_and(|info| ref_kind(info) == Some(reference.kind)) => {}
             _ => binding.unresolved.push(Unresolved {
                 sym: sym.clone(),
                 name: Some(reference.name.clone()),
@@ -1113,7 +1117,9 @@ mod tests {
         }
         // A global binds again as a variable of its name.
         let global = info("t_count", "count", SymbolInfoKind::Global { is_const: false });
-        assert_eq!(ref_kind(&global), RefKind::Variable);
+        assert_eq!(ref_kind(&global), Some(RefKind::Variable));
+        let geo = info("n_geo", "geo", SymbolInfoKind::Namespace { parent: None });
+        assert_eq!(ref_kind(&geo), None);
     }
 
     /// Every declaration of every catalog block is recorded: each
@@ -1162,7 +1168,17 @@ mod tests {
         let document = b2c_model::load(&serde_json::to_vec(&value).unwrap()).unwrap();
         let declared = declarations(&document);
         for (block_type, symbol) in expected {
-            assert!(declared.contains_key(&sym(&symbol)), "{block_type}: {symbol}");
+            // No reference names a namespace through `{"ref"}`: *use
+            // namespace* holds its symbol ID as text, which a paste keeps,
+            // and a payload names no namespace until the clipboard's
+            // namespace-qualified names arrive (w3-modules.md §3.3, the W5
+            // `clipboard.rs` row), so a namespace is not recorded.
+            let recorded = declared.contains_key(&sym(&symbol));
+            assert_eq!(
+                recorded,
+                block_type != "program.namespace",
+                "{block_type}: {symbol}"
+            );
         }
     }
 

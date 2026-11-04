@@ -255,6 +255,14 @@ pub enum SymbolInfoKind {
         /// The enum's symbol ID.
         owner: String,
     },
+    /// A user namespace (milestone M3's third wave); its type is `void`.
+    Namespace {
+        /// The symbol ID of the namespace it is nested in; omitted at global
+        /// scope.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        parent: Option<String>,
+    },
 }
 
 impl From<b2c_ir::source_map::FileKind> for FileKind {
@@ -367,6 +375,9 @@ impl From<&b2c_ir::SymbolInfoKind> for SymbolInfoKind {
             b2c_ir::SymbolInfoKind::Enum { values } => Self::Enum { values: ids(values) },
             b2c_ir::SymbolInfoKind::Enumerator { owner } => Self::Enumerator {
                 owner: owner.as_str().to_owned(),
+            },
+            b2c_ir::SymbolInfoKind::Namespace { parent } => Self::Namespace {
+                parent: parent.as_ref().map(|parent| parent.as_str().to_owned()),
             },
         }
     }

@@ -1520,7 +1520,12 @@ values: Array<string>, } | { "kind": "enumerator",
 /**
  * The enum's symbol ID.
  */
-owner: string, });
+owner: string, } | { "kind": "namespace",
+/**
+ * The symbol ID of the namespace it is nested in; omitted at global
+ * scope.
+ */
+parent?: string, });
 
 /**
  * The kind of a `SymbolInfo`, with the details of that kind.
@@ -1576,7 +1581,12 @@ values: Array<string>, } | { "kind": "enumerator",
 /**
  * The enum's symbol ID.
  */
-owner: string, };
+owner: string, } | { "kind": "namespace",
+/**
+ * The symbol ID of the namespace it is nested in; omitted at global
+ * scope.
+ */
+parent?: string, };
 
 /**
  * The bundled templates a new project can start from.
