@@ -121,16 +121,18 @@ function where(): string {
 }
 
 describe('the Tab order with the block editor', () => {
-  it('goes from the toolbar to the toolbox, its blocks and the canvas, then the docks', () => {
+  it('goes from the toolbar to the module strip, the toolbox, its blocks and the canvas, then the docks', () => {
     renderApp();
     screen.getByRole('button', { name: /^Build/ }).focus();
 
     const reached: string[] = [];
-    for (let step = 0; step < 6; step++) {
+    for (let step = 0; step < 7; step++) {
       tab();
       reached.push(where());
     }
     expect(reached).toEqual([
+      // The module strip above the canvas: one stop for the module buttons (w3-modules.md §2.11).
+      'button: main.cpp',
       'toolbox',
       'toolbox blocks',
       'canvas',
@@ -151,12 +153,16 @@ describe('the Tab order with the block editor', () => {
     expect(where()).toBe('toolbox blocks');
     tab(true);
     expect(where()).toBe('toolbox');
+    tab(true);
+    expect(where()).toBe('button: main.cpp');
   });
 
   it('turns on the keyboard look and names what it lands on in the canvas', async () => {
     const { container } = renderApp();
     const status = container.querySelector('.b2c-keyboard-a11y [role="status"]');
     screen.getByRole('button', { name: /^Build/ }).focus();
+    // The module strip, the toolbox, its blocks, the canvas.
+    tab();
     tab();
     tab();
     tab();

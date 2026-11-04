@@ -207,6 +207,20 @@ export function describeTarget(target: DropTarget, names: SymbolNames = NO_NAMES
 }
 
 /**
+ * A checkbox by its words, the label right before it in its row (*share with other modules*,
+ * *constant*; in both label modes, docs/plans/m3-contracts/w3-modules.md §2.11), and its state:
+ * `checkbox “share with other modules”, ticked`.
+ */
+function describeCheckbox(field: Blockly.FieldCheckbox): string {
+  const row = field.getParentInput().fieldRow;
+  const before = row[row.indexOf(field) - 1];
+  const words =
+    before instanceof Blockly.FieldLabel && before.isVisible() ? shownText(before.getText()) : '';
+  const state = field.getValueBoolean() === true ? 'ticked' : 'not ticked';
+  return words === '' ? `checkbox, ${state}` : `checkbox ${quoted(words)}, ${state}`;
+}
+
+/**
  * What the keyboard cursor is on, as one short phrase: `block “print”`, `field “int” of “create
  * guess”`, `value “0” in “create guess”`, `empty input of “print”`, `the canvas`; in the toolbox's
  * flyout also `block “i”, in greet`, `button “Make a variable”`, `category “Variables”`, `heading
@@ -217,7 +231,12 @@ export function describeNode(node: unknown, names: SymbolNames = NO_NAMES): stri
     if (node instanceof Blockly.Field) {
       const block = node.getSourceBlock();
       const text = shownText(node.getText());
-      const what = text === '' ? 'empty field' : `field ${quoted(text)}`;
+      const what =
+        node instanceof Blockly.FieldCheckbox
+          ? describeCheckbox(node)
+          : text === ''
+            ? 'empty field'
+            : `field ${quoted(text)}`;
       if (block === null) {
         return what;
       }

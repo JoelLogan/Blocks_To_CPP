@@ -110,6 +110,13 @@ describe('node names', () => {
     expect(describeNode(workspace.getFlyout()?.getWorkspace())).toBe('the toolbox’s blocks');
     expect(describeNode(null)).toBe('');
     expect(describeNode('something else')).toBe('');
+    // A checkbox by its words and its state (w3-modules.md §2.11).
+    const constant = decl.getField('CONST');
+    expect(describeNode(constant)).toBe(
+      'checkbox “constant”, not ticked of “create int variable guess”',
+    );
+    constant?.setValue('TRUE');
+    expect(describeNode(constant)).toMatch(/^checkbox “constant”, ticked of “/u);
   });
 
   it('name an empty input by its block', () => {

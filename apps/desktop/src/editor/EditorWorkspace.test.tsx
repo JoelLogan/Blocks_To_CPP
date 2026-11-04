@@ -31,13 +31,21 @@ vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 class FakeResizeObserver {
   static instances: FakeResizeObserver[] = [];
   readonly callback: () => void;
+  readonly targets: Element[] = [];
   disconnected = false;
   constructor(callback: () => void) {
     this.callback = callback;
     FakeResizeObserver.instances.push(this);
   }
-  observe(): void {
+  /** The observer of the canvas's container (the module strip has one of its own). */
+  static ofCanvas(): FakeResizeObserver | undefined {
+    return FakeResizeObserver.instances.find((instance) =>
+      instance.targets.some((target) => target.classList.contains('blockly-host')),
+    );
+  }
+  observe(target: Element): void {
     // The test calls the callback by hand.
+    this.targets.push(target);
   }
   unobserve(): void {
     // Not needed.
@@ -150,7 +158,8 @@ describe('the block editor', () => {
     }
     // Blockly.svgResize ends by resizing the workspace.
     const resize = vi.spyOn(workspace, 'resize');
-    const observer = FakeResizeObserver.instances[0];
+    const observer = FakeResizeObserver.ofCanvas();
+    expect(observer).toBeDefined();
     observer?.callback();
     expect(resize).toHaveBeenCalled();
     unmount();
@@ -205,7 +214,7 @@ describe('the block editor', () => {
     ]);
   });
 
-  it('shows a module switcher for projects with several modules', async () => {
+  it('shows the module strip for projects with several modules', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     twoModuleProject();
     const { unmount } = render(<EditorWorkspace />);
@@ -213,7 +222,7 @@ describe('the block editor', () => {
     expect(buttons.map((button) => button.textContent)).toEqual(['main.cpp', 'util.cpp']);
     expect(buttons[0]?.getAttribute('aria-pressed')).toBe('true');
     // Blockly's own canvas is checked by the accessibility pass (milestone M2, wave 5).
-    await expectNoAxeViolations(screen.getByRole('navigation', { name: 'Modules' }));
+    await expectNoAxeViolations(screen.getByRole('toolbar', { name: 'Modules' }));
 
     act(() => {
       fireEvent.click(present(buttons[1], 'the second module button'));
@@ -238,7 +247,7 @@ describe('the block editor', () => {
     // The window lays the editor out: the resize observer resizes the workspace.
     setViewSize(workspace, 1000, 700);
     act(() => {
-      FakeResizeObserver.instances[0]?.callback();
+      FakeResizeObserver.ofCanvas()?.callback();
     });
 
     // In the workspace's container, right after Blockly's injection `div`.
@@ -268,11 +277,17 @@ describe('the block editor', () => {
     expect(workspace.getComponentManager().getComponent(CONTROLS_COMPONENT_ID)).toBeUndefined();
   });
 
-  it('has no module switcher for a single module', () => {
+  it('shows the module strip for a single module too, so a second can be added (W3M-D7)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     useAppStore.getState().actions.setProject(projectFixture());
-    const { unmount } = render(<EditorWorkspace />);
-    expect(screen.queryByTestId('module-switch')).toBeNull();
+    const { container, unmount } = render(<EditorWorkspace />);
+    expect(screen.getAllByTestId('module-switch').map((button) => button.textContent)).toEqual([
+      'main.cpp',
+    ]);
+    // The canvas starts below the strip.
+    expect(screen.getByTestId('module-strip').nextElementSibling).toBe(
+      container.querySelector('.blockly-host'),
+    );
     unmount();
   });
 });
