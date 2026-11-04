@@ -166,7 +166,9 @@ build needs.
   them sets (3.x has no such code). An override onto 11 would go against their ^10 and ^3 ranges,
   change ESLint's partial matching of the folders it walks and bring a new dependency,
   `@isaacs/nonrecursive-glob-match` (first published 2026-10-26). So `osv-scanner.toml` and
-  `auditConfig.ignoreGhsas` track it until 2027-02-04, or until they move to minimatch 11.
+  `auditConfig.ignoreGhsas` track it until they move to minimatch 11. The OSV entry expires on
+  2027-02-04, the review date of both; the `pnpm audit` entry has no expiry, so it stays until it
+  is removed.
 - **`pixelmatch` 8.0.0** (Dependabot's pull request #22) measures a pixel's colour difference as an
   OKLab HyAB distance instead of a YIQ one, on the same 0-to-1 scale, so the visual diff's threshold
   of 0.1 (`e2e/visual/compare.ts`) is now a perceptual distance. On all 47 committed baselines (31

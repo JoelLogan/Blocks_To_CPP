@@ -654,10 +654,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - Dependencies on 2026-11-04: GHSA-g3hv-75wg-m249 (medium) in `minimatch`,
   which only the lint tools use (ESLint, typescript-eslint,
   `eslint-plugin-jsx-a11y`), is a tracked exception in `osv-scanner.toml`
-  and `pnpm audit` until 2027-02-04: the slow path needs an option none of
-  them sets, and only `minimatch` 11 fixes it. The `block-buffer` exception
-  (GHSA-qwgh-2vcv-g2f7) is gone, as OSV-Scanner no longer reports the
-  advisory for `block-buffer` 0.10.4.
+  (until 2027-02-04) and `pnpm audit` (reviewed by the same date): the slow
+  path needs an option none of them sets, and only `minimatch` 11 fixes it.
+  The `block-buffer` exception (GHSA-qwgh-2vcv-g2f7) is gone, as OSV-Scanner
+  no longer reports the advisory for `block-buffer` 0.10.4.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
