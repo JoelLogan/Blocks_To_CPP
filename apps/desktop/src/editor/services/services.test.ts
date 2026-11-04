@@ -1,8 +1,10 @@
 /** The editor services: names, scope, static types, dialogs and their installation. */
 import type { BdmDocument, CoreWasm, PreviewResult, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
+  B2cSymbolDeclField,
   B2cSymbolRefField,
   BLOCK_DEFS,
+  configureMutators,
   DEFAULT_EDITOR_SERVICES,
   EXPR_SHADOW_TYPE,
   getEditorServices,
@@ -34,6 +36,7 @@ import {
   fieldDialogs,
   installEditorServices,
   MAX_LAST_KNOWN_NAMES,
+  registerEditorBlocks,
   SymbolNames,
 } from './index';
 import { isDeclaringBlock } from './symbols';
@@ -583,5 +586,23 @@ describe('installing the services', () => {
         'ARG0',
       ),
     ).toBeNull();
+  });
+
+  // The toolbox's flyout builds its blocks while Blockly.inject runs, before the services are
+  // installed, and keeps them (../toolbox/inflater.ts): *try*'s catch row was kept as `name`.
+  it('names a block’s new parts the editor’s way from registration on, before any services', () => {
+    // As after an editor closed: the mutators' hooks back to blockly-ext's defaults.
+    configureMutators({ symbols: null, inputShadow: null, newSymbolId: null, declName: null });
+    registerEditorBlocks();
+    const workspace = headlessWorkspace();
+    const block = Blockly.serialization.blocks.append(
+      { type: 'error.try', extraState: { catchCount: 2 } },
+      workspace,
+    );
+    const names = ['NAME0', 'NAME1'].map((name) => {
+      const field = block.getField(name);
+      return field instanceof B2cSymbolDeclField ? field.getDecl()?.name : null;
+    });
+    expect(names).toEqual(['e', 'e']);
   });
 });

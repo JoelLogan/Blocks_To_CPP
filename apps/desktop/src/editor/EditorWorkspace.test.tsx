@@ -2,6 +2,7 @@
  * The block editor component against the real Blockly: injection options, theme, resizing, the
  * editor handle, the plugins, the module switcher and clean-up.
  */
+import { B2cSymbolDeclField, MutatorButton } from '@blocks2cpp/blockly-ext';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,11 +22,22 @@ import { registerEditorBlocks } from './services';
 import { B2cBlockDragger } from './sync/drag';
 import { present, setViewSize } from './sync/testing';
 import { CONTROLS_COMPONENT_ID } from './view/placement';
+import { toolboxPlugin } from './toolbox';
+import { B2cContinuousToolbox, CONTINUOUS_REFRESH_DELAY_MS } from './toolbox/continuous';
+import {
+  candidateName,
+  DEFAULT_NAME_KINDS,
+  defaultNameKind,
+  ROW_NAME_KINDS,
+} from './toolbox/names';
+import { B2C_BLOCK_KIND, type B2cBlockInfo, blockState } from './toolbox/presets';
 import { FLYOUT_TEST_TIMEOUT_MS } from './toolbox/testing';
 
 // Each test here injects the editor with the continuous toolbox, whose flyout draws every catalog
 // block (toolbox/testing.ts): the slowest test took 2.6 s under coverage with two workers here and
-// 3.3 s in CI after W2's blocks. Package T's flyout reuse is to make this limit unneeded.
+// 3.3 s in CI after W2's blocks. Package T's flyout reuse is to make this limit unneeded. The two
+// tests of the mounted editor's toolbox, which also build every toolbox block again or press ⊕,
+// took 5.0 s each under coverage with two workers here.
 vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 class FakeResizeObserver {
@@ -357,5 +369,138 @@ describe('the initial toolbox and the inject options', () => {
     expect(getEditorHandle()).toBeNull();
     workspace.dispose();
     host.remove();
+  });
+});
+
+describe('the toolbox of the mounted editor', () => {
+  /** The flyout's toolbox items, in order, each with its block (the editor's one workspace). */
+  function shownItems(): { info: B2cBlockInfo; block: Blockly.BlockSvg }[] {
+    const [workspace] = mainWorkspaces();
+    const toolbox = workspace?.getToolbox();
+    if (workspace === undefined || !(toolbox instanceof B2cContinuousToolbox)) {
+      throw new Error('no editor with the continuous toolbox');
+    }
+    const items = toolbox
+      .flyoutContents()
+      .filter((item): item is B2cBlockInfo => (item as { kind?: unknown }).kind === B2C_BLOCK_KIND);
+    const blocks = (workspace.getFlyout()?.getContents() ?? []).flatMap((item) => {
+      const element = item.getElement();
+      return element instanceof Blockly.BlockSvg ? [element] : [];
+    });
+    expect(blocks).toHaveLength(items.length);
+    return items.map((info, index) => {
+      const block = blocks[index];
+      if (block === undefined) {
+        throw new Error('a toolbox item without its block');
+      }
+      return { info, block };
+    });
+  }
+
+  /**
+   * A block's state without block IDs (its shadows keep theirs) and with its symbol IDs left out
+   * (every build declares new ones).
+   */
+  function looks(block: Blockly.Block): string {
+    return JSON.stringify(
+      Blockly.serialization.blocks.save(block, { addCoordinates: false, saveIds: false }),
+      (key, value: unknown) => (key === 'id' ? undefined : value),
+    ).replace(/"sym":"sym_\w+"/g, '"sym":"(new)"');
+  }
+
+  /** The catalog field a declaration field is (`NAME` for *try*'s repeated `NAME0`). */
+  function baseField(type: string, field: string): string {
+    const base = field.replace(/\d+$/, '');
+    return defaultNameKind(type, field) === undefined && base !== field ? base : field;
+  }
+
+  /** Mounts the editor with its toolbox, and waits for the toolbox's first refresh. */
+  async function mount(): Promise<() => void> {
+    EDITOR_PLUGINS.push(toolboxPlugin);
+    const { unmount } = render(<EditorWorkspace />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, CONTINUOUS_REFRESH_DELAY_MS + 50));
+    });
+    return () => {
+      unmount();
+      EDITOR_PLUGINS.length = 0;
+    };
+  }
+
+  // The flyout builds its blocks while Blockly.inject runs, before the editor's services are
+  // installed, and keeps them from one showing to the next: built without the mutators' hooks,
+  // *try*'s catch row kept the name `name` instead of `e`. (The hooks are installed again after an
+  // editor closed: ./services/services.test.ts.)
+  it('shows every declaration with the first default name of its kind', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const unmount = await mount();
+    const names: Record<string, string> = {};
+    const expected: Record<string, string> = {};
+    for (const { info, block } of shownItems()) {
+      // A kept block is the block its item builds now, with the editor's hooks.
+      const head = new Blockly.Workspace();
+      try {
+        const built = Blockly.serialization.blocks.append(blockState(info), head);
+        expect(looks(block), info.type).toBe(looks(built));
+      } finally {
+        head.dispose();
+      }
+      for (const field of block.inputList.flatMap((input) => input.fieldRow)) {
+        if (!(field instanceof B2cSymbolDeclField) || field.name === undefined) {
+          continue;
+        }
+        const base = baseField(info.type, field.name);
+        const kind = defaultNameKind(info.type, base);
+        const key = `${info.type}.${base}`;
+        names[key] = field.getDecl()?.name ?? '(none)';
+        expected[key] = kind === undefined ? '(no default name)' : candidateName(kind, 0);
+      }
+    }
+    expect(names).toEqual(expected);
+    // Every default name of names.ts is shown in the toolbox, the catch name among them.
+    const listed = Object.entries(DEFAULT_NAME_KINDS).flatMap(([type, fields]) =>
+      Object.keys(fields).map((field) => `${type}.${field}`),
+    );
+    expect(Object.keys(names).sort()).toEqual(listed.sort());
+    expect(names['error.try.NAME']).toBe('e');
+    unmount();
+  });
+
+  it('names the first new parameter, struct field and enum value of a toolbox block', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const unmount = await mount();
+    const firstRows: Record<string, string> = {};
+    for (const { block } of shownItems()) {
+      const extra = (block.saveExtraState?.() ?? null) as Record<string, unknown> | null;
+      const kind = ['params', 'fields', 'values'].find((key) => Array.isArray(extra?.[key]));
+      if (kind === undefined || kind in firstRows) {
+        continue;
+      }
+      // The block as it lands on a canvas, with its ⊕ pressed once.
+      const head = new Blockly.Workspace();
+      try {
+        const copy = Blockly.serialization.blocks.append(
+          Blockly.serialization.blocks.save(block, { addCoordinates: false, saveIds: false }) ?? {
+            type: block.type,
+          },
+          head,
+        );
+        const add = copy
+          .getInput('B2C_BUTTONS')
+          ?.fieldRow.find((field): field is MutatorButton => field instanceof MutatorButton);
+        add?.showEditor();
+        const rows = (copy.saveExtraState?.() as Record<string, { name: string }[]> | null)?.[kind];
+        firstRows[kind] = rows?.[0]?.name ?? '(no row)';
+      } finally {
+        head.dispose();
+      }
+    }
+    expect(firstRows).toEqual({
+      // The rows mutator's own base for a parameter (w2.md §2.13); names.ts has none.
+      params: 'param',
+      fields: candidateName(ROW_NAME_KINDS['fields'] ?? 'variable', 0),
+      values: candidateName(ROW_NAME_KINDS['values'] ?? 'variable', 0),
+    });
+    unmount();
   });
 });

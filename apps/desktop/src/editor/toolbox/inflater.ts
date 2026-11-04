@@ -64,8 +64,10 @@ export function applyArgLabels(block: Blockly.Block, labels: readonly string[]):
 
 /**
  * Whether `block` or a block in it declares a symbol: an item's declaration (`declares`), or one a
- * block makes itself when it is built (the catch variable of *try*). Such a block is never kept:
- * every showing gives its declarations new symbol IDs, as building it does.
+ * block makes itself when it is built (the catch variable of *try*, named by the mutators' hook,
+ * which the editor installs before its flyout first shows, ../services/install.ts). A kept block
+ * that declares something gets new symbol IDs at each showing ({@link renewDeclarations}), as
+ * building it again would give it.
  */
 export function declaresSymbols(block: Blockly.Block): boolean {
   return block
