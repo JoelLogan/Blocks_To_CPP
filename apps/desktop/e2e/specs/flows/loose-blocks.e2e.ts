@@ -7,12 +7,13 @@
  *   variable of the module whatever is selected), and
  * - the variable menu of a loose *set* lists `main`'s variables, `secret` and `guess`.
  */
+import { By } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import type { BlockNode, ProjectDocument } from '../../support/bdm';
 import { panCanvas, visibleCanvas } from '../../support/canvas';
 import { currentDocument, fieldOf, foldCodePanel } from '../../support/editor';
-import { clickMiddle } from '../../support/ui';
+import { clickMiddle, clickTestId } from '../../support/ui';
 import { sleep, waitFor } from '../../support/wait';
 import { closeMenu, dropOnCanvas, menuLabels, waitForSelected } from './lib/editor';
 import { type FlowApp, startFlow } from './lib/launch';
@@ -51,6 +52,16 @@ describe('Loose blocks', () => {
     const app = await flow.launch({ dialogs: { open: [example] } });
     await openFromStartPage(app);
     await foldCodePanel(app);
+    // The console is folded away too: at 800 × 560, below the Restricted Mode banner and the
+    // module strip, the canvas is otherwise too short to leave an empty area below the first
+    // loose block (Blockly scrolls only until half a view of empty canvas shows below the blocks).
+    await clickTestId(app.driver, 'bottom-dock-toggle');
+    await waitFor(
+      async () =>
+        (await app.driver.findElements(By.css('section.bottom-dock[data-collapsed="true"]')))
+          .length > 0,
+      { timeout: UI_TIMEOUT_MS, message: 'the console to fold away' },
+    );
     // Nothing selected: the getters of main's variables are listed.
     await waitFor(async () => (await listsGetter(app, SECRET)) && (await listsGetter(app, GUESS)), {
       timeout: UI_TIMEOUT_MS,
