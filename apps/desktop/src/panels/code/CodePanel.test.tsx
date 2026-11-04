@@ -283,11 +283,12 @@ describe('CodePanel', () => {
     act(() => {
       view.dispatch({ selection: { anchor: offsetOf('secret') }, userEvent: 'select.pointer' });
     });
-    expect(props.onSelectBlock).toHaveBeenLastCalledWith('b_decl');
+    // With the file the code is in.
+    expect(props.onSelectBlock).toHaveBeenLastCalledWith('b_decl', 'main.cpp');
     act(() => {
       view.dispatch({ selection: { anchor: offsetOf('return') }, userEvent: 'select.pointer' });
     });
-    expect(props.onSelectBlock).toHaveBeenLastCalledWith('b_main');
+    expect(props.onSelectBlock).toHaveBeenLastCalledWith('b_main', 'main.cpp');
     // Moving the caret with the keyboard does not select blocks; Enter does.
     vi.mocked(props.onSelectBlock).mockClear();
     act(() => {
@@ -295,7 +296,7 @@ describe('CodePanel', () => {
     });
     expect(props.onSelectBlock).not.toHaveBeenCalled();
     fireEvent.keyDown(view.contentDOM, { key: 'Enter', code: 'Enter', keyCode: 13 });
-    expect(props.onSelectBlock).toHaveBeenCalledWith('b_print');
+    expect(props.onSelectBlock).toHaveBeenCalledWith('b_print', 'main.cpp');
   });
 
   it('does not select anything for a click outside every range', () => {

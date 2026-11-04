@@ -38,6 +38,7 @@ import { GENERATOR_BUG_LABEL } from '../features/build-run/buildOutput';
 import { consoleBridge } from '../features/build-run/consoleBridge';
 import { consoleHeaderFrom } from '../features/build-run/consoleHeader';
 import { ipc } from '../lib/ipc';
+import { visibleInvisibles } from '../panels/shared/invisibles';
 import {
   BuildOutputPanel,
   CodePanel,
@@ -46,6 +47,7 @@ import {
   DEFAULT_SCROLLBACK_LINES,
   isHiddenFile,
   type ProblemFix,
+  type CodeFileGroup,
   type ProblemItem,
   ProblemsPanel,
 } from '../panels';
@@ -102,50 +104,101 @@ function useDiagnosticInputs(shown: boolean): DiagnosticInputs {
   );
 }
 
-/** Selects the block that produced the clicked code (or the collapsed block around it). */
+/**
+ * Selects the block that produced the clicked code (or the collapsed block around it), switching
+ * to its module when it is another's: a header's declaration selects its *define* (w3-modules.md
+ * §2.5).
+ */
 function selectFromCode(blockId: string): void {
   selectBlockFromCode(getEditorHandle(), blockId);
 }
 
-/** The position of the shown module in the project's module order, or -1 without a project. */
-function activeModuleIndex(state: AppState): number {
-  const project = state.project;
-  return project === null
-    ? -1
-    : project.document.modules.findIndex((module) => module.id === project.activeModuleId);
+/** A module of the open project, as the C++ tab groups its files. */
+interface ModuleOfFiles {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** The modules of the open project in module order (their IDs and names, as one string). */
+function modulesKey(state: AppState): string {
+  return JSON.stringify(
+    (state.project?.document.modules ?? []).map((module) => [module.id, module.name]),
+  );
 }
 
 /**
- * The path of the generated `.cpp` of the module at `index` in the project's module order, or
- * `null` when there is none: the generator writes one source file per module, in module order,
- * before any header (`b2c_codegen::generate`). The IDE's own units are not counted.
+ * The `.cpp` of module `moduleId` among the generated files: the source whose `module` key is the
+ * module (06 §6.8, w3-modules.md §2.5), or `null` when there is none. The IDE's own units are not
+ * counted.
  */
-export function moduleSourcePath(files: readonly GeneratedFile[], index: number): string | null {
-  if (index < 0) {
+export function moduleSourcePath(
+  files: readonly GeneratedFile[],
+  moduleId: string | null,
+): string | null {
+  if (moduleId === null) {
     return null;
   }
-  const sources = files.filter((file) => file.kind === 'source' && !isHiddenFile(file.path));
-  return sources[index]?.path ?? null;
+  return (
+    files.find(
+      (file) => file.kind === 'source' && file.module === moduleId && !isHiddenFile(file.path),
+    )?.path ?? null
+  );
 }
 
-/** The file picked in the C++ tab's file switcher, and the module shown when it was picked. */
-interface PickedFile {
+/**
+ * The C++ tab's file list (w3-modules.md §1.2, §2.5): the shown module's files first, then each
+ * other module's under its name in module order, then the files of no module
+ * (`b2c_support.hpp`). A file whose module the project does not have goes with those.
+ */
+export function codeFileGroups(
+  files: readonly GeneratedFile[],
+  modules: readonly ModuleOfFiles[],
+  shown: string | null,
+): CodeFileGroup[] {
+  const visible = files.filter((file) => !isHiddenFile(file.path));
+  const known = new Set(modules.map((module) => module.id));
+  const ofModule = (id: string) => visible.filter((file) => file.module === id).map((f) => f.path);
+  const groups: CodeFileGroup[] = [];
+  if (shown !== null && known.has(shown)) {
+    groups.push({ label: null, paths: ofModule(shown) });
+  }
+  for (const module of modules) {
+    if (module.id !== shown) {
+      const paths = ofModule(module.id);
+      if (paths.length > 0) {
+        groups.push({ label: `Module ${visibleInvisibles(module.name)}`, paths });
+      }
+    }
+  }
+  groups.push({
+    label: null,
+    paths: visible
+      .filter((file) => file.module === undefined || !known.has(file.module))
+      .map((file) => file.path),
+  });
+  return groups.filter((group) => group.paths.length > 0);
+}
+
+/** The file picked in the C++ tab's file switcher for each module of the project shown. */
+interface PickedFiles {
   readonly project: string | null;
-  readonly module: string | null;
-  readonly path: string | null;
+  /** The path picked while each module was shown, by module ID. */
+  readonly byModule: Readonly<Record<string, string>>;
 }
 
 /**
  * The C++ tab: the live preview's files and source map, the diagnostics in the gutter, the hovered
  * (or else the selected) block's code highlighted, and a click selecting the block that produced
- * the code. It shows the `.cpp` of the module on the canvas, and follows the module switcher: a
- * file picked in the panel's own switcher stays shown until another module is. Before there is
- * any code it shows a note. While its dock is collapsed it keeps what it showed, and takes the
- * latest once when the dock opens.
+ * the code. It shows the `.cpp` of the module on the canvas (the file whose `module` key is it),
+ * and follows the module strip; a file picked in the panel's own switcher is kept for the module
+ * it was picked in, and a picked file the module no longer has (a header that went) falls back to
+ * the module's `.cpp`. Its file list has the shown module's files first, then the other modules'
+ * under their names, then `b2c_support.hpp`. Before there is any code it shows a note. While its
+ * dock is collapsed it keeps what it showed, and takes the latest once when the dock opens.
  */
 export function ConnectedCodePanel() {
   const shown = useAppStore(codeShown);
-  const { preview, hover, selection, project, module, moduleIndex } = useAppStoreWhileShown(
+  const { preview, hover, selection, project, module, modules } = useAppStoreWhileShown(
     shown,
     (state) => ({
       preview: state.analysis.preview,
@@ -153,26 +206,55 @@ export function ConnectedCodePanel() {
       selection: state.ui.selection,
       project: state.project?.handle ?? null,
       module: state.project?.activeModuleId ?? null,
-      moduleIndex: activeModuleIndex(state),
+      modules: modulesKey(state),
     }),
   );
   const inputs = useDiagnosticInputs(shown);
   const diagnostics = useMemo(() => codePanelDiagnostics(inputs), [inputs]);
-  const [picked, setPicked] = useState<PickedFile>({ project, module, path: null });
-  // Another module (or project) shown: its own `.cpp` again, whatever was picked before. React
-  // renders again at once with the new state, before anything is shown.
-  if (picked.project !== project || picked.module !== module) {
-    setPicked({ project, module, path: null });
+  const [picked, setPicked] = useState<PickedFiles>({ project, byModule: {} });
+  // Another project: nothing picked. React renders again at once with the new state.
+  if (picked.project !== project) {
+    setPicked({ project, byModule: {} });
   }
   const pickFile = useCallback(
     (path: string) => {
-      setPicked({ project, module, path });
+      if (module !== null) {
+        setPicked((before) => ({ project, byModule: { ...before.byModule, [module]: path } }));
+      }
     },
     [project, module],
   );
   const files = preview?.files ?? NO_FILES;
-  const moduleFile = useMemo(() => moduleSourcePath(files, moduleIndex), [files, moduleIndex]);
-  const activePath = picked.path ?? moduleFile;
+  // Code clicked in another module's file selects a block of that module, which shows it: the
+  // file stays shown, as that module's pick.
+  const selectCode = useCallback(
+    (blockId: string, path: string | null) => {
+      const owner = files.find((file) => file.path === path)?.module;
+      if (path !== null && owner !== undefined && owner !== module) {
+        setPicked((before) => ({ project, byModule: { ...before.byModule, [owner]: path } }));
+      }
+      selectFromCode(blockId);
+    },
+    [files, module, project],
+  );
+  const moduleList = useMemo(
+    () =>
+      (JSON.parse(modules) as [string, string][]).map(([id, name]): ModuleOfFiles => ({
+        id,
+        name,
+      })),
+    [modules],
+  );
+  const fileGroups = useMemo(
+    () => codeFileGroups(files, moduleList, module),
+    [files, moduleList, module],
+  );
+  const moduleFile = useMemo(() => moduleSourcePath(files, module), [files, module]);
+  const pickedPath = module === null ? undefined : picked.byModule[module];
+  const activePath =
+    pickedPath !== undefined && files.some((file) => file.path === pickedPath)
+      ? pickedPath
+      : moduleFile;
   const hasCode = useMemo(() => files.some((file) => !isHiddenFile(file.path)), [files]);
 
   if (preview === null || !hasCode) {
@@ -181,13 +263,14 @@ export function ConnectedCodePanel() {
   return (
     <CodePanel
       files={files}
+      fileGroups={fileGroups}
       activePath={activePath}
       onActivePathChange={pickFile}
       sourceMap={preview.sourceMap}
       buildable={preview.buildable}
       diagnostics={diagnostics}
       highlightBlockId={hover ?? selection}
-      onSelectBlock={selectFromCode}
+      onSelectBlock={selectCode}
     />
   );
 }
@@ -199,9 +282,22 @@ function openDiagnosticsReference(): void {
   });
 }
 
-/** Activating a problem selects and centres its block (or the collapsed block around it). */
+/**
+ * Activating a problem shows its module when it is another (w3-modules.md §2.6), then selects and
+ * centres its block (or the collapsed block around it).
+ */
 function activateProblem(item: ProblemItem): void {
-  const block = item.diagnostic.primary.block;
+  const { module, block } = item.diagnostic.primary;
+  const project = useAppStore.getState().project;
+  if (
+    module !== undefined &&
+    project !== null &&
+    project.activeModuleId !== module &&
+    project.document.modules.some((candidate) => candidate.id === module)
+  ) {
+    // The editing session follows `activeModuleId` and shows that module's canvas.
+    useAppStore.getState().actions.updateProject({ activeModuleId: module });
+  }
   if (block !== undefined) {
     selectBlockFromProblem(getEditorHandle(), block);
   }

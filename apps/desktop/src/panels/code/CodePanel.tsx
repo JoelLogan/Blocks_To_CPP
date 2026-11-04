@@ -18,10 +18,55 @@ export function isHiddenFile(path: string): boolean {
   return path === IDE_INIT_UNIT_PATH || path.startsWith('ide/');
 }
 
+/**
+ * A group of files in the file switcher: under a heading (`Module utils`), or without one
+ * (w3-modules.md §2.5: the shown module's files first, `b2c_support.hpp` last).
+ */
+export interface CodeFileGroup {
+  readonly label: string | null;
+  readonly paths: readonly string[];
+}
+
+/**
+ * The file switcher's entries: `groups` with only the files there are, then every file they leave
+ * out; without groups, every file in order.
+ */
+export function switcherEntries(
+  files: readonly GeneratedFile[],
+  groups: readonly CodeFileGroup[] | undefined,
+): CodeFileGroup[] {
+  const paths = files.map((file) => file.path);
+  if (groups === undefined) {
+    return [{ label: null, paths }];
+  }
+  const present = new Set(paths);
+  const listed = new Set<string>();
+  const entries: CodeFileGroup[] = [];
+  for (const group of groups) {
+    const shown = group.paths.filter((path) => present.has(path) && !listed.has(path));
+    for (const path of shown) {
+      listed.add(path);
+    }
+    if (shown.length > 0) {
+      entries.push({ label: group.label, paths: shown });
+    }
+  }
+  const rest = paths.filter((path) => !listed.has(path));
+  if (rest.length > 0) {
+    entries.push({ label: null, paths: rest });
+  }
+  return entries;
+}
+
 /** The props of {@link CodePanel}. */
 export interface CodePanelProps {
   /** The preview's generated files. */
   files: readonly GeneratedFile[];
+  /**
+   * The order and headings of the file switcher; without it, the files in their order. A file it
+   * leaves out is listed after the groups.
+   */
+  fileGroups?: readonly CodeFileGroup[];
   /** The file to show; the first file when it is `null` or not among `files`. */
   activePath: string | null;
   /** The person picked another file. */
@@ -34,8 +79,8 @@ export interface CodePanelProps {
   diagnostics: readonly Diagnostic[];
   /** The hovered or selected block: its C++ is highlighted and scrolled into view. */
   highlightBlockId: string | null;
-  /** The person clicked the code of a block (or pressed Enter on it). */
-  onSelectBlock: (blockId: string) => void;
+  /** The person clicked the code of a block (or pressed Enter on it), in the file shown. */
+  onSelectBlock: (blockId: string, path: string | null) => void;
 }
 
 /**
@@ -54,6 +99,7 @@ export interface CodePanelProps {
 export function CodePanel(props: CodePanelProps) {
   const {
     files,
+    fileGroups,
     activePath,
     onActivePathChange,
     sourceMap,
@@ -75,11 +121,18 @@ export function CodePanel(props: CodePanelProps) {
 
   // The editor is created once; it reads the latest callbacks through this ref.
   const callbacks = useRef<CodeViewCallbacks>({
-    onSelectBlock,
+    onSelectBlock: (blockId) => {
+      onSelectBlock(blockId, shownPath.current);
+    },
     onSelectionChange: setHasSelection,
   });
   useEffect(() => {
-    callbacks.current = { onSelectBlock, onSelectionChange: setHasSelection };
+    callbacks.current = {
+      onSelectBlock: (blockId) => {
+        onSelectBlock(blockId, shownPath.current);
+      },
+      onSelectionChange: setHasSelection,
+    };
   }, [onSelectBlock]);
 
   const visibleFiles = useMemo(() => files.filter((file) => !isHiddenFile(file.path)), [files]);
@@ -183,11 +236,23 @@ export function CodePanel(props: CodePanelProps) {
             onActivePathChange(event.target.value);
           }}
         >
-          {visibleFiles.map((file) => (
-            <option key={file.path} value={file.path}>
-              {file.path}
-            </option>
-          ))}
+          {switcherEntries(visibleFiles, fileGroups).map((entry) =>
+            entry.label === null ? (
+              entry.paths.map((path) => (
+                <option key={path} value={path}>
+                  {path}
+                </option>
+              ))
+            ) : (
+              <optgroup key={`group ${entry.label}`} label={entry.label}>
+                {entry.paths.map((path) => (
+                  <option key={path} value={path}>
+                    {path}
+                  </option>
+                ))}
+              </optgroup>
+            ),
+          )}
         </select>
         <button
           type="button"
