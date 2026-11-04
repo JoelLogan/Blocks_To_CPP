@@ -91,6 +91,7 @@ impl Lookup {
             }
             at = if step[0] < at { step[0] } else { -1 };
         }
+        let mut own = BTreeSet::new();
         if module >= 0
             && let Some(functions) = self.index["functions"].get(usize::try_from(module).unwrap())
         {
@@ -101,9 +102,21 @@ impl Lookup {
                 .map(|n| n.as_i64().unwrap())
                 .collect();
             for pair in list.chunks(2) {
+                own.insert(pair[0]);
                 if !names.contains(&pair[0]) && pair[1] >= 0 {
                     found.push(pair[1]);
                 }
+            }
+        }
+        // Then the functions other modules share, unless a name of the
+        // trail or of the module's own definitions hides them.
+        for triple in self.numbers("shared").chunks(3) {
+            if triple[0] != module
+                && !names.contains(&triple[1])
+                && !own.contains(&triple[1])
+                && triple[2] >= 0
+            {
+                found.push(triple[2]);
             }
         }
         let mut out = BTreeSet::new();
@@ -326,4 +339,56 @@ fn the_names_are_listed_once() {
         .collect();
     let unique: BTreeSet<&str> = names.iter().copied().collect();
     assert_eq!(unique.len(), names.len());
+}
+
+/// A module sees the functions other modules share, after its own
+/// definitions: its own `area` hides `geometry`'s shared one, a local
+/// `total` hides `stats`' shared `total`, and `stats` sees `geometry`'s
+/// `area` (w3-modules.md §2.1). Every block answers as the scope query.
+#[test]
+fn other_modules_shared_functions_answer_as_the_scope_query() {
+    let define = |id: &str, sym: &str, name: &str, shared: bool| {
+        serde_json::json!({"id": id, "type": "func.define", "v": 1,
+            "fields": {"NAME": {"sym": sym, "name": name}, "RETURNS": "int", "SHARED": shared},
+            "extra": {"params": []},
+            "statements": {"BODY": [{"id": format!("{id}_r"), "type": "func.return", "v": 1,
+                "inputs": {"VALUE": {"expr": [{"num": "1"}]}}}]}})
+    };
+    let document = serde_json::json!({
+        "format": "blocks2cpp/project", "formatVersion": 1,
+        "generator": {"app": "0.1.0", "catalog": "1.3.0"},
+        "project": {"id": "prj_shared", "name": "Shared", "language": {"standard": "c++20"}},
+        "modules": [
+            {"id": "mod_main", "name": "main", "workspace": {"blocks": [
+                {"id": "b_main", "type": "program.main", "v": 1, "statements": {"BODY": [
+                    {"id": "b_total", "type": "var.declare", "v": 1,
+                     "fields": {"TYPE": "int", "NAME": {"sym": "s_total_local", "name": "total"}},
+                     "inputs": {"VALUE": {"expr": [{"num": "0"}]}}},
+                    {"id": "b_print", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+                     "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "out"},
+                     "inputs": {"ITEM0": {"expr": [{"ref": "s_total_local"}]}}}
+                ]}},
+                define("b_area_main", "s_area_main", "area", false)
+            ]}},
+            {"id": "mod_geometry", "name": "geometry", "workspace": {"blocks": [
+                define("b_area", "s_area", "area", true),
+                define("b_scale", "s_scale", "scale", false)
+            ]}},
+            {"id": "mod_stats", "name": "stats", "workspace": {"blocks": [
+                define("b_total_fn", "s_total", "total", true)
+            ]}}
+        ]
+    });
+    let text = document.to_string();
+    assert!(check("shared functions", &text) > 10);
+    let analysis = native_analysis(&text);
+    let names = |infos: Vec<SymbolInfo>| -> Vec<String> {
+        infos.into_iter().map(|info| info.id.to_string()).collect()
+    };
+    let print = analysis
+        .scope_at(&BlockId::new("b_print").unwrap(), None)
+        .unwrap();
+    assert_eq!(names(print), ["s_area_main", "s_total_local"]);
+    let parked = analysis.parked_scope(&ModuleId::new("mod_stats").unwrap());
+    assert_eq!(names(parked), ["s_area", "s_total"]);
 }

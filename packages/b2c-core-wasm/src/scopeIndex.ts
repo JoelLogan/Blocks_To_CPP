@@ -8,7 +8,9 @@
  * A node of the trail is three numbers: its parent (-1 for none, always smaller than the node), its
  * name (an index into `names`, the C++ names that hide one another) and its symbol (an index into
  * the update's `symbols`, -1 for a hidden name or one the program does not list). Positions are a
- * node (-1: no local symbol) and a module index.
+ * node (-1: no local symbol) and a module index. After the trail and the module's own `functions`,
+ * a position sees the functions other modules share (`shared`, w3-modules.md §2.1) whose names
+ * neither has.
  */
 import type { SymbolInfo } from '@blocks2cpp/ipc-types';
 
@@ -31,6 +33,11 @@ export interface ScopeIndexData {
   readonly trail: readonly number[];
   /** Per module: the functions calls can use, as (name, symbol) pairs. */
   readonly functions: readonly (readonly number[])[];
+  /**
+   * The functions the modules share, as (module, name, symbol) triples, in symbol order. The core
+   * always writes it; an index without it (as a test may write one) shares nothing.
+   */
+  readonly shared?: readonly number[];
   /** Per module: the node at the end of its first lowered `main` body, or -1. */
   readonly parked: readonly number[];
   /**
@@ -84,6 +91,7 @@ export class ScopeIndex {
   readonly #modules: readonly string[];
   readonly #trail: readonly number[];
   readonly #functions: readonly (readonly number[])[];
+  readonly #shared: readonly number[];
   readonly #parked: readonly number[];
   readonly #blocks: ReadonlyMap<string, BlockPositions>;
   readonly #members: ReadonlyMap<number, readonly number[]>;
@@ -94,6 +102,7 @@ export class ScopeIndex {
     this.#modules = data.modules;
     this.#trail = data.trail;
     this.#functions = data.functions;
+    this.#shared = data.shared ?? [];
     this.#parked = data.parked;
     const blocks = new Map<string, BlockPositions>();
     for (const entry of data.blocks) {
@@ -169,6 +178,19 @@ export class ScopeIndex {
       ) {
         refuse('a function list is out of range');
       }
+    }
+    const shared = data.shared === undefined ? [] : arrayOf(data.shared, 'shared');
+    if (
+      shared.length % 3 !== 0 ||
+      !shared.every((item, at) =>
+        at % 3 === 0
+          ? isIndex(item, functions.length)
+          : at % 3 === 1
+            ? isIndex(item, names)
+            : isIndex(item, symbols),
+      )
+    ) {
+      refuse('the shared functions are out of range');
     }
     const parked = arrayOf(data.parked, 'parked');
     if (parked.length !== modules.length || !parked.every((node) => isIndex(node, nodes, true))) {
@@ -292,10 +314,21 @@ export class ScopeIndex {
       node = parent < node ? parent : -1;
     }
     const functions = this.#functions[module] ?? [];
+    const own = new Set<number>();
     for (let at = 0; at + 1 < functions.length; at += 2) {
       const name = functions[at] ?? -1;
       const symbol = functions[at + 1] ?? -1;
+      own.add(name);
       if (!names.has(name) && symbol >= 0) {
+        add(symbol);
+      }
+    }
+    // Other modules' shared functions, unless a local name or the module's own definition hides them.
+    for (let at = 0; at + 2 < this.#shared.length; at += 3) {
+      const owner = this.#shared[at] ?? -1;
+      const name = this.#shared[at + 1] ?? -1;
+      const symbol = this.#shared[at + 2] ?? -1;
+      if (owner !== module && !names.has(name) && !own.has(name) && symbol >= 0) {
         add(symbol);
       }
     }

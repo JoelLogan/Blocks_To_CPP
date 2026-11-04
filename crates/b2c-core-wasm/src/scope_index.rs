@@ -8,6 +8,7 @@
 //! ```json
 //! {"v": 1, "contentHash": "<hex>", "modules": ["m1", …], "names": ["score", …],
 //!  "trail": [parent, name, symbol, …], "functions": [[name, symbol, …], …],
+//!  "shared": [module, name, symbol, …],
 //!  "parked": [node, …], "blocks": [["b1", node, module, "BODY", node, module, …], …],
 //!  "members": [[owner, member, …], …], "created": [["b2", symbol], …]}
 //! ```
@@ -18,6 +19,10 @@
 //! hide one another); nodes are indexes into the trail (three numbers per
 //! node), -1 for none; modules are indexes into `modules`. A block's
 //! position at the block has module -1 when none was recorded there.
+//! `shared` lists the functions the modules share (three numbers each, in
+//! symbol order; docs/plans/m3-contracts/w3-modules.md §2.1): after the
+//! trail and its module's `functions`, a position sees those of the other
+//! modules whose names neither has.
 
 use std::collections::HashMap;
 
@@ -45,6 +50,7 @@ struct Index<'a> {
     names: Vec<&'a str>,
     trail: Vec<i64>,
     functions: Vec<Vec<i64>>,
+    shared: Vec<i64>,
     parked: Vec<i64>,
     blocks: Vec<Vec<Cell<'a>>>,
     members: Vec<Vec<i64>>,
@@ -104,6 +110,10 @@ pub(crate) fn encode(analysis: &Analysis, content_hash: &str) -> String {
                 .collect()
         })
         .collect();
+    let mut shared = Vec::new();
+    for (module, name, sym) in parts.shared() {
+        shared.extend([number(module), names.of(name), symbol(Some(sym))]);
+    }
     let blocks = parts
         .blocks()
         .map(|block| {
@@ -142,6 +152,7 @@ pub(crate) fn encode(analysis: &Analysis, content_hash: &str) -> String {
         names: names.list,
         trail,
         functions,
+        shared,
         parked: parts.parked().map(node).collect(),
         blocks,
         members,

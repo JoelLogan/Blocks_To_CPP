@@ -527,8 +527,10 @@ pub struct ScopeBlock<'a> {
 /// worker, docs/plans/m3-contracts/worker.md §4). A lookup over these parts
 /// that walks the trail as [`Analysis::scope_at`] does (each name counted
 /// once, a parent followed only when it is smaller than its node, then the
-/// module's functions whose names were not seen, then each struct's and
-/// enum's [`Self::members`]) gives exactly its answers.
+/// module's functions whose names were not seen, then the
+/// [`Self::shared`] functions of the other modules whose names were not seen
+/// and are not among the module's functions, then each struct's and enum's
+/// [`Self::members`]) gives exactly its answers.
 #[derive(Debug, Clone, Copy)]
 pub struct ScopeIndexParts<'a> {
     analysis: &'a Analysis,
@@ -569,6 +571,18 @@ impl<'a> ScopeIndexParts<'a> {
     /// `(C++ name, symbol)`, in symbol order.
     pub fn functions(self) -> impl Iterator<Item = &'a [(String, SymbolId)]> + 'a {
         self.analysis.index.functions.iter().map(Vec::as_slice)
+    }
+
+    /// The functions the modules share (w3-modules.md §2.1), as `(module
+    /// index, C++ name, symbol)`, in symbol order: each module sees those of
+    /// the other modules whose names neither the walk of the trail nor the
+    /// module's [`Self::functions`] have.
+    pub fn shared(self) -> impl Iterator<Item = (usize, &'a str, &'a SymbolId)> + 'a {
+        self.analysis
+            .index
+            .shared
+            .iter()
+            .map(|(module, name, sym)| (*module, name.as_str(), sym))
     }
 
     /// The parked point of each module, by module index (the modules of
@@ -1135,14 +1149,19 @@ mod tests {
             }
             node = parent.filter(|parent| *parent < index);
         }
-        if let Some(functions) = parts.functions().nth(module) {
-            found.extend(
-                functions
-                    .iter()
-                    .filter(|(name, _)| !names.contains(name.as_str()))
-                    .map(|(_, sym)| sym),
-            );
-        }
+        let own = parts.functions().nth(module).unwrap_or_default();
+        found.extend(
+            own.iter()
+                .filter(|(name, _)| !names.contains(name.as_str()))
+                .map(|(_, sym)| sym),
+        );
+        let own: BTreeSet<&str> = own.iter().map(|(name, _)| name.as_str()).collect();
+        found.extend(
+            parts
+                .shared()
+                .filter(|(of, name, _)| *of != module && !names.contains(name) && !own.contains(name))
+                .map(|(_, _, sym)| sym),
+        );
         let members: BTreeMap<_, _> = parts.members().collect();
         let mut out: Vec<&SymbolId> = Vec::new();
         for id in found {

@@ -235,6 +235,7 @@ describe('ScopeIndex.parse', () => {
     names: ['x'],
     trail: [-1, 0, 0],
     functions: [[]],
+    shared: [],
     parked: [0],
     blocks: [['b1', 0, 0, 'BODY', -1, 0]],
     members: [],
@@ -249,6 +250,13 @@ describe('ScopeIndex.parse', () => {
     expect(index.symbolsAt('b1', 'ELSE')?.length).toBe(1);
     expect(index.parkedScope('m').map((info) => info.id)).toEqual(['s1']);
     expect(index.symbolsAfter('b0')).toBeNull();
+    // Without the list of shared functions, nothing is shared.
+    const older = Object.fromEntries(Object.entries(good).filter(([key]) => key !== 'shared'));
+    expect(
+      parse(older)
+        .parkedScope('m')
+        .map((info) => info.id),
+    ).toEqual(['s1']);
   });
 
   it.each([
@@ -266,6 +274,9 @@ describe('ScopeIndex.parse', () => {
     ['a block without positions', { ...good, blocks: [['b1']] }],
     ['an input out of range', { ...good, blocks: [['b1', 0, 0, 'BODY', 1, 0]] }],
     ['a function list out of range', { ...good, functions: [[0, 3]] }],
+    ['a shared function of a module out of range', { ...good, shared: [1, 0, 0] }],
+    ['a shared function cut short', { ...good, shared: [0, 0] }],
+    ['a shared function list that is not one', { ...good, shared: 'x' }],
     ['a member list out of range', { ...good, members: [[0, 9]] }],
     ['a created pair out of range', { ...good, created: [['b0', 9]] }],
     ['a list that is not one', { ...good, members: 'x' }],
@@ -273,6 +284,48 @@ describe('ScopeIndex.parse', () => {
     expect(() =>
       typeof value === 'string' ? ScopeIndex.parse(value, preview) : parse(value),
     ).toThrow(CoreError);
+  });
+
+  it("lists other modules' shared functions after the module's own, unless a name hides them", () => {
+    const shared = {
+      contentHash: 'aa',
+      symbols: [
+        { id: 'area_main', name: 'area', kind: 'function', module: 'main' },
+        { id: 'area_geo', name: 'area', kind: 'function', module: 'geo', shared: true },
+        { id: 'round_geo', name: 'round', kind: 'function', module: 'geo', shared: true },
+        { id: 'total_local', name: 'total', kind: 'variable', isConst: false, module: 'main' },
+        { id: 'total_stats', name: 'total', kind: 'function', module: 'stats', shared: true },
+      ],
+    } as unknown as PreviewResult;
+    const index = ScopeIndex.parse(
+      JSON.stringify({
+        ...good,
+        modules: ['main', 'geo', 'stats'],
+        names: ['area', 'round', 'total'],
+        trail: [-1, 2, 3],
+        functions: [
+          [0, 0],
+          [0, 1, 1, 2],
+          [2, 4],
+        ],
+        shared: [1, 0, 1, 1, 1, 2, 2, 2, 4],
+        parked: [0, -1, -1],
+        blocks: [
+          ['b1', 0, 0],
+          ['b2', -1, 0],
+          ['b3', -1, 2],
+        ],
+        created: [],
+      }),
+      shared,
+    );
+    const ids = (infos: { id: string }[] | null) => infos?.map((info) => info.id);
+    // `main`'s own `area` hides `geo`'s; the local `total` hides `stats`' shared one.
+    expect(ids(index.symbolsAt('b1', null))).toEqual(['area_main', 'round_geo', 'total_local']);
+    expect(ids(index.symbolsAt('b2', null))).toEqual(['area_main', 'round_geo', 'total_stats']);
+    // A module does not list its own shared functions twice, and sees the others'.
+    expect(ids(index.symbolsAt('b3', null))).toEqual(['area_geo', 'round_geo', 'total_stats']);
+    expect(ids(index.parkedScope('geo'))).toEqual(['area_geo', 'round_geo', 'total_stats']);
   });
 
   it('refuses an index for a preview that did not load', () => {
