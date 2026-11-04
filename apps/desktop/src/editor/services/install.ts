@@ -32,9 +32,17 @@ let registered = false;
  * Prepares Blockly for the editor, once: the Blocks2Cpp ID generator, the mutators, every catalog
  * block (with the expression shadows and the placeholder) and Blockly's English interface text.
  *
+ * On every call it also gives the mutators the editor's default names of new declaration parts
+ * ({@link defaultDeclName}), which a closed editor withdrew with its services: the toolbox's flyout
+ * builds its blocks while `Blockly.inject` runs, before {@link installEditorServices}, and keeps
+ * them from one showing to the next (../toolbox/inflater.ts). Built without the hook, *try*'s
+ * catch part kept the mutators' own name, `name`, instead of `e`. The other hooks need not come
+ * first: a toolbox item gives every value part its shadow, and each showing renews the symbol IDs.
+ *
  * @throws IdGeneratorError when Blockly does not take the ID generator (a changed Blockly version).
  */
 export function registerEditorBlocks(): void {
+  configureMutators({ declName: defaultDeclName });
   if (registered) {
     return;
   }
