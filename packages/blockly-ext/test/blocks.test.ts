@@ -395,9 +395,12 @@ describe('blockLayout', () => {
       expect(shown.getField(SHARED_FIELD)?.isVisible()).toBe(true);
       shown.setFieldValue('TRUE', SHARED_FIELD);
       const state = Blockly.serialization.blocks.save(shown);
+      if (state === null) {
+        throw new Error('define was not saved');
+      }
       // Built again in a single-module project, the value stays, hidden.
       several = false;
-      const again = Blockly.serialization.blocks.append(state ?? {}, workspace);
+      const again = Blockly.serialization.blocks.append(state, workspace);
       expect(again.getField(SHARED_FIELD)?.isVisible()).toBe(false);
       expect(again.getFieldValue(SHARED_FIELD)).toBe('TRUE');
       // A provider that throws counts as one module.

@@ -60,9 +60,16 @@ function diagnostic(
   });
 }
 
-/** Waits until Blockly has delivered its events (so they are on the undo stack). */
+/**
+ * Waits until Blockly has delivered its events (so they are on the undo stack): it delivers them
+ * after the next animation frame and a task (../sync/undo.ts), which a fixed delay could beat.
+ */
 function delivered(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 10));
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      setTimeout(resolve, 0);
+    });
+  });
 }
 
 /**
