@@ -40,11 +40,13 @@ import {
   failedCategoryNote,
   functionsContents,
   initialToolboxDefinition,
+  isMultiModule,
   programContents,
   toolboxDefinition,
   toolboxSymbolGroups,
   variablesContents,
   withLabelMode,
+  withModuleCount,
   type ContentsContext,
   type ModuleInfo,
 } from './contents';
@@ -150,8 +152,10 @@ function withBlocklyFocus(dialogs: ToolboxDialogs): ToolboxDialogs {
 }
 
 /**
- * Builds a dynamic category, its blocks marked with the label mode ({@link withLabelMode}), showing
- * a short note instead of failing the whole flyout.
+ * Builds a dynamic category, its blocks marked with the label mode ({@link withLabelMode}) and the
+ * module count ({@link withModuleCount}: a kept *define* would show *share with other modules* for
+ * the count it was built with), showing a short note instead of failing the whole flyout. Toolbox
+ * search builds the same marks (`categoryContents`).
  */
 function guarded(
   name: string,
@@ -160,7 +164,10 @@ function guarded(
 ): () => Blockly.utils.toolbox.FlyoutItemInfoArray {
   return () => {
     try {
-      return withLabelMode(build(context), context.mode?.() ?? null);
+      return withModuleCount(
+        withLabelMode(build(context), context.mode?.() ?? null),
+        isMultiModule(context),
+      );
     } catch (error: unknown) {
       console.error(`The toolbox category ${name} could not be built`, error);
       return failedCategoryNote();

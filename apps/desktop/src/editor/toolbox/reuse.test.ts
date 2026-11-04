@@ -6,7 +6,14 @@
  * the user changed in the flyout is built again.
  */
 import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
-import { B2cSymbolDeclField, b2cDarkTheme } from '@blocks2cpp/blockly-ext';
+import {
+  B2cSymbolDeclField,
+  b2cDarkTheme,
+  DEFAULT_EDITOR_SERVICES,
+  resetEditorServices,
+  SHARED_FIELD,
+  setEditorServices,
+} from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -462,6 +469,58 @@ describe('showing the flyout again', () => {
     inflaterOf(workspace).reuse = false;
     continuousToolbox(workspace).showAllCategories();
     expect(looks()).toEqual(kept);
+  });
+});
+
+describe('the flyout’s define', () => {
+  afterEach(() => {
+    resetEditorServices();
+  });
+
+  it('shows share with other modules once the project has a second module, and not after', async () => {
+    // Blocks show the box while the project has several modules, as the editor's symbol services
+    // say (EditorWorkspace.tsx).
+    setEditorServices({
+      ...DEFAULT_EDITOR_SERVICES,
+      symbols: {
+        ...DEFAULT_EDITOR_SERVICES.symbols,
+        multiModule: () => (useAppStore.getState().project?.document.modules.length ?? 0) > 1,
+      },
+    });
+    const workspace = attached();
+    await settle();
+    const define = (): Blockly.BlockSvg => {
+      const found = flyoutBlocks(workspace).find((block) => block.type === 'func.define');
+      if (found === undefined) {
+        throw new Error('no define in the flyout');
+      }
+      return found;
+    };
+    const sharedShown = (): boolean | undefined => define().getField(SHARED_FIELD)?.isVisible();
+    const setModules = (count: number): void => {
+      const project = useAppStore.getState().project;
+      const main = project?.document.modules[0];
+      if (project === null || main === undefined) {
+        throw new Error('no project');
+      }
+      const more = Array.from({ length: count - 1 }, (_, at) => ({
+        id: `mod_more${String(at)}`,
+        name: `more${String(at)}`,
+        workspace: { blocks: [] },
+      }));
+      useAppStore
+        .getState()
+        .actions.updateProject({ document: { ...project.document, modules: [main, ...more] } });
+    };
+    expect(sharedShown()).toBe(false);
+    const single = define();
+    setModules(2);
+    await settle();
+    expect(sharedShown()).toBe(true);
+    expect(define()).not.toBe(single);
+    setModules(1);
+    await settle();
+    expect(sharedShown()).toBe(false);
   });
 });
 
