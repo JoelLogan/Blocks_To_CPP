@@ -18,8 +18,10 @@
  *   show, as are the label words between the parts of a group; the group ends at the template's
  *   `…`;
  * - a field named {@link SHARED_FIELD} and the label words right before it (back to the previous
- *   field or input) are hidden: the block keeps the field's value, but W2 does not show it, as
- *   multi-module projects, where it means something, come with W3 (w2.md §2.1, modules.md §7.1).
+ *   field or input) are hidden: the block keeps the field's value, but shows it only where it means
+ *   something, in a project with several modules (w2.md §2.1, modules.md §7.1), and only on the
+ *   blocks of {@link SHARED_SHOWN_ON} (docs/plans/m3-contracts/w3-modules.md §1.2: `func.define`
+ *   from W3's package E on; the struct, enum and global blocks follow with package T).
  */
 import type { BlockDefJson, LabelPart } from '../generated/catalog';
 import { REPEAT_ANCHOR } from './mutators';
@@ -32,8 +34,24 @@ export type LayoutItem =
   | { readonly kind: 'label'; readonly text: string; readonly hidden?: true }
   | { readonly kind: 'field'; readonly name: string; readonly hidden?: true };
 
-/** The field a definition shares with other modules by (modules.md §7.1), hidden until W3. */
+/** The field a definition shares with other modules by (modules.md §7.1). */
 export const SHARED_FIELD = 'SHARED';
+
+/**
+ * The blocks whose {@link SHARED_FIELD} is shown in a project with several modules
+ * (docs/plans/m3-contracts/w3-modules.md §1.2, §3.3). On every other block it stays hidden, with
+ * its value kept.
+ */
+export const SHARED_SHOWN_ON: ReadonlySet<string> = new Set(['func.define']);
+
+/** What a layout depends on besides the block and its label parts. */
+export interface LayoutOptions {
+  /**
+   * The project has several modules: the {@link SHARED_FIELD} of the blocks of
+   * {@link SHARED_SHOWN_ON} is shown with its words. False by default.
+   */
+  readonly multiModule?: boolean;
+}
 
 /** One Blockly input of a block. */
 export interface LayoutInput {
@@ -63,12 +81,15 @@ export function rowName(index: number): string {
 /**
  * Computes the layout of a block (see the module comment) from its label's parts: the Friendly
  * label's by default, or the parts of the label of another mode (./labels.ts, `blockLabelParts`).
- * The parts only order and word the inputs; every field and input is created in either mode.
+ * The parts only order and word the inputs; every field and input is created in either mode, and
+ * whether the project has several modules only shows or hides {@link SHARED_FIELD}.
  */
 export function blockLayout(
   def: BlockDefJson,
   parts: readonly LabelPart[] = def.labelParts,
+  options: LayoutOptions = {},
 ): BlockLayout {
+  const hideShared = options.multiModule !== true || !SHARED_SHOWN_ON.has(def.id);
   const fieldNames = new Set(def.fields.map((field) => field.name));
   const valueInputs = new Map(def.inputs.map((input) => [input.name, input]));
   const statements = new Map(def.statements.map((statement) => [statement.name, statement]));
@@ -123,7 +144,7 @@ export function blockLayout(
           openGroup();
         }
         inGroup = true;
-      } else if (name === SHARED_FIELD && fieldNames.has(name)) {
+      } else if (name === SHARED_FIELD && hideShared && fieldNames.has(name)) {
         // The words before it go with it (back to the previous field or input).
         for (let index = pending.length - 1; index >= 0; index -= 1) {
           const item = pending[index];
@@ -150,7 +171,7 @@ export function blockLayout(
   for (const field of def.fields) {
     if (!mentioned.has(field.name) && !mutatorParts.has(field.name)) {
       pending.push(
-        field.name === SHARED_FIELD
+        field.name === SHARED_FIELD && hideShared
           ? { kind: 'field', name: field.name, hidden: true }
           : { kind: 'field', name: field.name },
       );

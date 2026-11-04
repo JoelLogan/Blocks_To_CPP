@@ -1,5 +1,5 @@
 /** Starting, publishing and replacing the compiler core. */
-import { CoreError, type CoreWasm, type ScopeIndex } from '@blocks2cpp/b2c-core-wasm';
+import { CoreError, type CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getCore, setCore } from '../../app/core';
@@ -43,7 +43,7 @@ describe('the core host', () => {
     expect(initCore).toHaveBeenCalledTimes(1);
   });
 
-  it('answers the scope query from an applied index, and from the instance without one', async () => {
+  it('gives the instance itself, whatever scope index the store holds (w5-performance.md §10.3)', async () => {
     const core = namedCore('main');
     const host = createCoreHost({
       initCore: () => Promise.resolve(core),
@@ -53,26 +53,7 @@ describe('the core host', () => {
     });
     await host.start();
     expect(host.current()).toBe(core);
-    const fromIndex = [{ id: 's_x' }];
-    const symbolsAt = vi.fn(() => fromIndex);
-    host.applyScope?.({ symbolsAt } as unknown as ScopeIndex);
-    const view = host.current();
-    expect(view).not.toBe(core);
-    expect(host.current()).toBe(view);
-    expect(view?.symbolsInScope('b1', 'BODY')).toBe(fromIndex);
-    expect(symbolsAt).toHaveBeenCalledWith('b1', 'BODY');
-    // Every other call is the instance's; the shell still publishes the instance itself.
-    expect(view?.canonical('{}')).toEqual({ name: 'main', method: 'canonical', args: ['{}'] });
-    expect(view?.version()).toEqual({ name: 'main', method: 'version', args: [] });
-    expect(getCore()).toBe(core);
-    host.applyScope?.(null);
-    expect(host.current()).toBe(core);
-    // A view taken while an index applied follows the host: without one, the instance answers.
-    expect(view?.symbolsInScope('b1', null)).toEqual({
-      name: 'main',
-      method: 'symbolsInScope',
-      args: ['b1', null],
-    });
+    expect(host).not.toHaveProperty('applyScope');
   });
 
   it('tries again after a failed start', async () => {

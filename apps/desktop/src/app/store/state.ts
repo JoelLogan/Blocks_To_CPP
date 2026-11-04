@@ -3,7 +3,7 @@
  * plain data. Everything that comes from the backend arrives through the typed IPC client, and
  * every document comes from the compiler core's loader, never from a plain `JSON.parse`.
  */
-import type { BdmDocument, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
+import type { BdmDocument, PreviewResult, ScopeIndex } from '@blocks2cpp/b2c-core-wasm';
 import type {
   AppInfo,
   BuildConfig,
@@ -58,11 +58,23 @@ export interface ProjectState {
 export type AnalysisNotice = 'trapRecovered' | 'syncFailed';
 
 /** The live preview of the open project (06 §6.13). */
+/** What {@link AnalysisState.scope} holds while nothing may answer the scope query. */
+export const NO_SCOPE = 'none';
+
 export interface AnalysisState {
   /** The sequence number of the latest preview request; older results are discarded. */
   seq: number;
   /** The latest preview, or `null` before the first one. */
   preview: PreviewResult | null;
+  /**
+   * The scope index of {@link preview}, when the instance that made it is not the editor's own
+   * (the preview worker's, docs/plans/m3-contracts/w5-performance.md §10.3): the scope query
+   * answers from it. `null`: the editor's compiler core made the preview and answers the scope
+   * query itself (or there is none yet). {@link NO_SCOPE}: the worker previews but no index fits
+   * the document shown (another document was loaded, or the worker's index could not be read), so
+   * nothing answers; the editor's core has not seen that document.
+   */
+  scope: ScopeIndex | typeof NO_SCOPE | null;
   /** A notice about the analysis, or `null`. */
   notice: AnalysisNotice | null;
   /**
@@ -212,7 +224,7 @@ export interface AppData {
 
 /** The analysis slice with nothing analysed yet. */
 export function initialAnalysis(): AnalysisState {
-  return { seq: 0, preview: null, notice: null, syncCodes: [] };
+  return { seq: 0, preview: null, scope: null, notice: null, syncCodes: [] };
 }
 
 /** The build slice with no build yet. */

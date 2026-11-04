@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EditorHandle } from '../../app/editor-types';
 import { StatusBar } from '../../app/layout/StatusBar';
 import { useAppStore } from '../../app/store';
+import { NO_MODULE_EDITS } from '../../app/testing/fixtures';
 import { HintProvider } from '../../app/ui/Hint';
 import {
   canonicalOf,
@@ -68,6 +69,7 @@ describe.skipIf(core === null)('Reload with the real core', () => {
     await settle(session);
     let undoAfterLoad: number | null = null;
     const editor: EditorHandle = {
+      ...NO_MODULE_EDITS,
       loadDocument: (doc, options) => {
         session.session.loadDocument(doc, options);
         undoAfterLoad = session.workspace.getUndoStack().length;

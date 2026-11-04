@@ -34,6 +34,7 @@ import { resetAppStore, useAppStore } from './store';
 import {
   createFakeIpc,
   documentFixture,
+  NO_MODULE_EDITS,
   previewFixture,
   projectFixture,
   toolchainFixture,
@@ -239,7 +240,7 @@ describe('the C++ tab', () => {
     ]);
   });
 
-  it('shows the .cpp of the module on the canvas, and follows the module switcher', () => {
+  it('shows the .cpp of the module on the canvas by its module key, and follows the module strip', () => {
     const doc = documentFixture();
     doc.modules = [
       { id: 'mod_main', name: 'main', workspace: { blocks: [] } },
@@ -250,8 +251,9 @@ describe('the C++ tab', () => {
     const twoModulePreview = (): PreviewResult => ({
       ...preview(),
       files: [
-        { path: 'main.cpp', kind: 'source', contents: MAIN_CPP },
-        { path: 'util.cpp', kind: 'source', contents: '// util\n' },
+        // Not in module order: the module key decides (w3-modules.md §2.5).
+        { path: 'util.cpp', kind: 'source', module: 'mod_util', contents: '// util\n' },
+        { path: 'main.cpp', kind: 'source', module: 'mod_main', contents: MAIN_CPP },
         { path: 'b2c_support.hpp', kind: 'header', contents: '#pragma once\n' },
       ],
     });
@@ -269,7 +271,17 @@ describe('the C++ tab', () => {
     });
     expect(shown()).toEqual(['main.cpp', MAIN_CPP]);
 
-    // A file picked in the panel stays until another module is shown.
+    // The shown module's files first, then the other modules' under their names, then the support
+    // header.
+    const groups = () =>
+      Array.from(file.children, (child) =>
+        child instanceof HTMLOptGroupElement
+          ? `${child.label}: ${Array.from(child.children, (option) => option.textContent).join(', ')}`
+          : child.textContent,
+      );
+    expect(groups()).toEqual(['main.cpp', 'Module util: util.cpp', 'b2c_support.hpp']);
+
+    // A file picked in the panel is kept for the module it was picked in.
     fireEvent.change(file, { target: { value: 'b2c_support.hpp' } });
     expect(shown()).toEqual(['b2c_support.hpp', '#pragma once\n']);
     setState(() => {
@@ -280,23 +292,102 @@ describe('the C++ tab', () => {
       actions.updateProject({ activeModuleId: 'mod_util' });
     });
     expect(shown()).toEqual(['util.cpp', '// util\n']);
+    expect(groups()).toEqual(['util.cpp', 'Module main: main.cpp', 'b2c_support.hpp']);
     setState(() => {
       actions.updateProject({ activeModuleId: 'mod_main' });
+    });
+    expect(file.value).toBe('b2c_support.hpp');
+    // A picked file the preview no longer has (a header that went): the module's .cpp.
+    setState(() => {
+      actions.setAnalysis({
+        preview: {
+          ...twoModulePreview(),
+          files: twoModulePreview().files.filter((f) => f.path !== 'b2c_support.hpp'),
+        },
+      });
     });
     expect(file.value).toBe('main.cpp');
   });
 
-  it('finds a module’s .cpp by the module’s place, past the IDE’s own units', () => {
+  it('keeps showing another module’s header whose code was clicked, as that module’s pick', () => {
+    const doc = documentFixture();
+    doc.modules = [
+      { id: 'mod_main', name: 'main', workspace: { blocks: [] } },
+      { id: 'mod_utils', name: 'utils', workspace: { blocks: [] } },
+    ];
+    const header = 'void greet();\n';
+    const { actions } = useAppStore.getState();
+    const switched: string[] = [];
+    setEditorHandle({
+      ...NO_MODULE_EDITS,
+      // No block of the canvas: the editor is asked to select (and show) it.
+      workspace: { getBlockById: () => null } as never,
+      loadDocument: () => undefined,
+      currentDocument: () => doc,
+      updateProjectInfo: () => undefined,
+      undo: () => undefined,
+      redo: () => undefined,
+      // As the session does: a block of another module shows that module first.
+      selectBlock: (id) => {
+        switched.push(id);
+        actions.updateProject({ activeModuleId: 'mod_utils' });
+      },
+    });
+    const { container } = render(<ConnectedCodePanel />);
+    setState(() => {
+      actions.setProject(projectFixture({ document: doc, activeModuleId: 'mod_main' }));
+      actions.setAnalysis({
+        preview: {
+          ...preview(),
+          files: [
+            { path: 'main.cpp', kind: 'source', module: 'mod_main', contents: MAIN_CPP },
+            { path: 'utils.cpp', kind: 'source', module: 'mod_utils', contents: '// utils\n' },
+            { path: 'utils.hpp', kind: 'header', module: 'mod_utils', contents: header },
+          ],
+          sourceMap: compactSourceMap({
+            version: 1,
+            files: [
+              {
+                path: 'utils.hpp',
+                module: 'mod_utils',
+                ranges: [
+                  {
+                    start: { line: 1, column: 1 },
+                    end: { line: 1, column: 14 },
+                    module: 'mod_utils',
+                    block: 'blk_greet',
+                    part: { kind: 'whole' },
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+      });
+    });
+    const file = screen.getByLabelText<HTMLSelectElement>('File');
+    fireEvent.change(file, { target: { value: 'utils.hpp' } });
+    act(() => {
+      codeView(container).dispatch({ selection: { anchor: 2 }, userEvent: 'select.pointer' });
+    });
+    expect(switched).toEqual(['blk_greet']);
+    expect(useAppStore.getState().project?.activeModuleId).toBe('mod_utils');
+    expect(file.value).toBe('utils.hpp');
+    setEditorHandle(null);
+  });
+
+  it('finds a module’s .cpp by its module key, past the IDE’s own units', () => {
     const files = [
-      { path: 'main.cpp', kind: 'source', contents: '' },
-      { path: 'ide/b2c_ide_init.cpp', kind: 'source', contents: '' },
-      { path: 'util.cpp', kind: 'source', contents: '' },
+      { path: 'main.cpp', kind: 'source', module: 'mod_main', contents: '' },
+      { path: 'ide/b2c_ide_init.cpp', kind: 'source', module: 'mod_util', contents: '' },
+      { path: 'util.hpp', kind: 'header', module: 'mod_util', contents: '' },
+      { path: 'util.cpp', kind: 'source', module: 'mod_util', contents: '' },
       { path: 'b2c_support.hpp', kind: 'header', contents: '' },
     ] as const;
-    expect(moduleSourcePath(files, 0)).toBe('main.cpp');
-    expect(moduleSourcePath(files, 1)).toBe('util.cpp');
-    expect(moduleSourcePath(files, 2)).toBeNull();
-    expect(moduleSourcePath(files, -1)).toBeNull();
+    expect(moduleSourcePath(files, 'mod_main')).toBe('main.cpp');
+    expect(moduleSourcePath(files, 'mod_util')).toBe('util.cpp');
+    expect(moduleSourcePath(files, 'mod_gone')).toBeNull();
+    expect(moduleSourcePath(files, null)).toBeNull();
   });
 
   it('has no accessibility problems', async () => {
@@ -374,6 +465,41 @@ describe('the Problems tab', () => {
       ['b009', true],
       ['b009', true],
     ]);
+  });
+
+  it('shows the module of a problem in another module, then reveals its block (w3-modules.md §2.6)', () => {
+    const { selected } = connectEditor();
+    const doc = guessingGame();
+    doc.modules = [...doc.modules, { id: 'mod_utils', name: 'utils', workspace: { blocks: [] } }];
+    const { actions } = useAppStore.getState();
+    actions.setProject(projectFixture({ document: doc, contentHash: HASH }));
+    const elsewhere: Diagnostic = {
+      ...liveError('b_call'),
+      code: 'B2C-E0206',
+      primary: { module: 'mod_utils', block: 'b_call', part: { kind: 'whole' } },
+    };
+    // A problem about a module itself (B2C-E0221) has no block.
+    const moduleOnly: Diagnostic = {
+      ...liveError('b_x'),
+      code: 'B2C-E0221',
+      primary: { module: 'mod_main', part: { kind: 'whole' } },
+    };
+    actions.setAnalysis({ preview: previewFixture([elsewhere, moduleOnly]) });
+    render(<ConnectedProblemsPanel />);
+    const activate = (code: string) => {
+      const row = rows().find((candidate) => candidate.textContent.includes(code));
+      const [cell] = within(row ?? document.body).getAllByRole('gridcell');
+      if (cell === undefined) {
+        throw new Error('no cell');
+      }
+      fireEvent.click(cell);
+    };
+    activate('B2C-E0206');
+    expect(useAppStore.getState().project?.activeModuleId).toBe('mod_utils');
+    expect(selected).toEqual([['b_call', { center: true }]]);
+    activate('B2C-E0221');
+    expect(useAppStore.getState().project?.activeModuleId).toBe('mod_main');
+    expect(selected).toHaveLength(1);
   });
 
   it('opens the diagnostics reference, and only logs when that fails', async () => {

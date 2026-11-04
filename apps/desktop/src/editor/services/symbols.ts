@@ -10,7 +10,7 @@
  * analysis has not seen yet (one dropped or pasted since) lists what its place gives it instead of
  * nothing (03 §3.6).
  */
-import type { CoreWasm, PreviewResult, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
+import type { CoreWasm, PreviewResult, ScopeIndex, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
   B2cSymbolRefField,
   EXPR_SHADOW_TYPE,
@@ -25,6 +25,7 @@ import {
 } from '@blocks2cpp/blockly-ext';
 import type * as Blockly from 'blockly/core';
 
+import { NO_SCOPE } from '../../app/store';
 import { symbolsAtBlock, type SymbolSource } from '../toolbox/scope';
 import type { SymbolNames } from './names';
 
@@ -46,30 +47,53 @@ export interface SymbolServiceDeps {
   readonly core: () => CoreWasm | null;
   /** The latest preview, or `null`. */
   readonly preview: () => PreviewResult | null;
+  /**
+   * The scope index of the latest preview (`AnalysisState.scope`): the scope query answers from
+   * it when it is an index, not at all with {@link NO_SCOPE}, and from {@link core} with `null`.
+   * Without it, the core answers.
+   */
+  readonly scope?: () => ScopeIndex | typeof NO_SCOPE | null;
   /** Current and last-known names. */
   readonly names: SymbolNames;
   /** The canvas whose blocks the menus belong to. */
   readonly workspace: Blockly.Workspace;
   /** The ID of the module the canvas shows, or `null` when none is. */
   readonly activeModule: () => string | null;
+  /**
+   * Whether the open project has several modules (docs/plans/m3-contracts/w3-modules.md §1.2);
+   * without it, a project counts as having one.
+   */
+  readonly multiModule?: () => boolean;
 }
 
 /**
- * The latest analysis as the compiler core gives it: its scope query (`symbolsInScope`, from the
- * analysis the core kept from the last preview, `null` for a block that analysis has not seen) and
- * the preview's symbols, with no fallback of the editor's. Before the project's first preview there
- * are none, and every block sees nothing. Never throws: a trapped core answers again once the
- * preview pipeline has replaced it, and nothing until then.
+ * The latest analysis: its scope query and the preview's symbols, with no fallback of the
+ * editor's. The scope query answers from the preview's scope index when the preview worker made it
+ * (`AnalysisState.scope`, docs/plans/m3-contracts/w5-performance.md §10.3), from nothing while the
+ * worker previews and no index fits the document shown ({@link NO_SCOPE}), and otherwise from the
+ * compiler core's kept analysis (`symbolsInScope`, made on the main thread). Either answers `null`
+ * for a block that analysis has not seen. Before the project's first preview there are none, and
+ * every block sees nothing. Never throws: a trapped core answers again once the preview pipeline
+ * has replaced it, and nothing until then.
  */
-export function analysisScope(deps: Pick<SymbolServiceDeps, 'core' | 'preview'>): SymbolSource {
+export function analysisScope(
+  deps: Pick<SymbolServiceDeps, 'core' | 'preview' | 'scope'>,
+): SymbolSource {
   return {
     symbolsAt(blockId, input) {
-      const core = deps.core();
-      if (core === null || deps.preview() === null) {
+      if (deps.preview() === null) {
         return [];
       }
+      const index = deps.scope?.() ?? null;
       try {
-        return core.symbolsInScope(blockId, input);
+        if (index === NO_SCOPE) {
+          return null;
+        }
+        if (index !== null) {
+          return index.symbolsAt(blockId, input);
+        }
+        const core = deps.core();
+        return core === null ? [] : core.symbolsInScope(blockId, input);
       } catch {
         return [];
       }
@@ -87,7 +111,8 @@ export function analysisScope(deps: Pick<SymbolServiceDeps, 'core' | 'preview'>)
  * the current name of a symbol (from the document, then the last-known names, then the analysis),
  * the parameters of the function a call names ({@link calledFunctionParams}), the fields of the
  * struct a *new … with* names ({@link namedStructFields}), the module's structs and enums for
- * the type fields' menus, and whether a function has overloads ({@link sharesName}).
+ * the type fields' menus, whether a function has overloads ({@link sharesName}), and whether the
+ * project has several modules (blocks show *share with other modules* then).
  */
 export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
   const scope = analysisScope(deps);
@@ -112,6 +137,7 @@ export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
     structFields: (blockId, structId) => namedStructFields(deps, blockId, structId),
     userTypes: () => userTypesOf(deps),
     sharesName: (funcId) => sharesName(deps, funcId),
+    multiModule: () => deps.multiModule?.() ?? false,
   };
 }
 
@@ -389,25 +415,28 @@ function declaredAbove(
 }
 
 /**
- * `source` with each scope query's answer kept until the preview or the core changes: the core
- * answers from the analysis of the last update, so a query's answer is the same until the next one.
+ * `source` with each scope query's answer kept until the preview, its scope index or the core
+ * changes: they answer from the analysis of the last update, so a query's answer is the same until the next one.
  * The connection checker asks whether a symbol is visible at a block for each candidate place it
  * types (slots.md §4.3, *Speed*), and each query serialises every visible symbol.
  */
 function rememberedScope(
   source: SymbolSource,
-  deps: Pick<SymbolServiceDeps, 'core' | 'preview'>,
+  deps: Pick<SymbolServiceDeps, 'core' | 'preview' | 'scope'>,
 ): SymbolSource {
   let core: CoreWasm | null = null;
   let preview: PreviewResult | null = null;
+  let index: ScopeIndex | typeof NO_SCOPE | null = null;
   const answers = new Map<string, readonly SymbolInfo[] | null>();
   return {
     symbolsAt(blockId, input) {
       const nowCore = deps.core();
       const nowPreview = deps.preview();
-      if (nowCore !== core || nowPreview !== preview) {
+      const nowIndex = deps.scope?.() ?? null;
+      if (nowCore !== core || nowPreview !== preview || nowIndex !== index) {
         core = nowCore;
         preview = nowPreview;
+        index = nowIndex;
         answers.clear();
       }
       const key = `${blockId}\u0000${input ?? ''}`;
@@ -422,7 +451,7 @@ function rememberedScope(
 
 /** What the type oracle reads: the latest preview, and for scope questions the core and canvas. */
 export type TypeOracleDeps = Pick<SymbolServiceDeps, 'preview'> &
-  Partial<Pick<SymbolServiceDeps, 'core' | 'workspace'>>;
+  Partial<Pick<SymbolServiceDeps, 'core' | 'workspace' | 'scope'>>;
 
 /**
  * Static types for the connection checker and typed slots (ADR-0018, slots.md §4.3): the type the
@@ -435,10 +464,15 @@ export type TypeOracleDeps = Pick<SymbolServiceDeps, 'preview'> &
  */
 export function createTypeOracle(deps: TypeOracleDeps): TypeOracle {
   const scope = rememberedScope(
-    analysisScope({ core: deps.core ?? (() => null), preview: deps.preview }),
+    analysisScope({
+      core: deps.core ?? (() => null),
+      preview: deps.preview,
+      ...(deps.scope === undefined ? {} : { scope: deps.scope }),
+    }),
     {
       core: deps.core ?? (() => null),
       preview: deps.preview,
+      ...(deps.scope === undefined ? {} : { scope: deps.scope }),
     },
   );
   return {

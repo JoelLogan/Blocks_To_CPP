@@ -10,7 +10,14 @@ export {
   type BuildOutputLine,
   type BuildOutputPanelProps,
 } from './build-output/BuildOutputPanel';
-export { CodePanel, IDE_INIT_UNIT_PATH, isHiddenFile, type CodePanelProps } from './code/CodePanel';
+export {
+  CodePanel,
+  IDE_INIT_UNIT_PATH,
+  isHiddenFile,
+  switcherEntries,
+  type CodeFileGroup,
+  type CodePanelProps,
+} from './code/CodePanel';
 export {
   buildSourceMapIndex,
   MAX_INDEXED_RANGES,

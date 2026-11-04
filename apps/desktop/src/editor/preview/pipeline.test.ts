@@ -17,7 +17,7 @@ import {
 } from '@blocks2cpp/b2c-core-wasm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type AppState, resetAppStore, useAppStore } from '../../app/store';
+import { type AppState, NO_SCOPE, resetAppStore, useAppStore } from '../../app/store';
 import {
   diagnosticFixture,
   documentFixture,
@@ -382,14 +382,10 @@ describe('the preview pipeline', () => {
     pipeline.dispose();
   });
 
-  it('gives the host the scope index of the answer it applies, kept across a module switch', async () => {
+  it('stores the scope index of the answer it applies, kept across a module switch', async () => {
     openProject();
-    // The main instance answers about an older document than the worker's preview.
-    const older = [{ id: 's_count' }] as unknown as ReturnType<CoreWasm['symbolsInScope']>;
-    const host = hostOf(stubCore({ symbolsInScope: () => older }));
-    const fromIndex = [{ id: 's_x' }] as unknown as ReturnType<CoreWasm['symbolsInScope']>;
-    const symbolsAt = vi.fn(() => fromIndex);
-    const scope = { symbolsAt } as unknown as ScopeIndex;
+    const host = hostOf(stubCore());
+    const scope = { symbolsAt: vi.fn() } as unknown as ScopeIndex;
     const pipeline = new PreviewPipeline({
       store: useAppStore,
       host,
@@ -405,17 +401,38 @@ describe('the preview pipeline', () => {
         recover: () => Promise.resolve(),
       },
     });
+    const published: unknown[] = [];
+    const stop = useAppStore.subscribe((state, previous) => {
+      if (state.analysis.preview !== previous.analysis.preview) {
+        // The index comes with its preview, in one update.
+        published.push(state.analysis.scope);
+      }
+    });
     await pipeline.runNow();
-    expect(host.current()?.symbolsInScope('b1', null)).toBe(fromIndex);
-    expect(symbolsAt).toHaveBeenCalledWith('b1', null);
+    stop();
+    expect(published).toEqual([scope]);
+    expect(useAppStore.getState().analysis.scope).toBe(scope);
     // Another module of the same document: the index covers it, so it stays.
     pipeline.invalidate();
-    expect(host.current()?.symbolsInScope('b1', null)).toBe(fromIndex);
+    expect(useAppStore.getState().analysis.scope).toBe(scope);
     // Another document: no answer, rather than the main instance's about an older one.
     pipeline.invalidate({ newDocument: true });
-    expect(host.current()?.symbolsInScope('b1', null)).toBeNull();
+    expect(useAppStore.getState().analysis.scope).toBe(NO_SCOPE);
     pipeline.dispose();
-    expect(host.current()?.symbolsInScope('b1', null)).toBe(older);
+    expect(useAppStore.getState().analysis.scope).toBeNull();
+  });
+
+  it('lets the main instance answer after a new document when it previews on the main thread', () => {
+    openProject();
+    useAppStore.getState().actions.setAnalysis({ scope: NO_SCOPE });
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+    });
+    pipeline.invalidate({ newDocument: true });
+    expect(useAppStore.getState().analysis.scope).toBeNull();
+    pipeline.dispose();
   });
 
   it('drops an answer computed while a rename wrote the document, and reads the canvas again', async () => {

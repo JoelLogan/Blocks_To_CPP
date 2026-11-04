@@ -265,8 +265,10 @@ export function startSession(
   const services = createSymbolServices({
     core: () => host.current(),
     preview: () => useAppStore.getState().analysis.preview,
+    scope: () => useAppStore.getState().analysis.scope,
     workspace,
     activeModule: () => useAppStore.getState().project?.activeModuleId ?? null,
+    multiModule: () => (useAppStore.getState().project?.document.modules.length ?? 0) > 1,
   });
   const uninstall = installEditorServices({
     symbols: services.symbols,

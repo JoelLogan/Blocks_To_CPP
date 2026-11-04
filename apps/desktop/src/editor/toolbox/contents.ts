@@ -17,8 +17,10 @@
  *   there are (03 §3.6, decision D3);
  * - **Functions**: the catalog entries, then, under *Your functions*, a call block for every
  *   function of the module shown (each of several functions with one name under a label of its
- *   parameters' types, w2.md §2.8) (calls across modules are `B2C-E0206` in M2), or a hint when it
- *   has none; a module heading names the module when the project has more than one.
+ *   parameters' types, w2.md §2.8), or a hint when it has none, then under each other module's
+ *   heading the functions it shares that no function of the module shown hides by its name
+ *   (docs/plans/m3-contracts/w3-modules.md §1.2); a module heading names the module of each group
+ *   when the project has more than one.
  *
  * The other categories are static. A block that declares something (`create`, the counted loop's
  * counter, `define`) shows the first default name of its kind; it gets a free name where it lands
@@ -32,6 +34,7 @@
 import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
   MAX_VARIADIC_PARTS,
+  SHARED_SHOWN_ON,
   TOOLBOX,
   catalogBlock,
   catalogFieldOptions,
@@ -182,6 +185,35 @@ export function withLabelMode(
   return items.map((item) =>
     (item as { kind?: unknown }).kind === B2C_BLOCK_KIND ? { ...item, labels: 'cpp' } : item,
   );
+}
+
+/**
+ * Marks the blocks of `items` that show *share with other modules* only in a project with several
+ * modules (blockly-ext's `SHARED_SHOWN_ON`: *define*), so that the flyout builds such a block again
+ * when the project gains its second module or loses it, instead of keeping one built for the other
+ * count (the inflater keeps a block for an equal item). Blocks read the count themselves when they
+ * are built (blockly-ext's `multiModule`; docs/plans/m3-contracts/w3-modules.md §1.2).
+ */
+export function withModuleCount(
+  items: Blockly.utils.toolbox.FlyoutItemInfo[],
+  multiModule: boolean,
+): Blockly.utils.toolbox.FlyoutItemInfo[] {
+  if (!multiModule) {
+    return items;
+  }
+  return items.map((item) => {
+    const block = item as { kind?: unknown; type?: unknown };
+    return block.kind === B2C_BLOCK_KIND &&
+      typeof block.type === 'string' &&
+      SHARED_SHOWN_ON.has(block.type)
+      ? { ...item, modules: 'several' }
+      : item;
+  });
+}
+
+/** Whether the project of `context` has several modules (W3: definitions can be shared). */
+export function isMultiModule(context: ContentsContext): boolean {
+  return context.modules().length > 1;
 }
 
 /** Whether the mode offers the toolbox entry for `block`. */
@@ -695,11 +727,52 @@ export function moduleHeading(name: string): string {
   return `Module: ${displayName(name)}`;
 }
 
+/** A function symbol. */
+type FunctionSymbol = Extract<SymbolInfo, { kind: 'function' }>;
+
+/**
+ * The functions *Your functions* lists for the module shown, in groups: the module's own, then for
+ * each other module in document order the functions it shares (ADR-0019, w3-modules.md §1.2) whose
+ * names the module's own functions do not have (its own name hides another module's shared one,
+ * §2.1); at most {@link MAX_LISTED_FUNCTIONS} in all.
+ */
+export function listedFunctionGroups(
+  context: ContentsContext,
+  all: readonly SymbolInfo[] = context.symbols.allSymbols(),
+): { readonly module: ModuleInfo; readonly functions: readonly FunctionSymbol[] }[] {
+  const active = context.activeModuleId();
+  const modules = context.modules();
+  const functions = all.filter((symbol): symbol is FunctionSymbol => symbol.kind === 'function');
+  const own = functions.filter((fn) => fn.module === active);
+  const ownNames = new Set(own.map((fn) => fn.name));
+  const first = own.slice(0, MAX_LISTED_FUNCTIONS);
+  const groups: { module: ModuleInfo; functions: FunctionSymbol[] }[] = [
+    {
+      module: modules.find((module) => module.id === active) ?? { id: active, name: active },
+      functions: first,
+    },
+  ];
+  let room = MAX_LISTED_FUNCTIONS - first.length;
+  for (const module of modules) {
+    if (module.id === active || room <= 0) {
+      continue;
+    }
+    const shared = functions
+      .filter((fn) => fn.module === module.id && fn.shared === true && !ownNames.has(fn.name))
+      .slice(0, room);
+    if (shared.length > 0) {
+      groups.push({ module, functions: shared });
+      room -= shared.length;
+    }
+  }
+  return groups;
+}
+
 /**
  * The Functions category: its catalog entries, then *Your functions*: a call block for each
- * function of the module shown, or a hint while it has none. Calls to another module's functions
- * cannot be used in M2 (`B2C-E0206`), so they are not offered; with more than one module, a
- * heading names the module the calls belong to.
+ * function of the module shown, or a hint while it has none, then each other module's shared
+ * functions that the module can call ({@link listedFunctionGroups}). With more than one module, a
+ * heading names the module each group of calls belongs to.
  */
 export function functionsContents(
   context: ContentsContext,
@@ -710,36 +783,29 @@ export function functionsContents(
     items.push(...entryItems(category, contextMode(context)));
   }
   items.push(label(YOUR_FUNCTIONS_HEADING));
-  const active = context.activeModuleId();
-  const modules = context.modules();
-  if (modules.length > 1) {
-    items.push(
-      label(moduleHeading(modules.find((module) => module.id === active)?.name ?? active)),
-    );
-  }
+  const several = context.modules().length > 1;
   const all = context.symbols.allSymbols();
-  const functions = all
-    .filter(
-      (symbol): symbol is Extract<SymbolInfo, { kind: 'function' }> =>
-        symbol.kind === 'function' && symbol.module === active,
-    )
-    .slice(0, MAX_LISTED_FUNCTIONS);
-  if (functions.length === 0) {
-    items.push(...note(NO_FUNCTIONS_HINT));
-    return items;
-  }
   const byId = new Map(all.map((symbol) => [symbol.id, symbol]));
-  const counts = new Map<string, number>();
-  for (const fn of functions) {
-    counts.set(fn.name, (counts.get(fn.name) ?? 0) + 1);
-  }
-  for (const fn of functions) {
-    // Overloads look alike: each gets its parameters' types above it.
-    if ((counts.get(fn.name) ?? 0) > 1) {
-      items.push(label(overloadLabel(fn, byId)));
+  listedFunctionGroups(context, all).forEach((group, index) => {
+    if (several) {
+      items.push(label(moduleHeading(group.module.name)));
     }
-    items.push(callItem(fn, byId));
-  }
+    if (index === 0 && group.functions.length === 0) {
+      items.push(...note(NO_FUNCTIONS_HINT));
+      return;
+    }
+    const counts = new Map<string, number>();
+    for (const fn of group.functions) {
+      counts.set(fn.name, (counts.get(fn.name) ?? 0) + 1);
+    }
+    for (const fn of group.functions) {
+      // Overloads look alike: each gets its parameters' types above it.
+      if ((counts.get(fn.name) ?? 0) > 1) {
+        items.push(label(overloadLabel(fn, byId)));
+      }
+      items.push(callItem(fn, byId));
+    }
+  });
   return items;
 }
 
@@ -789,8 +855,9 @@ export function dynamicContentsKey(context: ContentsContext): string {
   // Any module's: a parameter may name a struct shared from another module.
   const userTypes: [string, string][] = [];
   for (const symbol of context.symbols.allSymbols()) {
-    if (symbol.kind === 'function' && symbol.module === active) {
-      functions.push(symbolKey(symbol));
+    if (symbol.kind === 'function' && (symbol.module === active || symbol.shared === true)) {
+      // Another module's shared function is listed under its module, unless an own name hides it.
+      functions.push([symbol.module, symbol.shared === true, ...symbolKey(symbol)]);
     } else if (symbol.kind === 'struct' || symbol.kind === 'enum') {
       userTypes.push([symbol.id, symbol.name]);
     }
@@ -798,6 +865,8 @@ export function dynamicContentsKey(context: ContentsContext): string {
   const mode = contextMode(context);
   return JSON.stringify([
     mode === null ? null : modeKey(mode),
+    // Definitions show *share with other modules* only in a project with several modules.
+    isMultiModule(context),
     active,
     context.modules(),
     context.programModuleId(),
@@ -823,7 +892,10 @@ export function categoryContents(
     case 'variables':
       return withLabelMode(variablesContents(context), mode);
     case 'functions':
-      return withLabelMode(functionsContents(context), mode);
+      return withModuleCount(
+        withLabelMode(functionsContents(context), mode),
+        isMultiModule(context),
+      );
     default:
       return staticCategoryContents(category.id, mode);
   }

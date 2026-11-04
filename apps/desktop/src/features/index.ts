@@ -14,6 +14,7 @@ import { buildRunFeature } from './build-run';
 import { exportFeature } from './export';
 import { createExternalChangeFeature } from './external-change';
 import { createProjectFeature, ProjectLink, registerStartPageSection } from './project';
+import { moduleEditsFeature } from './project/modules';
 import { projectSettingsFeature } from './project-settings';
 import { createRecoveryFeature } from './recovery';
 import { settingsFeature } from './settings';
@@ -26,6 +27,7 @@ const projectLink = new ProjectLink();
 /** Every feature, in installation order. */
 const FEATURES: Feature[] = [
   createProjectFeature({ link: projectLink }),
+  moduleEditsFeature,
   buildRunFeature,
   exportFeature,
   projectSettingsFeature,

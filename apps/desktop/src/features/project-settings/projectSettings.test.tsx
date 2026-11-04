@@ -6,9 +6,11 @@
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { EditorHandle, ProjectInfo } from '../../app/editor-types';
 import { resetAppStore, useAppStore } from '../../app/store';
 import { expectNoAxeViolations } from '../../test/axe';
 import { documentFixture, projectFixture, settingsFixture } from '../../app/testing/fixtures';
+import { testCore } from '../../editor/sync/testing';
 import { featureContext, renderScreen, type TestFeatureContext } from '../settings/page/testing';
 import { projectSettingsFeature } from './feature';
 import {
@@ -264,6 +266,126 @@ describe('the page', () => {
     expect(document.activeElement).toBe(choose);
     expect(choose.getAttribute('aria-disabled')).toBe('false');
     expect(screen.getByRole('status').textContent).toContain('numbers.txt');
+  });
+
+  describe('the project’s name (w3-modules.md §1.5)', () => {
+    /** A context whose compiler core checks names (the real one). */
+    async function withCore(): Promise<void> {
+      const core = await testCore();
+      test.ctx.core = () => core;
+    }
+
+    function nameField(): HTMLInputElement {
+      return screen.getByRole<HTMLInputElement>('textbox', { name: 'Name' });
+    }
+
+    it('is the Project section’s first field, and shows the problem of an empty or long name', async () => {
+      await withCore();
+      const { container } = openPage();
+      await settle();
+      const section = screen.getByTestId('project-settings-project');
+      expect(section.contains(nameField())).toBe(true);
+      expect(nameField().value).toBe('Guessing Game');
+      fireEvent.change(nameField(), { target: { value: '   ' } });
+      expect(nameField().getAttribute('aria-invalid')).toBe('true');
+      const problem = document.getElementById(nameField().getAttribute('aria-describedby') ?? '');
+      expect(problem?.textContent).toBe('Type a name for the project.');
+      expect(problem?.getAttribute('role')).toBe('alert');
+      await expectNoAxeViolations(container);
+      fireEvent.change(nameField(), { target: { value: 'x'.repeat(101) } });
+      expect(screen.getByRole('alert').textContent).toBe(
+        'A project name can have at most 100 characters; this one has 101.',
+      );
+      // Saving with a problem saves nothing and goes to the field.
+      fireEvent.click(screen.getByTestId('project-settings-save'));
+      expect(useAppStore.getState().ui.screen).toBe('projectSettings');
+      expect(useAppStore.getState().project?.document.project.name).toBe('Guessing Game');
+      expect(document.activeElement).toBe(nameField());
+    });
+
+    it('is saved with the settings as one edit, with and without an editor', async () => {
+      await withCore();
+      const infos: ProjectInfo[] = [];
+      test.ctx.editor = () =>
+        ({
+          updateProjectInfo: (info: ProjectInfo) => {
+            infos.push(info);
+          },
+        }) as unknown as EditorHandle;
+      openPage();
+      await settle();
+      fireEvent.change(nameField(), { target: { value: '  Number Quest ' } });
+      fireEvent.change(screen.getByTestId('project-settings-standard'), {
+        target: { value: 'c++17' },
+      });
+      fireEvent.click(screen.getByTestId('project-settings-save'));
+      expect(infos).toHaveLength(1);
+      expect(infos[0]?.name).toBe('Number Quest');
+      expect(infos[0]?.settings?.language).toEqual({ standard: 'c++17' });
+
+      // Without an editor the page edits the document itself.
+      test.ctx.editor = () => null;
+      cleanup();
+      openPage();
+      await settle();
+      fireEvent.change(nameField(), { target: { value: 'Number Quest' } });
+      fireEvent.change(screen.getByTestId('project-settings-standard'), {
+        target: { value: 'c++23' },
+      });
+      fireEvent.click(screen.getByTestId('project-settings-save'));
+      const { project } = useAppStore.getState();
+      expect(project?.document.project.name).toBe('Number Quest');
+      expect(project?.document.project.language).toEqual({ standard: 'c++23' });
+      expect(project?.dirty).toBe(true);
+    });
+
+    it('saves a change of the name alone', async () => {
+      await withCore();
+      openPage();
+      await settle();
+      fireEvent.change(nameField(), { target: { value: 'Guess the Number' } });
+      fireEvent.click(screen.getByTestId('project-settings-save'));
+      const { project } = useAppStore.getState();
+      expect(project?.document.project.name).toBe('Guess the Number');
+      expect(project?.dirty).toBe(true);
+      expect(project?.document.project.language).toEqual(documentFixture().project.language);
+    });
+
+    it('keeps a top-bar rename made while the page was open when the field was not edited', async () => {
+      await withCore();
+      openPage();
+      await settle();
+      act(() => {
+        const open = useAppStore.getState().project;
+        if (open !== null) {
+          useAppStore.getState().actions.updateProject({
+            document: { ...open.document, project: { ...open.document.project, name: 'Renamed' } },
+            dirty: true,
+          });
+        }
+      });
+      // The field shows the project's name as it is now.
+      expect(nameField().value).toBe('Renamed');
+      fireEvent.change(screen.getByTestId('project-settings-standard'), {
+        target: { value: 'c++17' },
+      });
+      fireEvent.click(screen.getByTestId('project-settings-save'));
+      expect(useAppStore.getState().project?.document.project.name).toBe('Renamed');
+      expect(useAppStore.getState().project?.document.project.language).toEqual({
+        standard: 'c++17',
+      });
+    });
+
+    it('is discarded by Cancel', async () => {
+      await withCore();
+      openPage();
+      await settle();
+      const before = useAppStore.getState().project?.document;
+      fireEvent.change(nameField(), { target: { value: 'Something else' } });
+      fireEvent.click(screen.getByTestId('project-settings-cancel'));
+      expect(useAppStore.getState().project?.document).toBe(before);
+      expect(useAppStore.getState().project?.dirty).toBe(false);
+    });
   });
 
   it('says so without a project', () => {

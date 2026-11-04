@@ -1,5 +1,11 @@
 /** The editor services: names, scope, static types, dialogs and their installation. */
-import type { BdmDocument, CoreWasm, PreviewResult, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
+import type {
+  BdmDocument,
+  CoreWasm,
+  PreviewResult,
+  ScopeIndex,
+  SymbolInfo,
+} from '@blocks2cpp/b2c-core-wasm';
 import {
   B2cSymbolDeclField,
   B2cSymbolRefField,
@@ -17,7 +23,7 @@ import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { DialogService } from '../../app/dialogs/service';
-import { useAppStore } from '../../app/store';
+import { NO_SCOPE, useAppStore } from '../../app/store';
 import { documentFixture, previewFixture } from '../../app/testing/fixtures';
 import {
   disposeWorkspaces,
@@ -163,6 +169,50 @@ describe('the symbol provider and the type oracle', () => {
     expect(services.symbols.nameOf('s_x')).toBe('x');
     services.names.update(docDeclaring([['s_x', 'renamed']]));
     expect(services.symbols.nameOf('s_x')).toBe('renamed');
+  });
+
+  it('answers from the store’s scope index first, nothing with NO_SCOPE (w5-performance.md §10.3)', () => {
+    const symbolsInScope = vi.fn(() => [symbol('s_core', 'core')]);
+    const core = { symbolsInScope } as unknown as CoreWasm;
+    const fromIndex = [symbol('s_x', 'x')];
+    const symbolsAt = vi.fn(() => fromIndex);
+    let index: ScopeIndex | typeof NO_SCOPE | null = { symbolsAt } as unknown as ScopeIndex;
+    const services = createSymbolServices({
+      core: () => core,
+      preview: () => preview,
+      scope: () => index,
+      workspace: headlessWorkspace(),
+      activeModule: () => 'mod_main',
+    });
+    expect(services.symbols.symbolsAt('b1', 'BODY')).toEqual(fromIndex);
+    expect(symbolsAt).toHaveBeenCalledWith('b1', 'BODY');
+    expect(symbolsInScope).not.toHaveBeenCalled();
+    // The worker previews, but no index fits: no answer (a canvas block falls back to its place).
+    index = NO_SCOPE;
+    expect(
+      analysisScope({ core: () => core, preview: () => preview, scope: () => index }).symbolsAt(
+        'b1',
+        null,
+      ),
+    ).toBeNull();
+    expect(symbolsInScope).not.toHaveBeenCalled();
+    // A preview made on the main thread: the core answers.
+    index = null;
+    expect(services.symbols.symbolsAt('b1', null)).toEqual([symbol('s_core', 'core')]);
+    // The type oracle's remembered answers follow the index.
+    index = { symbolsAt } as unknown as ScopeIndex;
+    const workspace = headlessWorkspace();
+    const block = workspace.newBlock('var.get', 'b1');
+    const oracle = createSymbolServices({
+      core: () => core,
+      preview: () => preview,
+      scope: () => index,
+      workspace,
+      activeModule: () => 'mod_main',
+    }).types;
+    expect(oracle.visibleAt?.('s_x', block, null)).toBe(true);
+    index = null;
+    expect(oracle.visibleAt?.('s_x', block, null)).toBe(false);
   });
 
   it('answers nothing from a core that fails (a trap)', () => {

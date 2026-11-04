@@ -7,6 +7,7 @@
 import type { BdmDocument, BdmProject, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 import type * as Blockly from 'blockly/core';
 
+import type { KeptModule } from '../features/project/modules/operations';
 import type { useAppStore } from './store';
 
 /** Options for selecting a block. */
@@ -28,6 +29,14 @@ export interface ProjectInfo {
   /** New project settings, already checked; absent leaves them as they are. */
   settings?: ProjectSettings;
 }
+
+/**
+ * What a module edit came to (docs/plans/m3-contracts/w3-modules.md §1.2): `done`; `unchecked`,
+ * refused because the shown canvas holds a change that cannot be read back (the banner, 04 §4.2);
+ * `busy`, nothing changed because a block is being dragged or no project is shown; `refused`, the
+ * project's modules do not allow it (a 257th module, deleting the only one, an unknown module).
+ */
+export type ModuleEditOutcome = 'done' | 'unchecked' | 'busy' | 'refused';
 
 /** What the rest of the app may do with the block editor. */
 export interface EditorHandle {
@@ -55,6 +64,21 @@ export interface EditorHandle {
   undo(): void;
   /** Redoes the last undone change on the canvas; not during a drag, and as {@link undo} acts. */
   redo(): void;
+  /**
+   * Module edits (w3-modules.md §1.2, §6 W3M-D6): edits of the project, made from the canvas as it
+   * is and previewed at once, not on the canvas's Undo. Names must have been checked
+   * (features/project/modules/names.ts). Adding shows the new module, and restoring the restored
+   * one; deleting the shown module shows its neighbour and keeps the deleted one for
+   * {@link restoreModule}.
+   */
+  addModule(id: string, name: string): ModuleEditOutcome;
+  renameModule(id: string, name: string): ModuleEditOutcome;
+  deleteModule(id: string): {
+    readonly outcome: ModuleEditOutcome;
+    readonly kept: KeptModule | null;
+  };
+  restoreModule(kept: KeptModule): ModuleEditOutcome;
+  moveModule(id: string, delta: -1 | 1): ModuleEditOutcome;
   /** The Blockly workspace itself. */
   workspace: Blockly.WorkspaceSvg;
 }
