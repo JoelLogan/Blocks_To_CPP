@@ -171,6 +171,11 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
     redo: () => {
       session.undo(true);
     },
+    addModule: (id, name) => session.addModule(id, name),
+    renameModule: (id, name) => session.renameModule(id, name),
+    deleteModule: (id) => session.deleteModule(id),
+    restoreModule: (kept) => session.restoreModule(kept),
+    moveModule: (id, delta) => session.moveModule(id, delta),
     workspace,
   };
   setEditorHandle(handle);

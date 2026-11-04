@@ -23,6 +23,7 @@ import * as Blockly from 'blockly/core';
 import guessingGameText from '../../../../../examples/guessing_game.b2c?raw';
 import type { EditorContext, EditorHandle, SelectBlockOptions } from '../../app/editor-types';
 import { useAppStore } from '../../app/store';
+import { NO_MODULE_EDITS } from '../../app/testing/fixtures';
 
 let registered = false;
 
@@ -195,6 +196,7 @@ export function editorHandle(
 ): EditorHandle {
   return {
     workspace,
+    ...NO_MODULE_EDITS,
     loadDocument: () => {
       throw new Error('not in this test');
     },

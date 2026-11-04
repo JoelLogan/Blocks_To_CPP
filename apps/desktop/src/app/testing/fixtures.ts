@@ -21,6 +21,7 @@ import {
 } from '@blocks2cpp/ipc-types';
 import { type Mock, vi } from 'vitest';
 
+import type { EditorHandle } from '../editor-types';
 import type { ProjectState } from '../store/state';
 
 /** The client's method names, from the generated client itself. */
@@ -203,3 +204,18 @@ export function createFakeIpc(): FakeIpc {
   };
   return client;
 }
+
+/**
+ * The module edits of a fake editor (`EditorHandle`): each does nothing and says so (`busy`), for
+ * tests whose editor never edits modules.
+ */
+export const NO_MODULE_EDITS: Pick<
+  EditorHandle,
+  'addModule' | 'renameModule' | 'deleteModule' | 'restoreModule' | 'moveModule'
+> = {
+  addModule: () => 'busy',
+  renameModule: () => 'busy',
+  deleteModule: () => ({ outcome: 'busy', kept: null }),
+  restoreModule: () => 'busy',
+  moveModule: () => 'busy',
+};

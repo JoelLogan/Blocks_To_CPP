@@ -11,6 +11,7 @@ import { setCore } from '../app/core';
 import type { EditorHandle } from '../app/editor-types';
 import type { FeatureContext } from '../app/features';
 import { resetAppStore, useAppStore } from '../app/store';
+import { NO_MODULE_EDITS } from '../app/testing/fixtures';
 import { openDocumentInEditor, type OpenDocumentArgs } from './load';
 import { canonicalOf, EXAMPLE_PROJECTS, loadText, present, testCore } from './sync/testing';
 
@@ -44,6 +45,7 @@ function fakeEditor(): { editor: EditorHandle; loadDocument: Mock<EditorHandle['
       updateProjectInfo: vi.fn<EditorHandle['updateProjectInfo']>(),
       undo: vi.fn<EditorHandle['undo']>(),
       redo: vi.fn<EditorHandle['redo']>(),
+      ...NO_MODULE_EDITS,
       workspace: {} as never,
     },
   };

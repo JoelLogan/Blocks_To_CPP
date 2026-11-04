@@ -20,7 +20,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import type { EditorHandle } from '../../app/editor-types';
 import { installShortcuts } from '../../app/shortcuts';
 import { useAppStore } from '../../app/store';
-import { projectFixture } from '../../app/testing/fixtures';
+import { NO_MODULE_EDITS, projectFixture } from '../../app/testing/fixtures';
 import { NEWER_FORMAT_CODE } from './errors';
 import { ProjectLifecycle } from './lifecycle';
 import { createProjectModel } from './model';
@@ -112,6 +112,7 @@ function stubEditor(currentDocument: () => BdmDocument): EditorHandle {
     updateProjectInfo: () => undefined,
     undo: () => undefined,
     redo: () => undefined,
+    ...NO_MODULE_EDITS,
     workspace: undefined as never,
   };
 }

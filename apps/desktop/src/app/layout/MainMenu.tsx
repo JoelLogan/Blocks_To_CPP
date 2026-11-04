@@ -1,7 +1,8 @@
 /**
  * The toolbar's main menu, `≡` (docs/spec/04-user-interface.md §4.1, §4.10): *New project…*,
  * *Open…*, *Save*, *Save as…*, *Rename project…*, *Project settings…*, *Export as C++ project…*,
- * *Undo*, *Redo* and *Close project*. Like the
+ * *Undo delete module* (only while a deleted module is kept, w3-modules.md §6 W3M-D6), *Undo*,
+ * *Redo* and *Close project*. Like the
  * rest of the toolbar it only runs commands: an item is listed only while a feature has registered
  * its command, and the items about the open project only while one is open, so the menu never
  * offers something that does nothing (§4.13). Without any item the button is not shown. *Undo* and
@@ -77,6 +78,12 @@ export const MAIN_MENU_ITEMS: readonly MenuItem[] = [
     label: 'Export as C++ project…',
     needsProject: true,
     group: 1,
+  },
+  {
+    command: 'module.undoDelete',
+    label: 'Undo delete module',
+    needsProject: true,
+    group: 2,
   },
   {
     command: 'edit.undo',

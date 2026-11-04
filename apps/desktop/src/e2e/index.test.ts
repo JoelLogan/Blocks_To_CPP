@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BootPhase } from '../app/bootstrap';
 import type { EditorHandle } from '../app/editor-types';
 import { resetAppStore, useAppStore } from '../app/store';
-import { projectFixture } from '../app/testing/fixtures';
+import { NO_MODULE_EDITS, projectFixture } from '../app/testing/fixtures';
 import { ConsoleBridge } from '../features/build-run';
 import { FakeConsole } from '../features/build-run/testing';
 import { resetTimings, timed, TIMING_SPANS } from '../lib/timing';
@@ -38,6 +38,7 @@ function fakeEditor(): EditorHandle & { readonly selectBlockMock: ReturnType<typ
     updateProjectInfo: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
+    ...NO_MODULE_EDITS,
     workspace: {} as Blockly.WorkspaceSvg,
     selectBlockMock,
   };

@@ -19,6 +19,12 @@
  * - While a block is dragged, saving writes the canvas as it was just before the drag (./drag.ts).
  * - Renaming the project changes the document outside the canvas and previews it again
  *   ({@link EditorSession.updateProjectInfo}); Undo and Redo act on the canvas only.
+ * - Adding, renaming, deleting, restoring and moving modules are edits of the document, made from
+ *   the canvas as it is (docs/plans/m3-contracts/w3-modules.md §1.2, §6 W3M-D6): refused while the
+ *   shown canvas holds a change that cannot be read back (the banner) or a block is dragged, and
+ *   not on the canvas's Undo. When the module count crosses one and two, the shown blocks are
+ *   built again ({@link EditorSession.relabel}): definitions show *share with other modules* only
+ *   in a project with several modules.
  * - Undo and Redo act once Blockly has delivered the events of the changes made before them
  *   (./undo.ts): the session's own ({@link EditorSession.undo}), and, while a session shows a
  *   rendered canvas, Blockly's own keys and canvas menu items.
@@ -26,8 +32,17 @@
 import type { BdmBlock, BdmDocument, BdmViewport, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
 
-import type { ProjectInfo } from '../../app/editor-types';
+import type { ModuleEditOutcome, ProjectInfo } from '../../app/editor-types';
 import type { ProjectState, useAppStore } from '../../app/store';
+import {
+  addModule,
+  deleteModule,
+  type KeptModule,
+  ModuleEditError,
+  moveModule,
+  renameModule,
+  restoreModule,
+} from '../../features/project/modules/operations';
 import { visibleHolder } from '../highlight/reveal';
 import type { CoreHost } from '../preview/coreHost';
 import { PreviewPipeline } from '../preview/pipeline';
@@ -199,6 +214,11 @@ export class EditorSession {
   private waitingSwitch: WaitingSwitch | null = null;
   /** Whether a {@link relabel} asked for during the block drag in progress waits for its end. */
   private waitingRelabel = false;
+  /**
+   * Whether the shown blocks were built for a project with several modules (they show *share with
+   * other modules* then), or `null` while none are built.
+   */
+  private builtMultiModule: boolean | null = null;
   private readonly stopDragListening: () => void;
   private readonly uninstallUndoItems: () => void;
   private disposed = false;
@@ -474,6 +494,117 @@ export class EditorSession {
   }
 
   /**
+   * Adds the empty module `{ id, name }` after the others and shows it. `name` must have been
+   * checked (features/project/modules/names.ts). See {@link editModules} for when it is refused.
+   */
+  addModule(id: string, name: string): ModuleEditOutcome {
+    return this.editModules((doc) => ({ doc: addModule(doc, id, name), show: id }));
+  }
+
+  /** Renames module `id` to `name` (already checked); no block changes. */
+  renameModule(id: string, name: string): ModuleEditOutcome {
+    return this.editModules((doc) => ({ doc: renameModule(doc, id, name), show: null }));
+  }
+
+  /**
+   * Deletes module `id`, keeping it (its blocks as the canvas has them, and its view) for
+   * {@link restoreModule}. When it is the shown module, the module that takes its place (or the
+   * one before it) is shown.
+   */
+  deleteModule(id: string): {
+    readonly outcome: ModuleEditOutcome;
+    readonly kept: KeptModule | null;
+  } {
+    let kept: KeptModule | null = null;
+    const outcome = this.editModules((doc) => {
+      const deleted = deleteModule(doc, id);
+      const index = deleted.kept.index;
+      const viewport = id === this.shown ? this.shownViewport(doc, id) : this.leftViews.get(id);
+      const module = deleted.kept.module;
+      kept = {
+        index,
+        module: {
+          ...module,
+          workspace: {
+            ...module.workspace,
+            ...(viewport === undefined ? {} : { viewport }),
+          },
+        },
+      };
+      this.leftViews.delete(id);
+      const next = deleted.doc.modules;
+      const show = id === this.shown ? (next[Math.min(index, next.length - 1)]?.id ?? null) : null;
+      return { doc: deleted.doc, show };
+    });
+    return { outcome, kept: outcome === 'done' ? kept : null };
+  }
+
+  /**
+   * Puts a deleted module back at its place with its IDs, so that other modules' references to it
+   * bind again, and shows it (§6 W3M-D6).
+   */
+  restoreModule(kept: KeptModule): ModuleEditOutcome {
+    return this.editModules((doc) => ({ doc: restoreModule(doc, kept), show: kept.module.id }));
+  }
+
+  /** Moves module `id` one place left (`-1`) or right (`1`); the shown module stays. */
+  moveModule(id: string, delta: -1 | 1): ModuleEditOutcome {
+    return this.editModules((doc) => ({ doc: moveModule(doc, id, delta), show: null }));
+  }
+
+  /**
+   * Makes a module edit: `edit` gets the document as the canvas has it now and gives the new one,
+   * and the module to show (`null`: the shown one stays). The project has unsaved changes and is
+   * previewed at once; Blockly's undo history is kept unless another module is shown.
+   *
+   * Refused (`'unchecked'`) while the shown canvas holds a change that cannot be read back (the
+   * banner): the document would lose it. Nothing happens (`'busy'`) during a block drag or without
+   * a project, and an edit the project's modules do not allow (a 257th module, deleting the only
+   * one, an unknown module) is `'refused'`.
+   */
+  private editModules(
+    edit: (doc: BdmDocument) => { readonly doc: BdmDocument; readonly show: string | null },
+  ): ModuleEditOutcome {
+    const project = this.store.getState().project;
+    if (this.disposed || project === null || this.shown === null || isDragging(this.workspace)) {
+      return 'busy';
+    }
+    let doc: BdmDocument;
+    try {
+      doc = readModule(this.workspace, project.document, this.shown);
+    } catch (error: unknown) {
+      console.error('The shown module could not be read; the module edit is refused', error);
+      return 'unchecked';
+    }
+    if (!this.loads(doc)) {
+      return 'unchecked';
+    }
+    let next: { readonly doc: BdmDocument; readonly show: string | null };
+    try {
+      next = edit(doc);
+    } catch (error: unknown) {
+      if (error instanceof ModuleEditError) {
+        return 'refused';
+      }
+      throw error;
+    }
+    const show = next.show !== null && next.show !== this.shown ? next.show : null;
+    if (show !== null && next.doc.modules.some((module) => module.id === this.shown)) {
+      this.leftViews.set(this.shown, this.shownViewport(doc, this.shown));
+    }
+    this.pipeline.invalidate();
+    this.store.getState().actions.updateProject({ document: next.doc, dirty: true });
+    if (show !== null) {
+      this.show(next.doc, show, true);
+    } else if (this.builtMultiModule !== next.doc.modules.length > 1) {
+      // Definitions show *share with other modules* only with several modules.
+      this.relabel();
+    }
+    void this.pipeline.runNow();
+    return 'done';
+  }
+
+  /**
    * Builds the shown module's blocks again as they are, so that they read in the label mode now in
    * effect (blocks read it when they are built: blockly-ext's `setBlockLabelMode`;
    * docs/plans/m3-contracts/w4-editor-tools.md §2.1). It is not an edit: the blocks keep their IDs
@@ -507,6 +638,7 @@ export class EditorSession {
     const selectedId =
       selected instanceof Blockly.BlockSvg && selected.workspace === workspace ? selected.id : null;
     loadModule(workspace, doc, this.shown);
+    this.builtMultiModule = doc.modules.length > 1;
     this.index.rebuild(workspace);
     if (view !== null && workspace instanceof Blockly.WorkspaceSvg) {
       try {
@@ -657,6 +789,7 @@ export class EditorSession {
     this.preDrag = null;
     this.waitingSwitch = null;
     loadModule(this.workspace, doc, moduleId);
+    this.builtMultiModule = doc.modules.length > 1;
     this.forgetMarkedBlocks();
     this.shown = moduleId;
     if (clearUndo) {
@@ -696,6 +829,7 @@ export class EditorSession {
     this.preDrag = null;
     this.waitingSwitch = null;
     clearWorkspace(this.workspace);
+    this.builtMultiModule = null;
     this.forgetMarkedBlocks();
     this.workspace.clearUndo();
     this.shown = null;
