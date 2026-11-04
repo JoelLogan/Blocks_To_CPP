@@ -253,8 +253,20 @@ describe('module edits of the editing session (w3-modules.md §1.2)', () => {
   });
 
   it('refuses every module edit while the canvas holds a change that cannot be read back', async () => {
-    const session = start(twoModules());
+    const session = start(
+      project([
+        ...twoModules().modules.map((module) => ({
+          id: module.id,
+          name: module.name,
+          blocks: module.workspace.blocks,
+        })),
+        { id: 'mod_more', name: 'more', blocks: [] },
+      ]),
+    );
     await vi.advanceTimersByTimeAsync(0);
+    // A module deleted before the change, which Undo delete would put back.
+    const { kept } = session.deleteModule('mod_more');
+    const keptModule = present(kept, 'the kept module');
     session.workspace.newBlock('control.forever', TOO_DEEP);
     await vi.advanceTimersByTimeAsync(100);
     expect(useAppStore.getState().analysis.notice).toBe('syncFailed');
@@ -262,8 +274,10 @@ describe('module edits of the editing session (w3-modules.md §1.2)', () => {
     expect(session.addModule('mod_tools', 'tools')).toBe('unchecked');
     expect(session.renameModule('mod_utils', 'tools')).toBe('unchecked');
     expect(session.deleteModule('mod_utils')).toEqual({ outcome: 'unchecked', kept: null });
+    expect(session.restoreModule(keptModule)).toBe('unchecked');
     expect(session.moveModule('mod_utils', -1)).toBe('unchecked');
     expect(documentNow()).toBe(before);
+    expect(modulesNow()).toEqual(['mod_main:main', 'mod_utils:utils']);
     expect(session.workspace.getBlockById(TOO_DEEP)).not.toBeNull();
   });
 

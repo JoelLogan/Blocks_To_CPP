@@ -652,8 +652,13 @@ describe.skipIf(core === null)('the module dialogs (w3-modules.md §2.10, §2.11
   );
 
   it('refuse every module edit, with the banner’s text, while the canvas holds an unchecked change', async () => {
-    openWith(['main', 'utils']);
+    openWith(['main', 'utils', 'extra'], 'extra');
     const { editor } = renderStrip();
+    // A module deleted before, which Undo delete would put back.
+    await act(async () => {
+      await harness?.commands.runCommand('module.delete');
+    });
+    expect(harness?.commands.hasCommand('module.undoDelete')).toBe(true);
     act(() => {
       useAppStore
         .getState()
@@ -664,6 +669,7 @@ describe.skipIf(core === null)('the module dialogs (w3-modules.md §2.10, §2.11
       'module.rename',
       'module.delete',
       'module.moveRight',
+      'module.undoDelete',
     ] as const) {
       await act(async () => {
         void harness?.commands.runCommand(command);
@@ -676,6 +682,7 @@ describe.skipIf(core === null)('the module dialogs (w3-modules.md §2.10, §2.11
         await Promise.resolve();
       });
     }
-    expect(editor.edits).toEqual([]);
+    expect(editor.edits).toEqual(['delete']);
+    expect(screen.queryByRole('button', { name: 'Undo delete' })).not.toBeNull();
   });
 });
