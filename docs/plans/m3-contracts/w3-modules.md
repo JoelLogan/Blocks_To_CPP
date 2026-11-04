@@ -334,7 +334,7 @@ the `allow`.
 
 | Code | New or reused | When | Package |
 | --- | --- | --- | --- |
-| `B2C-E0206` | reused, new text | a reference to another module's definition that it does not share: *"`helper` belongs to module `utils`, which does not share it."* (functions in F; types, globals, constants in T) | F, T |
+| `B2C-E0206` | reused, new text | a reference to another module's definition that it does not share: *"`helper` belongs to module `utils`, which does not share it. To use it here, tick 'share with other modules' on its 'define' block."* (functions in F; types, globals, constants in T; §7.1) | F, T |
 | `B2C-E0210` | reused | two shared definitions with one name in one namespace of the project; a user namespace with the name of any definition, shared or not, of any module in the same enclosing namespace (program-wide, so it never depends on includes); non-shared definitions of different modules no longer clash | F, T, N |
 | `B2C-E0211` | reused, new texts | two shared functions with one name in different modules (§2.1: an overload set lives in one module); the M2 cross-module text goes | F |
 | `B2C-E0213` | first emitted | a non-shared name that is also a shared name of its own module or of a module whose header its `.cpp` includes, directly or through other headers, for whatever reason the header is included (06 §6.14.7); for namespace members, the namespace's shared members so reached. The message names the cause (§2.1). If the owner chooses W3M-D10's alternative, any module's shared name in that namespace | F (functions), T (types, globals), N (namespace members) |
@@ -1352,6 +1352,16 @@ corrected in place and the correction is recorded here with its reason.
 | A reference's `Spelling` is kept in `Program::spellings`, keyed by the referring block and the symbol, not as a field of each SAST reference | a field on every reference node would change every constructor and the SAST snapshots; a table beside the SAST, like the layout, is not serialised and is empty until N2 fills it | §2.12 (P0) |
 | `Layout::flat` gives `module<N>` also to a module whose stem an earlier module already has, and code generation names files only by `ModuleFiles::stem` | `source_path`'s own de-duplication went with it (§3.1); the loader refuses such names, but code generation must never write two files with one name | §3.1 (P0) |
 | `emit::header_file` prints a shared enum's definition only (its `operator<<` and `b2c::to_text` are T's, §1.7) and a shared global as `extern` or `inline constexpr`; a `.cpp` leaves out what its header declares, but still defines a shared global that is not `constexpr` | what P0 prints for each kind `header_order` can list; F and T refine it | §3.1 (P0) |
+| `B2C-E0213` is program-wide (W3M-D10): a function that is not shared may not have the name of any module's shared function. Its message names the cause when the module's `.cpp` does include that header (the use, and each header on the way as related locations); otherwise it names the header that would bring the clash (*"once this file includes `convert.hpp`, C++ could not tell the two apart"*); in the module that shares the name it says *"Rename one of them, or share this one too."* It is computed with the layout, after the includes | the owner's answer to W3M-D10; the cause needs the includes, which the layout computes | §1.9, §2.1 (F) |
+| `B2C-E0206`'s text for a function adds how to fix it: *"`helper` belongs to module `utils`, which does not share it. To use it here, tick 'share with other modules' on its 'define' block."*; the global's text stays M2's until T | the *Share* quick fix is W4's; until it exists the message says what to do | §1.9 (F) |
+| `B2C-E0214` for a function counts only definitions of its own module (another module's that is not shared is `B2C-E0206` where it is named) and names exactly the input, the result or the default value. A shared function that names a *shared* struct, enum or global of its module draws no `B2C-E0214`, but its header lacks that definition until T turns types and globals on (`TYPES_AND_GLOBALS_IN_HEADERS`); the editor shows `SHARED` on those blocks only from T on | headers hold functions only in R1 | §1.3, §1.9 (F) |
+| `B2C-E0421` across modules for functions comes from a graph of the program's functions and the calls in their default values, built in `layout.rs`; circles inside one module stay the module graph's. `B2C-E0422` is reported on each header need inside a circle of headers that no such circle of functions explains, with the way back round the circle as related locations | `order.rs` is T's: T's program graph replaces both | §2.2 (F) |
+| Code generation casts a call's arguments only when the functions the module can call (its own and the others' shared ones) have that name more than once, not when any function of the program has | two modules' non-shared functions of one name are no overload set (`unit_converter`'s two `scale`s) | §1.7 (F) |
+| The `::name` guard: `Callee::Global` (`cast.rs`) prints a call spelled `Spelling::Global`; `Lowerer::user_callee` prints the plain name instead for a function of the module's anonymous namespace that a header its `.cpp` includes (directly or through other headers) declares, so C++ refuses the ambiguous call rather than call the other module's function. Only calls are spelled so far; N2 fills the spellings and spells the other references | no spelling is recorded before N2; the guard is tested with a hand-made table | §2.1, §2.12 (F) |
+| A header prints a run of function declarations as one section, as a `.cpp` does | the shape of §1.7's example | §1.7 (F) |
+| The scope index gains one program-wide list, `shared`, of `(module, name, symbol)` (`ScopeIndexParts::shared`, `scope_index.rs`'s key `shared`, one step of the Rust and TypeScript lookups), not a list per module | a list per module of the others' shared functions grows with modules times shared functions; one list keeps the index linear. The TypeScript reader takes an index without the key as sharing nothing (W5's `workerService.test.ts` writes one) | §3.3 W5 rows, "From the W4 and W5 merges" (F) |
+| `golden.rs`: a golden folder holds exactly the generated files and the run data (a stale `.cpp` or `.hpp` fails, `B2C_UPDATE_GOLDEN=1` deletes it), each header compiles alone with the debug configuration's flags and warnings as errors, and the module documentation states M2's rule for several files (each generated file matches its copy; any warning fails, so every non-shared function is used in its module). `crates/b2c-lang/tests/examples.rs` and its `gxx.rs` check each `.cpp` with the generated headers beside it; the export test builds the examples of several modules with CMake too | the M2 checks read one `main.cpp` per folder | §3.2 F, §5.2 F (F) |
+| P0's tests that pinned M2's rule were rewritten: `names.rs` (two modules' functions of one name: fine unless both are shared), `modules.rs` (shared functions get a header), `w3_tests.rs`'s `Tally` is ticked shared (else `B2C-E0214`) | the rules of §2.1 replace M2's | §5.2 F (F) |
 
 #### From the W4 and W5 merges
 
@@ -1388,7 +1398,13 @@ package that takes each:
   gains one method, `crates/b2c-core-wasm/src/scope_index.rs` one key and
   the package's lookup one step; the lookup tests compare with `scope_at`
   for every block. The integration step's test (§5.3) checks the worker's
-  index includes them.
+  index includes them. *Done by F:* `ScopeIndex::visible` lists other modules' shared
+  functions from one program-wide list after the module's own definitions,
+  so `ScopeIndexParts::shared`, the key `shared` and one lookup step were
+  added; the Rust (`crates/b2c-core-wasm/tests/scope_index.rs`, with
+  `unit_converter` among the examples and a case of hiding) and TypeScript
+  (`packages/b2c-core-wasm/test/scopeIndex.test.ts`) lookups compare with
+  `scope_at` for every block.
 * **The integration step** (§5.3):
   * W5 §10.1, lowering parked stacks (M3-4): W5's exact proposal for
     `lower/mod.rs`, `scope.rs` and `query.rs`, after N2, the last
