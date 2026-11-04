@@ -1,8 +1,9 @@
-import type { BdmBuildConfiguration, BdmProject, CppStandard } from '@blocks2cpp/b2c-core-wasm';
+import type { BdmBuildConfiguration, BdmDocument, CppStandard } from '@blocks2cpp/b2c-core-wasm';
 import type { RunInputFileAction } from '@blocks2cpp/ipc-types';
 import { type ReactNode, useEffect, useId, useState } from 'react';
 
 import type { FeatureContext } from '../../app/features';
+import { checkProjectName, MAX_PROJECT_NAME_CHARS } from '../../app/layout/ProjectTitle';
 import { useAppStore } from '../../app/store';
 import { failureCode } from '../build-run/messages';
 import { FeaturePage, leavePage, Notice, PageSection } from '../settings/page/FeaturePage';
@@ -29,12 +30,15 @@ import './projectSettings.css';
 
 /**
  * The project settings page (docs/spec/04-user-interface.md §4.1; ≡ → *Project settings…*): the
- * project's C++ standard, its Debug and Release configurations, its defines and how its program
- * runs (arguments and working folder), and the two run options kept on this computer (the input
- * file and the separate terminal window), which apply at once.
+ * project's name, its C++ standard, its Debug and Release configurations, its defines and how its
+ * program runs (arguments and working folder), and the two run options kept on this computer (the
+ * input file and the separate terminal window), which apply at once.
  *
- * The project's settings are a draft until *Save changes*: then they become one edit of the project
- * (it has unsaved changes, as after a rename, and Undo does not undo it), and the page closes.
+ * The project's name and settings are a draft until *Save changes*: then they become one edit of
+ * the project (it has unsaved changes, as after a rename, and Undo does not undo it), and the page
+ * closes. The name is checked as the top bar's rename checks it (`checkProjectName`), and it is
+ * written only when its field was edited, so a rename from the top bar made while the page was
+ * open is kept (docs/plans/m3-contracts/w3-modules.md §1.5).
  * *Cancel* and *Back* leave them as they were. A problem is shown under its field as the person
  * types (`aria-invalid`, `aria-describedby`); *Save changes* with problems moves the focus to the
  * first one and saves nothing.
@@ -61,7 +65,7 @@ export function ProjectSettingsPage({ ctx }: { ctx: FeatureContext }) {
       // A new form when another project opens.
       key={project.handle}
       ctx={ctx}
-      project={project.document.project}
+      document={project.document}
       onBack={back}
     />
   );
@@ -95,16 +99,25 @@ const DEFINE_TYPES: readonly { value: DefineType; label: string }[] = [
 
 function ProjectSettingsForm({
   ctx,
-  project,
+  document: projectDocument,
   onBack,
 }: {
   ctx: FeatureContext;
-  project: BdmProject;
+  document: BdmDocument;
   onBack: () => void;
 }) {
+  const project = projectDocument.project;
   const [draft, setDraft] = useState<Draft>(() => draftFrom(project));
   const [showAll, setShowAll] = useState(false);
-  const problems = draftProblems(draft);
+  // The name, as typed; `null` until its field is edited (then the project's name is kept as it is).
+  const [name, setName] = useState<string | null>(null);
+  const nameId = useId();
+  const nameCheck = name === null ? null : checkProjectName(name, projectDocument, ctx.core());
+  const nameProblem = nameCheck === null || nameCheck.ok ? null : nameCheck.message;
+  const problems = [
+    ...(nameProblem === null ? [] : [{ field: nameId, message: nameProblem }]),
+    ...draftProblems(draft),
+  ];
   const problemOf = (field: string) =>
     problems.find((problem) => problem.field === field)?.message ?? null;
   const update = (patch: Partial<Draft>) => {
@@ -119,17 +132,18 @@ function ProjectSettingsForm({
       return;
     }
     const settings = settingsFrom(draft, project);
-    if (settingsChanged(settings, project)) {
+    const newName = nameCheck?.ok === true ? nameCheck.name : project.name;
+    if (settingsChanged(settings, project) || newName !== project.name) {
       const editor = ctx.editor();
       if (editor !== null) {
-        editor.updateProjectInfo({ name: project.name, settings });
+        editor.updateProjectInfo({ name: newName, settings });
       } else {
         const open = ctx.store.getState().project;
         if (open !== null) {
           ctx.store.getState().actions.updateProject({
             document: {
               ...open.document,
-              project: { ...open.document.project, ...settings },
+              project: { ...open.document.project, ...settings, name: newName },
             },
             dirty: true,
           });
@@ -145,6 +159,30 @@ function ProjectSettingsForm({
         These settings are saved in the project. Compiler flags are never: Blocks2Cpp makes them
         from these choices.
       </p>
+
+      <PageSection title="Project" testId="project-settings-project">
+        <div className="feature-field">
+          <label className="feature-field-label" htmlFor={nameId}>
+            Name
+          </label>
+          <input
+            id={nameId}
+            className="feature-input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            value={name ?? project.name}
+            maxLength={MAX_PROJECT_NAME_CHARS * 2}
+            aria-invalid={nameProblem !== null}
+            aria-describedby={nameProblem === null ? undefined : `${nameId}-problem`}
+            data-testid="project-settings-name"
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
+          />
+          {nameProblem !== null && <Problem id={`${nameId}-problem`} message={nameProblem} />}
+        </div>
+      </PageSection>
 
       <PageSection title="Language" testId="project-settings-language">
         <SelectField
