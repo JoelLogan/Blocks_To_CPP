@@ -864,6 +864,60 @@ fn e0422_on_each_shared_function_whose_default_value_closes_the_circle() {
 }
 
 #[test]
+fn e0422_for_a_circle_of_headers_beside_a_circle_of_functions() {
+    // `f` and `g` call each other (`B2C-E0421`); `b.hpp` → `c.hpp` → `a.hpp`
+    // → `b.hpp` through `h`, `p` and `f` is a circle of headers no circle of
+    // functions explains.
+    let document = doc_modules(vec![
+        ("main", vec![main_block(vec![])]),
+        (
+            "a",
+            vec![
+                with_default("s_f", "f", call("s_g", &[]), true),
+                simple("s_k", "k", true),
+            ],
+        ),
+        (
+            "b",
+            vec![
+                with_default("s_g", "g", call("s_f", &[]), true),
+                with_default("s_h", "h", call("s_m", &[]), true),
+            ],
+        ),
+        (
+            "c",
+            vec![
+                simple("s_m", "m", true),
+                with_default("s_p", "p", call("s_k", &[]), true),
+            ],
+        ),
+    ]);
+    let analysis = analyze(&document);
+    let cycles: Vec<(String, String)> = with_code(&analysis, "B2C-E0421").iter().map(|d| at(d)).collect();
+    assert_eq!(
+        cycles,
+        [
+            (String::from("mod_1"), String::from("fn_s_f")),
+            (String::from("mod_2"), String::from("fn_s_g")),
+        ],
+        "{}",
+        render_all(&analysis)
+    );
+    // Only the needs the circle of functions does not explain.
+    let headers: Vec<(String, String)> = with_code(&analysis, "B2C-E0422").iter().map(|d| at(d)).collect();
+    assert_eq!(
+        headers,
+        [
+            (String::from("mod_2"), String::from("fn_s_h")),
+            (String::from("mod_3"), String::from("fn_s_p")),
+        ],
+        "{}",
+        render_all(&analysis)
+    );
+    assert_eq!(analysis.diagnostics.len(), 4, "{}", render_all(&analysis));
+}
+
+#[test]
 fn e0421_once_for_a_circle_within_a_module_that_a_wider_circle_holds() {
     // `f` and `g` call each other in module `a` (the module's own
     // `B2C-E0421`), and `g` → `h` → `f` crosses into `b`.

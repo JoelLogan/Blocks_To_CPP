@@ -564,14 +564,14 @@ fn named_in<'e>(root: &'e Expr, symbols: &SymbolTable) -> Vec<(&'e SymbolId, Loc
 /// other's declaration first, which no order of headers gives. A circle
 /// within one module is the declaration graph's, reported with the module,
 /// so a function on one is not reported again when a wider circle across
-/// modules holds it (one code per cycle). Returns the modules of each circle reported, which explain the headers
-/// that would include each other because of it (`B2C-E0422` is not
-/// reported again for them).
-fn check_function_cycles(program: &ProgramView<'_>, diags: &mut Diags) -> Vec<BTreeSet<usize>> {
+/// modules holds it (one code per cycle). Returns the functions of each
+/// such wider circle: a header's need through a call between two of them is
+/// explained by it (`B2C-E0422` is not reported for it).
+fn check_function_cycles<'p>(program: &ProgramView<'p>, diags: &mut Diags) -> Vec<BTreeSet<&'p SymbolId>> {
     // Every function of the program, with what its default values call.
     let mut graph = Graph::default();
     let mut node_of: BTreeMap<&SymbolId, usize> = BTreeMap::new();
-    let mut places: Vec<(usize, &Item)> = Vec::new();
+    let mut places: Vec<(usize, &'p Item, &'p SymbolId)> = Vec::new();
     for (m, module) in program.modules.iter().enumerate() {
         for (index, item) in module.items.iter().enumerate() {
             let ItemKind::Function(def) = &item.kind else {
@@ -591,11 +591,11 @@ fn check_function_cycles(program: &ProgramView<'_>, diags: &mut Diags) -> Vec<BT
                 item: index,
             });
             node_of.insert(&def.symbol, node);
-            places.push((m, item));
+            places.push((m, item, &def.symbol));
         }
     }
     let mut crossing: BTreeSet<(usize, usize)> = BTreeSet::new();
-    for (node, (m, item)) in places.iter().enumerate() {
+    for (node, (m, item, _)) in places.iter().enumerate() {
         let ItemKind::Function(def) = &item.kind else {
             continue;
         };
@@ -642,7 +642,7 @@ fn check_function_cycles(program: &ProgramView<'_>, diags: &mut Diags) -> Vec<BT
         if !crosses {
             continue;
         }
-        explained.push(cycle.iter().map(|node| places[*node].0).collect());
+        explained.push(cycle.iter().map(|node| places[*node].2).collect());
         let renumbered: BTreeMap<usize, usize> = cycle
             .iter()
             .map(|&node| (node, circles.add(graph.nodes[node].clone())))
@@ -681,17 +681,27 @@ fn calls_in(root: &Expr) -> Vec<(&SymbolId, Location)> {
 }
 
 /// Reports headers that would include each other (`B2C-E0422`,
-/// w3-modules.md §2.2, §2.4) when no circle of definitions explains it
-/// (`explained`, already `B2C-E0421`): on each shared function whose default
-/// value makes its header need the next one round the circle, with the rest
-/// of the circle as related locations.
+/// w3-modules.md §2.2, §2.4) when no circle of definitions explains it: on
+/// each shared function whose default value makes its header need the next
+/// one round the circle, with the rest of the circle as related locations.
+/// A need through a call between two functions of one circle of
+/// `explained` (already `B2C-E0421`) is not reported; every other need
+/// between two headers of a circle closes a circle that no circle of
+/// functions explains.
 fn check_header_cycles(
     program: &ProgramView<'_>,
     layout: &Layout,
     needs: &Needs<'_>,
-    explained: &[BTreeSet<usize>],
+    explained: &[BTreeSet<&SymbolId>],
     diags: &mut Diags,
 ) {
+    let is_explained = |reason: &Reason<'_>| {
+        reason.by.is_some_and(|by| {
+            explained
+                .iter()
+                .any(|circle| circle.contains(by) && circle.contains(reason.used))
+        })
+    };
     // Which headers each header reaches through the includes (at most 256
     // modules, so a walk from each is cheap).
     let count = program.modules.len();
@@ -725,18 +735,12 @@ fn check_header_cycles(
             .filter(|m| reach[*m].contains(&start))
             .collect();
         done.extend(members.iter().copied());
-        if explained
-            .iter()
-            .any(|modules| modules.len() > 1 && modules.is_subset(&members))
-        {
-            continue;
-        }
         for &a in &members {
             for (&b, reasons) in needs.header.get(a).into_iter().flatten() {
                 if !members.contains(&b) {
                     continue;
                 }
-                for reason in reasons {
+                for reason in reasons.iter().filter(|reason| !is_explained(reason)) {
                     report_header_cycle(program, layout, needs, &members, (a, b, reason), diags);
                 }
             }
