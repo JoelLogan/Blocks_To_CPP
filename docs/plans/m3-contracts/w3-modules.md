@@ -1387,6 +1387,9 @@ corrected in place and the correction is recorded here with its reason.
 | `B2C-E0424` keeps its message; another module's shared constant printed `extern const` is no constant expression where it is used (L10's check gets the set of such constants of the other modules) | a message naming the cause would need the constant's module and value in L10's check; the reference says why | §2.1 (T) |
 | The summary's counting test is a unit test of `order.rs` (`the_summary_counts_each_call_and_use_once`: 256 modules, 4,096 globals, steps ≤ calls and uses + modules) | the summary is private to the declaration graph | §5.2 T (T) |
 | A shared enum's `operator<<` and `b2c::to_text` are declared in its header with their inputs' names (`std::ostream& operator<<(std::ostream& out, Colour value);`), and P0's snapshot `w3_headers` shows them for its shared `Size` | §1.7's "always" | §1.7 (T) |
+| The type picker lists other modules' shared structs and enums after the module's own, one group per module headed *Module: records*, as the toolbox heads shared functions: `symbols.ts`'s `userTypes` adds the shared types whose name no own type has (§2.1's precedence), and blockly-ext's `SymbolProvider` gains an optional `otherModuleName(moduleId)` (`null` for the module shown) that the type field passes on as `PickerUserType.moduleName` | the picker had the module's ID only, and E's provider listed the module's own types | §3.3 W4 type-field row (T) |
+| The static *Types* category's blocks are marked with the module count too, and the toolbox installs its definition again when the count crosses one and two (the plugin's mode key holds the count), so a kept flyout *struct* or *enum* never shows the layout of the other count | only dynamic categories were built again; *global* is in the dynamic *Variables* | "From the W4 and W5 merges" (T) |
+| The E2E flow `modules-types.e2e.ts` opens a copy of `gradebook` (its `records` shares `Student`, which `grade_of` takes) instead of building the program block by block | a *define* with an input of a struct needs the mutator's dialog; the example already has every part §5.2 asks for | §5.2 T (T) |
 
 #### From the W4 and W5 merges
 
@@ -1401,7 +1404,10 @@ package that takes each:
   `EditorSession.relabel()` (as `installLabelMode` does on a label
   change), not a second rebuild path, and `multiModule` goes into the
   toolbox's `dynamicContentsKey` beside W4's `modeKey`. T does the same
-  for struct, enum and global in R2.
+  for struct, enum and global in R2. *Done by T:* `SHARED_SHOWN_ON` holds
+  `type.struct`, `type.enum` and `var.global` too, so E's relabel and layout
+  cache serve them; the static *Types* category is marked with the module
+  count and installed again when it crosses one and two (§7.1).
 * **N1** (W4 §11 row 8): `program.namespace` and `program.use_namespace`
   each get a gating decision in `editor/gating/table.ts` (`BASIC_BLOCKS`,
   W4's recommendation, or a `REQUIREMENTS` row if 03 §3.7.1 makes them
