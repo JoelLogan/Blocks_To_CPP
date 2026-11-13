@@ -23,7 +23,7 @@
 //   WASM_BINDGEN       the wasm-bindgen CLI (default: wasm-bindgen on PATH)
 //   WASM_OPT           binaryen's wasm-opt (default: wasm-opt on PATH)
 //   B2C_SKIP_WASM_OPT  1 skips wasm-opt (local builds where binaryen is missing or too old); the
-//                      budget is then checked on the larger, unoptimised module
+//                      unoptimised module is then held to its own, larger limit
 //
 // Root shortcut: pnpm wasm:build. Only Node built-ins; no shell: every tool runs with an argument
 // list.
@@ -44,6 +44,14 @@ import {
 
 /** The size budget for the optimised module (ADR-0003: at most 2 MB after wasm-opt -Oz). */
 const SIZE_BUDGET_BYTES = 2_000_000;
+
+/**
+ * The limit for a module built without wasm-opt (B2C_SKIP_WASM_OPT=1): the budget plus wasm-opt's
+ * saving, which was 13 % at 2c922c0 (2,058,349 bytes before, 1,783,884 after). It only stops
+ * runaway growth in builds that cannot run wasm-opt; ADR-0003's budget is checked on the
+ * optimised module (ci.yml's WebAssembly job and desktop.yml's test-web).
+ */
+const UNOPTIMISED_LIMIT_BYTES = 2_400_000;
 
 const CRATE = 'b2c-core-wasm';
 const STEM = 'b2c_core_wasm';
@@ -351,6 +359,7 @@ function writePackage(glue, raw, finalBytes, optimised, bindgenVersion, fingerpr
     gzip: gzipSync(finalBytes, { level: 9 }).length,
     base64Chunk: base64.length,
     budget: SIZE_BUDGET_BYTES,
+    unoptimisedLimit: optimised === null ? UNOPTIMISED_LIMIT_BYTES : null,
   };
   console.log(`wasm-bindgen output: ${formatBytes(sizes.raw)}`);
   console.log(
@@ -361,9 +370,15 @@ function writePackage(glue, raw, finalBytes, optimised, bindgenVersion, fingerpr
   console.log(`gzip -9 (reported):   ${formatBytes(sizes.gzip)}`);
   console.log(`base64 chunk:         ${formatBytes(sizes.base64Chunk)}`);
   console.log(`budget:               ${formatBytes(SIZE_BUDGET_BYTES)} after wasm-opt`);
-  if (finalBytes.length > SIZE_BUDGET_BYTES) {
+  const limit = optimised === null ? UNOPTIMISED_LIMIT_BYTES : SIZE_BUDGET_BYTES;
+  if (optimised === null) {
+    console.log(`limit without it:     ${formatBytes(limit)}`);
+  }
+  if (finalBytes.length > limit) {
     throw new BuildError(
-      `the module is ${formatBytes(finalBytes.length)}, over the budget of ${formatBytes(SIZE_BUDGET_BYTES)}`,
+      optimised === null
+        ? `the unoptimised module is ${formatBytes(finalBytes.length)}, over its limit of ${formatBytes(limit)}`
+        : `the module is ${formatBytes(finalBytes.length)}, over the budget of ${formatBytes(limit)}`,
     );
   }
 

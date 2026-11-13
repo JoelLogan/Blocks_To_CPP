@@ -144,8 +144,9 @@ jobs:
         run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
 
       # The editor imports the WebAssembly core, so the app cannot be built without it.
-      # Unoptimised (no wasm-opt), the module is about 1.1 MB, inside the 2 MB budget the
-      # build still checks; ci.yml and test-web check the optimised module.
+      # Unoptimised (no wasm-opt) the module is about 2.06 MB, over the 2 MB budget, which applies
+      # after wasm-opt: the build holds it to its own 2.4 MB limit instead, and ci.yml and
+      # test-web check the optimised module against the budget.
       - name: Build the WebAssembly core (without wasm-opt)
         shell: bash
         env:
@@ -401,8 +402,9 @@ jobs:
         run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
 
       # The editor imports the WebAssembly core, so the app cannot be built without it.
-      # Unoptimised (no wasm-opt), the module is about 1.1 MB, inside the 2 MB budget the
-      # build still checks; ci.yml and test-web check the optimised module.
+      # Unoptimised (no wasm-opt) the module is about 2.06 MB, over the 2 MB budget, which applies
+      # after wasm-opt: the build holds it to its own 2.4 MB limit instead, and ci.yml and
+      # test-web check the optimised module against the budget.
       - name: Build the WebAssembly core (without wasm-opt)
         shell: bash
         env:

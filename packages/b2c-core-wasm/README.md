@@ -171,12 +171,12 @@ crate's exports differ from `src/glue.d.ts` (change `EXPECTED_EXPORTS` in the sc
 or when the module is over the **size budget of 2,000,000 bytes after `wasm-opt -Oz`** (the gzip
 size is reported only).
 
-| Variable            | Effect                                                                                 |
-| ------------------- | -------------------------------------------------------------------------------------- |
-| `WASM_BINDGEN`      | The wasm-bindgen CLI to run (default: `wasm-bindgen` on `PATH`)                        |
-| `WASM_OPT`          | binaryen's `wasm-opt` (default: `wasm-opt` on `PATH`)                                  |
-| `B2C_SKIP_WASM_OPT` | `1` skips `wasm-opt` for local builds; the budget is checked on the unoptimised module |
-| `CARGO`             | The cargo to run                                                                       |
+| Variable            | Effect                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `WASM_BINDGEN`      | The wasm-bindgen CLI to run (default: `wasm-bindgen` on `PATH`)                                  |
+| `WASM_OPT`          | binaryen's `wasm-opt` (default: `wasm-opt` on `PATH`)                                            |
+| `B2C_SKIP_WASM_OPT` | `1` skips `wasm-opt` for local builds; the unoptimised module has its own limit, 2,400,000 bytes |
+| `CARGO`             | The cargo to run                                                                                 |
 
 ### An out-of-date core stops the app's build
 
