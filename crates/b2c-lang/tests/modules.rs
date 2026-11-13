@@ -168,9 +168,9 @@ fn definitions_are_shared_only_in_a_project_of_several_modules() {
 }
 
 #[test]
-fn only_shared_functions_have_headers_until_types_and_globals_do() {
-    // Package F puts shared functions into headers; shared structs, enums
-    // and globals wait for package T (w3-modules.md §1.2, §1.3).
+fn shared_definitions_of_every_kind_have_headers() {
+    // Package F put shared functions into headers; package T adds shared
+    // structs, enums and globals (w3-modules.md §1.2, §1.3).
     let analysis = analyze(&doc_modules(vec![
         (
             "main",
@@ -181,26 +181,38 @@ fn only_shared_functions_have_headers_until_types_and_globals_do() {
     assert!(analysis.diagnostics.is_empty(), "{:?}", analysis.diagnostics);
     let layout = &analysis.program.layout;
     assert!(layout.multi_module());
+    let names = |module: usize, order: &[usize]| -> Vec<String> {
+        order
+            .iter()
+            .map(|index| {
+                let symbol = match &analysis.program.modules[module].items[*index].kind {
+                    ItemKind::Function(def) => &def.symbol,
+                    ItemKind::Struct(def) => &def.symbol,
+                    ItemKind::Global(def) => &def.symbol,
+                    other => panic!("{other:?} in the header"),
+                };
+                analysis
+                    .program
+                    .symbols
+                    .get(symbol)
+                    .expect("symbol")
+                    .name
+                    .as_str()
+                    .to_owned()
+            })
+            .collect()
+    };
     let main_files = &layout.modules[0];
-    assert!(!main_files.header);
-    assert!(main_files.header_order.is_empty() && main_files.source_includes.is_empty());
+    assert!(main_files.header);
+    assert_eq!(names(0, &main_files.header_order), ["count"]);
+    assert_eq!(
+        main_files.source_includes,
+        [analysis.program.modules[0].id.clone()]
+    );
     let utils = &layout.modules[1];
     assert!(utils.header);
-    let header: Vec<&str> = utils
-        .header_order
-        .iter()
-        .map(|index| match &analysis.program.modules[1].items[*index].kind {
-            ItemKind::Function(def) => analysis
-                .program
-                .symbols
-                .get(&def.symbol)
-                .expect("symbol")
-                .name
-                .as_str(),
-            other => panic!("{other:?} in the header"),
-        })
-        .collect();
-    assert_eq!(header, ["tool"]);
+    // Types before functions, as in a `.cpp` (06 §6.7).
+    assert_eq!(names(1, &utils.header_order), ["Point", "tool"]);
     assert_eq!(utils.source_includes, [analysis.program.modules[1].id.clone()]);
     for files in &layout.modules {
         assert!(files.header_includes.is_empty() && files.forward.is_empty());

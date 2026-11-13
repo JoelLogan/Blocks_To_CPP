@@ -1,0 +1,982 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.3.0"
+  },
+  "project": {
+    "id": "prj_inventory",
+    "name": "Inventory",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b000",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 120,
+            "comment": {
+              "text": "A shop's menu: module stock keeps the items, module history the changes."
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b001",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Welcome to "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_kShopName"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b002",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_choice",
+                      "name": "choice"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b014",
+                  "type": "control.forever",
+                  "v": 1,
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b003",
+                        "type": "var.change",
+                        "v": 1,
+                        "fields": {
+                          "OP": "add",
+                          "VAR": {
+                            "ref": "s_m_count"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b004",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 2
+                        },
+                        "fields": {
+                          "NEWLINE": false,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "Choice "
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "ref": "s_m_count"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b005",
+                        "type": "io.ask",
+                        "v": 1,
+                        "fields": {
+                          "MODE": "keep_asking",
+                          "VAR": {
+                            "ref": "s_choice"
+                          }
+                        },
+                        "inputs": {
+                          "PROMPT": {
+                            "expr": [
+                              {
+                                "str": " (1: add, 2: remove, 0: quit): "
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b009",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 2,
+                          "hasElse": false
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "expr": [
+                              {
+                                "ref": "s_choice"
+                              },
+                              {
+                                "op": "=="
+                              },
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          },
+                          "COND1": {
+                            "expr": [
+                              {
+                                "ref": "s_choice"
+                              },
+                              {
+                                "op": "=="
+                              },
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          },
+                          "COND2": {
+                            "expr": [
+                              {
+                                "ref": "s_choice"
+                              },
+                              {
+                                "op": "=="
+                              },
+                              {
+                                "num": "2"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b006",
+                              "type": "control.break",
+                              "v": 1
+                            }
+                          ],
+                          "DO1": [
+                            {
+                              "id": "b007",
+                              "type": "func.call_stmt",
+                              "v": 1,
+                              "extra": {
+                                "argCount": 0
+                              },
+                              "fields": {
+                                "FUNC": {
+                                  "ref": "s_add_item"
+                                }
+                              }
+                            }
+                          ],
+                          "DO2": [
+                            {
+                              "id": "b008",
+                              "type": "func.call_stmt",
+                              "v": 1,
+                              "extra": {
+                                "argCount": 0
+                              },
+                              "fields": {
+                                "FUNC": {
+                                  "ref": "s_remove_item"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "id": "b013",
+                        "type": "control.switch",
+                        "v": 1,
+                        "extra": {
+                          "caseCount": 2,
+                          "hasDefault": true
+                        },
+                        "inputs": {
+                          "CASE0": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          },
+                          "CASE1": {
+                            "expr": [
+                              {
+                                "ref": "s_kMaxItems"
+                              }
+                            ]
+                          },
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_item_count"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "DEFAULT": [
+                            {
+                              "id": "b012",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 4
+                              },
+                              "fields": {
+                                "NEWLINE": true,
+                                "SEP": "none",
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_kShopName"
+                                    }
+                                  ]
+                                },
+                                "ITEM1": {
+                                  "expr": [
+                                    {
+                                      "str": " has "
+                                    }
+                                  ]
+                                },
+                                "ITEM2": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_item_count"
+                                    }
+                                  ]
+                                },
+                                "ITEM3": {
+                                  "expr": [
+                                    {
+                                      "str": " items."
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ],
+                          "DO0": [
+                            {
+                              "id": "b010",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 2
+                              },
+                              "fields": {
+                                "NEWLINE": true,
+                                "SEP": "none",
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_kShopName"
+                                    }
+                                  ]
+                                },
+                                "ITEM1": {
+                                  "expr": [
+                                    {
+                                      "str": " is empty."
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ],
+                          "DO1": [
+                            {
+                              "id": "b011",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 2
+                              },
+                              "fields": {
+                                "NEWLINE": true,
+                                "SEP": "none",
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_kShopName"
+                                    }
+                                  ]
+                                },
+                                "ITEM1": {
+                                  "expr": [
+                                    {
+                                      "str": " is full."
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b015",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Goodbye from "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_kShopName"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b016",
+            "type": "var.global",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "comment": {
+              "text": "Not shared: how many choices were made."
+            },
+            "fields": {
+              "KIND": "variable",
+              "NAME": {
+                "sym": "s_m_count",
+                "name": "count"
+              },
+              "TYPE": "int"
+            },
+            "inputs": {
+              "VALUE": {
+                "expr": [
+                  {
+                    "num": "0"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "mod_stock",
+      "name": "stock",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b101",
+            "type": "var.global",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "comment": {
+              "text": "Shared: other modules read it through stock.hpp."
+            },
+            "fields": {
+              "KIND": "variable",
+              "NAME": {
+                "sym": "s_item_count",
+                "name": "item_count"
+              },
+              "SHARED": true,
+              "TYPE": "int"
+            },
+            "inputs": {
+              "VALUE": {
+                "expr": [
+                  {
+                    "num": "0"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "b103",
+            "type": "var.global",
+            "v": 1,
+            "x": 40,
+            "y": 120,
+            "comment": {
+              "text": "Shared, but set from a function: its header says only extern const."
+            },
+            "fields": {
+              "KIND": "constant",
+              "NAME": {
+                "sym": "s_kShopName",
+                "name": "kShopName"
+              },
+              "SHARED": true,
+              "TYPE": "std::string"
+            },
+            "inputs": {
+              "VALUE": {
+                "block": {
+                  "id": "b102",
+                  "type": "func.call",
+                  "v": 1,
+                  "extra": {
+                    "argCount": 0
+                  },
+                  "fields": {
+                    "FUNC": {
+                      "ref": "s_shop_name"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "b104",
+            "type": "var.global",
+            "v": 1,
+            "x": 40,
+            "y": 200,
+            "comment": {
+              "text": "Shared and fixed when the program is built, so main can use it as a case."
+            },
+            "fields": {
+              "KIND": "constant",
+              "NAME": {
+                "sym": "s_kMaxItems",
+                "name": "kMaxItems"
+              },
+              "SHARED": true,
+              "TYPE": "int"
+            },
+            "inputs": {
+              "VALUE": {
+                "expr": [
+                  {
+                    "num": "3"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "b109",
+            "type": "func.define",
+            "v": 1,
+            "x": 40,
+            "y": 300,
+            "extra": {
+              "params": []
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_add_item",
+                "name": "add_item"
+              },
+              "RETURNS": "void",
+              "SHARED": true
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b108",
+                  "type": "control.if",
+                  "v": 1,
+                  "extra": {
+                    "elseIfCount": 0,
+                    "hasElse": true
+                  },
+                  "inputs": {
+                    "COND0": {
+                      "expr": [
+                        {
+                          "ref": "s_item_count"
+                        },
+                        {
+                          "op": "<"
+                        },
+                        {
+                          "ref": "s_kMaxItems"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b105",
+                        "type": "var.change",
+                        "v": 1,
+                        "fields": {
+                          "OP": "add",
+                          "VAR": {
+                            "ref": "s_item_count"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b106",
+                        "type": "func.call_stmt",
+                        "v": 1,
+                        "extra": {
+                          "argCount": 1
+                        },
+                        "fields": {
+                          "FUNC": {
+                            "ref": "s_record_change"
+                          }
+                        },
+                        "inputs": {
+                          "ARG0": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "ELSE": [
+                      {
+                        "id": "b107",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "No room for another item."
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b114",
+            "type": "func.define",
+            "v": 1,
+            "x": 40,
+            "y": 520,
+            "extra": {
+              "params": []
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_remove_item",
+                "name": "remove_item"
+              },
+              "RETURNS": "void",
+              "SHARED": true
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b113",
+                  "type": "control.if",
+                  "v": 1,
+                  "extra": {
+                    "elseIfCount": 0,
+                    "hasElse": true
+                  },
+                  "inputs": {
+                    "COND0": {
+                      "expr": [
+                        {
+                          "ref": "s_item_count"
+                        },
+                        {
+                          "op": ">"
+                        },
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b110",
+                        "type": "var.change",
+                        "v": 1,
+                        "fields": {
+                          "OP": "sub",
+                          "VAR": {
+                            "ref": "s_item_count"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b111",
+                        "type": "func.call_stmt",
+                        "v": 1,
+                        "extra": {
+                          "argCount": 1
+                        },
+                        "fields": {
+                          "FUNC": {
+                            "ref": "s_record_change"
+                          }
+                        },
+                        "inputs": {
+                          "ARG0": {
+                            "expr": [
+                              {
+                                "op": "-"
+                              },
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "ELSE": [
+                      {
+                        "id": "b112",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "There is nothing to remove."
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b116",
+            "type": "func.define",
+            "v": 1,
+            "x": 40,
+            "y": 740,
+            "extra": {
+              "params": []
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_shop_name",
+                "name": "shop_name"
+              },
+              "RETURNS": "std::string"
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b115",
+                  "type": "func.return",
+                  "v": 1,
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "str": "Corner Shop"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "mod_history",
+      "name": "history",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b201",
+            "type": "var.global",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "comment": {
+              "text": "Not shared: the changes made so far."
+            },
+            "fields": {
+              "KIND": "variable",
+              "NAME": {
+                "sym": "s_h_count",
+                "name": "count"
+              },
+              "TYPE": "int"
+            },
+            "inputs": {
+              "VALUE": {
+                "expr": [
+                  {
+                    "num": "0"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "b204",
+            "type": "func.define",
+            "v": 1,
+            "x": 40,
+            "y": 140,
+            "extra": {
+              "params": [
+                {
+                  "mode": "copy",
+                  "name": "change",
+                  "sym": "s_rc_change",
+                  "type": "int"
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_record_change",
+                "name": "record_change"
+              },
+              "RETURNS": "void",
+              "SHARED": true
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b202",
+                  "type": "var.change",
+                  "v": 1,
+                  "fields": {
+                    "OP": "add",
+                    "VAR": {
+                      "ref": "s_h_count"
+                    }
+                  },
+                  "inputs": {
+                    "BY": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b203",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 4
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Change "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_h_count"
+                        }
+                      ]
+                    },
+                    "ITEM2": {
+                      "expr": [
+                        {
+                          "str": ": "
+                        }
+                      ]
+                    },
+                    "ITEM3": {
+                      "expr": [
+                        {
+                          "ref": "s_rc_change"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

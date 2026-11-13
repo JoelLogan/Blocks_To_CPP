@@ -231,7 +231,19 @@ pub(crate) fn source_file(
             && !matches!(&decl.node, CDecl::Global(global) if global.qualifier != Qualifier::Constexpr)
     };
     let mut last: Option<&Placed<CDecl>> = None;
-    for decl in module.decls.iter().filter(|decl| !in_header(decl)) {
+    for decl in &module.decls {
+        if in_header(decl) {
+            // A shared enum's header declares its print support, which the
+            // `.cpp` defines (w3-modules.md §1.7).
+            if let CDecl::Type(CTypeDef::Enum(def)) = &decl.node
+                && !def.functions.is_empty()
+            {
+                emitter.enter(&decl.region);
+                emitter.enum_support(def);
+                last = None;
+            }
+            continue;
+        }
         let same_run = last.is_some_and(|last| {
             last.region == decl.region
                 && matches!(
@@ -284,10 +296,11 @@ pub(crate) fn source_file(
 /// declarations of the module's structs it needs (they belong to the item
 /// that needs them, not to the struct they declare): a function's
 /// declaration with its default values (a run of them in one section, as
-/// in a `.cpp`), a struct's or enum's definition (a
-/// shared enum's print support is package T's), a global's `extern`
-/// declaration or a `constexpr` constant's `inline constexpr` definition.
-/// Never a `using` directive.
+/// in a `.cpp`), a struct's definition, an enum's definition followed at
+/// once by the declarations of its `operator<<` (in its namespace) and of
+/// its `b2c::to_text` (at global scope), a global's `extern` declaration or
+/// a `constexpr` constant's `inline constexpr` definition. Never a `using`
+/// directive.
 pub(crate) fn header_file(
     module: &LoweredModule,
     plan: &FilePlan<'_>,
@@ -342,7 +355,7 @@ pub(crate) fn header_file(
             }
             last = Some((&decl.node, region));
             match &decl.node {
-                CDecl::Type(CTypeDef::Enum(def)) => emitter.enum_definition(def),
+                CDecl::Type(CTypeDef::Enum(def)) => emitter.enum_header(def),
                 CDecl::Type(def) => emitter.type_def(def),
                 CDecl::Global(global) => emitter.global_declaration(global),
                 CDecl::Function(index) => {
@@ -375,6 +388,18 @@ pub(crate) fn support_header(used: &BTreeSet<Helper>, options: &CodegenOptions) 
     p.section();
     helper_namespace(&mut p, used);
     p.finish().0
+}
+
+/// How an enum's generated functions are printed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EnumPart {
+    /// Defined after the enum, `b2c::to_text` `inline`: an enum that is not
+    /// shared, in its module's `.cpp`.
+    Inline,
+    /// Declared after the enum, in a shared enum's header.
+    Declared,
+    /// Defined, not `inline`, in a shared enum's `.cpp`.
+    Defined,
 }
 
 /// Prints CAST nodes.
@@ -646,26 +671,55 @@ impl Emitter {
     /// The namespaces closed for `b2c::to_text` are opened again by
     /// whatever is printed next in them.
     fn enum_def(&mut self, def: &CEnum) {
-        let region = self.region.clone();
         self.enum_definition(def);
+        self.enum_functions(def, EnumPart::Inline);
+    }
+
+    /// A shared enum in its module's header (w3-modules.md §1.7, §2.3): its
+    /// definition, then the declarations of its `operator<<` and
+    /// `b2c::to_text`, right after it, so that a printable struct's hidden
+    /// friend that prints a field of the enum finds them.
+    fn enum_header(&mut self, def: &CEnum) {
+        self.enum_definition(def);
+        self.enum_functions(def, EnumPart::Declared);
+    }
+
+    /// A shared enum's print support in its module's `.cpp`: the functions
+    /// its header declares, defined once and not `inline` (an `inline`
+    /// definition behind a declaration that is not does not link from
+    /// another unit, w3-modules.md §0).
+    fn enum_support(&mut self, def: &CEnum) {
+        self.enum_functions(def, EnumPart::Defined);
+    }
+
+    /// An enum's generated functions, each in a section of its own, printed
+    /// as `part` says: `operator<<` in the enum's namespaces, `b2c::to_text`
+    /// in the global `b2c` namespace, beside the decimal helper of that name
+    /// (w2.md §2.11).
+    fn enum_functions(&mut self, def: &CEnum, part: EnumPart) {
+        let region = self.region.clone();
         for function in &def.functions {
             if function.kind == Generated::EnumToString {
-                // Beside the decimal helper of that name, in the global
-                // `b2c` namespace (w2.md §2.11).
                 self.enter(&Region::default());
                 self.p.section();
                 self.p.fixed("namespace b2c {");
                 self.p.newline();
                 self.p.section();
-                self.p.fixed("inline ");
-                self.generated(function, &def.qualified_name());
+                if part == EnumPart::Inline {
+                    self.p.fixed("inline ");
+                }
+                self.generated_as(function, &def.qualified_name(), part != EnumPart::Declared);
                 self.p.section();
                 self.p.fixed("}  // namespace b2c");
                 self.p.newline();
             } else {
                 self.enter(&region);
                 self.p.section();
-                self.generated(function, std::slice::from_ref(&def.name));
+                self.generated_as(
+                    function,
+                    std::slice::from_ref(&def.name),
+                    part != EnumPart::Declared,
+                );
             }
         }
     }
@@ -691,6 +745,12 @@ impl Emitter {
     /// A function generated for the user type `owner`, with its body:
     /// `friend bool operator==(const S& lhs, const S& rhs) { … }`.
     fn generated(&mut self, function: &CGenerated, owner: &[Ident]) {
+        self.generated_as(function, owner, true);
+    }
+
+    /// [`Emitter::generated`], or only its declaration (`…;`) when not
+    /// `body`.
+    fn generated_as(&mut self, function: &CGenerated, owner: &[Ident], body: bool) {
         if function.kind.is_friend() {
             self.p.fixed("friend ");
         }
@@ -719,6 +779,11 @@ impl Emitter {
                 self.p.fixed(" ");
                 self.p.ident(name);
             }
+        }
+        if !body {
+            self.p.fixed(");");
+            self.p.newline();
+            return;
         }
         self.p.fixed(") ");
         match (function.kind, function.body.stmts.as_slice()) {

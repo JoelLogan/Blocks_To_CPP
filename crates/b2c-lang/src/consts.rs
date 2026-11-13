@@ -199,19 +199,36 @@ pub fn constant_value(expr: &Expr, constants: &BTreeMap<SymbolId, Constant>) -> 
 struct Context<'a> {
     symbols: &'a SymbolTable,
     unchecked: &'a BTreeSet<BlockId>,
+    /// The constants whose value the item's file knows but may not use in
+    /// a constant expression: other modules' shared constants that their
+    /// headers declare `extern const` (w3-modules.md §2.1).
+    opaque: &'a BTreeSet<SymbolId>,
+}
+
+/// What an item's checks see besides the symbols.
+#[derive(Clone, Copy)]
+pub(crate) struct Seen<'a> {
+    /// The blocks the catalog kept unchecked: what they hold themselves is
+    /// not reported (ADR-0018 §3).
+    pub(crate) unchecked: &'a BTreeSet<BlockId>,
+    /// The constants that are no constant expression in the item's file,
+    /// though their value is known: other modules' shared constants that
+    /// their headers declare `extern const` (`B2C-E0424` where a constant
+    /// expression is needed).
+    pub(crate) opaque: &'a BTreeSet<SymbolId>,
 }
 
 /// Checks one lowered item and records its `const` variables' values in
 /// `constants`. The item's nesting must have been checked (`nesting.rs`),
-/// which bounds the recursion. `unchecked` is the blocks the catalog kept
-/// unchecked: what they hold themselves is not reported (ADR-0018 §3).
+/// which bounds the recursion.
 pub(crate) fn check_item(
     item: &Item,
     symbols: &SymbolTable,
-    unchecked: &BTreeSet<BlockId>,
+    seen: Seen<'_>,
     diags: &mut Diags,
     constants: &mut BTreeMap<SymbolId, Constant>,
 ) {
+    let Seen { unchecked, opaque } = seen;
     let (body, ret) = match &item.kind {
         ItemKind::Main(main) => (&main.body, Type::Int),
         ItemKind::Function(function) => (&function.body, function.ret.clone()),
@@ -219,7 +236,11 @@ pub(crate) fn check_item(
             // A global's starting value converts to its type; a constant's
             // value is recorded, as a `const` variable's (w2.md §2.7).
             let mut checker = Checker {
-                context: Context { symbols, unchecked },
+                context: Context {
+                    symbols,
+                    unchecked,
+                    opaque,
+                },
                 diags,
                 constants,
                 ret: Type::Void,
@@ -244,7 +265,11 @@ pub(crate) fn check_item(
         }
         ItemKind::Struct(def) => {
             let mut checker = Checker {
-                context: Context { symbols, unchecked },
+                context: Context {
+                    symbols,
+                    unchecked,
+                    opaque,
+                },
                 diags,
                 constants,
                 ret: Type::Void,
@@ -258,7 +283,11 @@ pub(crate) fn check_item(
         ItemKind::Enum(_) | ItemKind::UseHeader { .. } => return,
     };
     let mut checker = Checker {
-        context: Context { symbols, unchecked },
+        context: Context {
+            symbols,
+            unchecked,
+            opaque,
+        },
         diags,
         constants,
         ret,
@@ -866,11 +895,15 @@ impl Folder<'_, '_> {
 
     /// A `const` variable with a known value. Only an integral one is a
     /// constant expression in C++ (a `const double` needs `constexpr`).
+    /// Another module's shared constant that its header declares `extern
+    /// const` is no constant expression where its definition is not seen.
     fn variable(&self, sym: &SymbolId, ty: &Type) -> Option<Constant> {
         let constant = self.constants.get(sym)?;
+        let opaque = self.context.is_some_and(|context| context.opaque.contains(sym));
         Some(Constant {
             value: constant.value.convert(ty)?,
             constant_expression: constant.constant_expression
+                && !opaque
                 && matches!(ty, Type::Bool | Type::Char | Type::Int),
         })
     }

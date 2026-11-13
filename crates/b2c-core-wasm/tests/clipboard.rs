@@ -156,6 +156,20 @@ fn block_ids(value: &Value, out: &mut Vec<String>) {
     }
 }
 
+/// The index and ID of the module whose workspace holds the block `id`.
+fn module_of<'v>(document: &'v Value, id: &str) -> (usize, &'v str) {
+    let modules = document["modules"].as_array().unwrap();
+    let index = modules
+        .iter()
+        .position(|module| {
+            let mut ids = Vec::new();
+            block_ids(&module["workspace"], &mut ids);
+            ids.iter().any(|found| found == id)
+        })
+        .unwrap();
+    (index, modules[index]["id"].as_str().unwrap())
+}
+
 /// `hello_world` with `create int guess = 0` and `create int secret = 5`
 /// (other symbol IDs than the guessing game's) before its print block.
 fn other_document() -> String {
@@ -1145,8 +1159,10 @@ proptest! {
         let payload = made["payload"].as_str().unwrap();
         prop_assert!(b2c_model::load_clipboard(payload.as_bytes()).is_ok());
 
-        let module = value["modules"][0]["id"].as_str().unwrap();
+        // The target is a block of any module, so the paste goes into the
+        // module that holds it.
         let block = at.get(&ids).as_str();
+        let (index, module) = module_of(&value, block);
         let input = if list { Some("BODY") } else { None };
         let pasted = paste(payload, text, &target(module, Some(block), input), &seed(seed_value));
         prop_assert_eq!(&pasted["ok"], &json!(true), "{}", pasted);
@@ -1162,7 +1178,7 @@ proptest! {
             pasted["unresolved"].as_array().unwrap().len(),
             pasted["diagnostics"].as_array().unwrap().len()
         );
-        let after = insert(text, 0, None, None, &pasted["blocks"]);
+        let after = insert(text, index, None, None, &pasted["blocks"]);
         let loaded = parse(&b2c_core_wasm::load(after.as_bytes()));
         prop_assert_eq!(&loaded["ok"], &json!(true), "{}", loaded["diagnostics"]);
     }

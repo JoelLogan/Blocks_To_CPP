@@ -1,0 +1,6 @@
+How many students? Name: Mark: Name: Mark: Name: Mark: Name: Mark: 
+Ann: 72 distinction
+Bob: 45 fail
+Cy: 55 pass
+Dee: 107 distinction
+Passed: 3 of 4

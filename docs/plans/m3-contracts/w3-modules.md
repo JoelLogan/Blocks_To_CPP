@@ -494,10 +494,12 @@ package adds its blocks"*, next steps §3.8; P0).
   to: **a default argument, a field's default value, or a constant's type
   or `constexpr` value that names or builds anything of `n`** (a type, an
   enumerator, a function, a constant or a variable), and a shared
-  variable's type. A `.cpp` includes its own header, the headers whose
-  shared definitions its code refers to, and, transitively, those its
-  included headers forward-declare from, so every type it touches is
-  complete.
+  variable's type. A field that names a struct of `n` only inside lists
+  includes too: its `{}` initialiser needs the struct complete, so only a
+  function's inputs and result forward-declare (§7.1, T). A `.cpp`
+  includes its own header, the headers whose shared definitions its code
+  refers to, and, transitively, those its included headers forward-declare
+  from, so every type it touches is complete.
 * Project headers are sorted by file name after the standard headers;
   helpers last.
 * The modules whose headers include each other form no cycle: a cycle that
@@ -1377,6 +1379,14 @@ corrected in place and the correction is recorded here with its reason.
 | `CodePanel` gains `fileGroups` and reports the clicked file with `onSelectBlock(blockId, path)` | the grouping, and the header click keeping the header shown | §2.5 (E) |
 | The checkbox's accessible name is given by the keyboard announcer (`editor/keyboard/labels.ts`) | Blockly fields have no ARIA name of their own | §2.11 (E) |
 | `SHARED` written only when true is done in `sync/blockState.ts`'s `readFields` (which `workspaceToBdm.ts` calls): a new block leaves out an `omitDefault` field at its default, and a value a file holds is written back as it was | a file with `SHARED: false` must read back unchanged, or it would load as a placeholder | §3.2 E, §3.3 (E) |
+| A header includes another module's header also for a field that names that module's struct only inside lists; only a function's inputs and result forward-declare another module's types. So two modules whose shared structs hold lists of each other's structs are `B2C-E0422` | every field is printed with an initialiser (`std::vector<Point> points{};`), which makes `std::vector`'s constructor and destructor need `Point` complete: a header that only declared it does not compile alone (g++ 11, 13 and 14, clang 18, C++17 and C++20; T's property test found it), while a `.cpp` compiled because it included the other header too | §2.4 (T) |
+| `B2C-E0206` for a global or a type of another module that does not share it: *"`count` belongs to module `utils`, which does not share it. To use it here, tick 'share with other modules' on its 'global' block."*, and for a type *"… on its 'struct' block."* (or *'enum' block*), with the place where it is created as a related place | the function's text (F), for the other definitions | §1.9 (T) |
+| `B2C-E0213` names the kinds of both definitions when the file does not include the header (*"A struct that is not shared can't have the name of a shared global variable of any module: …"*); `B2C-E0210` for two modules sharing definitions with one name that are not both functions: *"`Point` is already shared by module `shapes`. Two modules can't share definitions with one name, so rename one of them."*, with the other as a related place. Globals, structs and enums are unique per module, not program-wide (W2's rule, w2.md §7.1) | the rules of §2.1 for every kind | §1.9, §2.1 (T) |
+| The program graph of `order.rs` replaces F's graph of functions in `layout.rs`: it reports every circle once (`B2C-E0420`, `B2C-E0421`), also across modules, and gives `layout.rs` the circles that join modules, whose header needs `B2C-E0422` leaves out. `B2C-E0422`'s message names a type's need as *"`Shape` holds `Palette`"*, a constant's as *"the type of `kKind` uses `Kind`"*, and advises *"one of these shared definitions"* when not every definition round the circle is a function | §2.2's one graph | §2.2 (T; F's row above) |
+| `B2C-E0423` for another module's constant that C++ does not set before any code runs (a `const std::string`) ends *"Set `greeting` at the start of 'when program starts' instead."*; a `const int` printed `extern const` whose value L10 proves constant does not draw it (C++ sets it before any code runs, as modules.md §4.4 says) | the other module's global is already a constant | §1.9, §2.2 (T) |
+| `B2C-E0424` keeps its message; another module's shared constant printed `extern const` is no constant expression where it is used (L10's check gets the set of such constants of the other modules) | a message naming the cause would need the constant's module and value in L10's check; the reference says why | §2.1 (T) |
+| The summary's counting test is a unit test of `order.rs` (`the_summary_counts_each_call_and_use_once`: 256 modules, 4,096 globals, steps ≤ calls and uses + modules) | the summary is private to the declaration graph | §5.2 T (T) |
+| A shared enum's `operator<<` and `b2c::to_text` are declared in its header with their inputs' names (`std::ostream& operator<<(std::ostream& out, Colour value);`), and P0's snapshot `w3_headers` shows them for its shared `Size` | §1.7's "always" | §1.7 (T) |
 
 #### From the W4 and W5 merges
 

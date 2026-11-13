@@ -141,24 +141,23 @@ Codes by area:
   also in default values. Rename the input or the global."
 * **How to fix:** give one of the two symbols a different name.
 
-## B2C-E0206 Function of another module
+## B2C-E0206 Definition of another module
 
 * **Severity:** error
-* **Meaning:** a call refers to a function of another module that the
-  module does not share. A module calls its own functions and the functions
-  the other modules share (*share with other modules* on their *define*
-  block), which their headers declare. Using a global of another module, or
-  a type (of a variable, an input, a field or *new … with*) that names
-  another module's struct or enum, isn't supported yet.
+* **Meaning:** a block uses a function, a global, a struct or an enum of
+  another module that the module does not share: a call, a global read or
+  set, or a type (of a variable, an input, a field or *new … with*). A
+  module uses its own definitions and those the other modules share
+  (*share with other modules* on their blocks), which their headers
+  declare.
 * **Message:** "`helper` belongs to module `utils`, which does not share
   it. To use it here, tick 'share with other modules' on its 'define'
-  block." For a global: "`count` is a global of another module (`utils`).
-  Using globals from other modules isn't supported yet, so move it into
-  this module." For a type: "`Student` is a struct of another module
-  (`util`). Using structs and enums from other modules isn't supported yet,
-  so move it into this module."
-* **How to fix:** share the function in its module, or move the global,
-  struct or enum into the module that uses it.
+  block." For a global: "… on its 'global' block."; for a struct or an
+  enum: "`Student` belongs to module `util`, which does not share it. To
+  use it here, tick 'share with other modules' on its 'struct' block." (or
+  *'enum' block*), with the place where it is created as a related place.
+* **How to fix:** share the definition in its module, or move it into the
+  module that uses it.
 
 ## B2C-E0207 Wrong kind of symbol
 
@@ -183,8 +182,10 @@ Codes by area:
   same scope as its inputs, and a `for` loop's body as the same scope as its
   counter. Also two fields of a struct, or two values of an enum, with the
   same name; a field named like its struct; a struct or enum named like
-  another struct, enum or function; a global named like another global,
-  a struct, an enum or a function of the program; and a variable, function
+  another struct, enum or function of its module; a global named like
+  another global, a struct, an enum or a function of its module; two
+  modules sharing definitions with one name (two shared functions are
+  `B2C-E0211`); and a variable, function
   input, loop item, caught error, the program's arguments or a field named
   like a struct or enum (the generated C++ names the type as it is, so C++
   would find the other name instead).
@@ -205,7 +206,9 @@ Codes by area:
   / "`Student` is the name of a struct, so C++ would not find the struct by
   that name where `Student` exists. Choose another name." / "A field can't
   have the name of a struct or an enum: inside `Car`, C++ would find the
-  field `Color` instead of the enum. Rename the field."
+  field `Color` instead of the enum. Rename the field." / "`Point` is
+  already shared by module `shapes`. Two modules can't share definitions
+  with one name, so rename one of them."
 * **How to fix:** rename one of them.
 
 ## B2C-E0211 Duplicate function
@@ -254,11 +257,14 @@ Codes by area:
   which one a use means, so the name is refused in every module, whatever
   the file includes.
 * **Example:** module `convert` shares `scale`, and module `main` has its
-  own `scale` that it does not share.
+  own `scale` that it does not share; or module `stock` shares the global
+  `count`, and module `main` has a global `count` of its own.
 * **Message:** "`scale` is also shared by module `convert`. A function that
   is not shared can't have the name of a shared function of any module: once
   this file includes `convert.hpp`, C++ could not tell the two apart. Rename
-  this `scale`." When the file does include that header, the message says
+  this `scale`." (it names the kinds of both: *A struct that is not shared
+  can't have the name of a shared global variable …*). When the file does
+  include that header, the message says
   why, and the problem's related places show the use and each header on the
   way: "`scale` is also shared by module `convert`, whose header
   `convert.hpp` this file includes because it uses `to_celsius`. Rename this
@@ -284,8 +290,17 @@ Codes by area:
   its input `boxes` uses `Box`, which is not. Share `Box` too." / "`kind_of`
   is shared, but its result has the type `Kind`, which is not. Share `Kind`
   too." / "`scaled` is shared, but the default value of its input `x` uses
-  `unit`, which is not. Share `unit` too." What a function's body uses never
-  counts: the body is only in the module's own file.
+  `unit`, which is not. Share `unit` too." / "`Crate` is shared, but its
+  field `box` has the type `Box`, which is not. Share `Box` too." / "`Crate`
+  is shared, but the default value of its field `size` uses `unit`, which
+  is not. Share `unit` too." / "`kFirst` is shared, but its type is `Kind`,
+  which is not. Share `Kind` too." / "`spare` is shared, but its type uses
+  `Box`, which is not. Share `Box` too." What a function's body, a
+  variable's starting value or a constant's value uses never counts: they
+  are only in the module's own file. A shared constant whose value names
+  something not shared is declared `extern const` in the header, so other
+  modules can't use it where a value fixed when the program is built is
+  needed (`B2C-E0424`).
 * **How to fix:** share the definition it names too, or stop sharing the
   first one.
 
@@ -779,10 +794,14 @@ Codes by area:
 * **Message:** "`a.hpp` would need `b.hpp`, because the default value of
   `f` uses `g` of module `b`, but `b.hpp` already needs `a.hpp`. Two headers
   can't each include the other. Move `f` into module `b`, or `h` into module
-  `a`." Round more headers: "… but `b.hpp` already needs `a.hpp` through
-  `c.hpp`. Two headers can't each include the other. Move one of these
-  shared functions into another module." The problem's related places show
-  the rest of the circle.
+  `a`." / "`shapes.hpp` would need `colours.hpp`, because `Shape` holds
+  `Palette` of module `colours`, but `colours.hpp` already needs
+  `shapes.hpp`. …" / "… because the type of `kKind` uses `Kind` of module
+  `shapes` …" Round more headers: "… but `b.hpp` already needs `a.hpp`
+  through `c.hpp`. Two headers can't each include the other. Move one of
+  these shared functions into another module." (*shared definitions* when
+  not all are functions). The problem's related places show the rest of the
+  circle.
 * **How to fix:** move one of the definitions into the other module.
 
 ## B2C-E0423 Global set from another module's global
@@ -795,6 +814,15 @@ Codes by area:
   is built is fine.
 * **Example:** `global [std::string] [greeting]` set from `name` of module
   `people`.
+* **Message:** "`greeting` is set from `name` of module `people` before
+  the program starts, and C++ does not say which of the two is set first.
+  Set `greeting` at the start of 'when program starts', or make `name` a
+  constant with a fixed value." For another module's constant that is not
+  fixed when the program is built (a `std::string`, for example): "… Set
+  `greeting` at the start of 'when program starts' instead." The problem's
+  related place is the other global. Reads through the functions the value
+  calls, their default values and the default values of the structs it
+  builds count; reads in `when program starts` never do.
 * **How to fix:** set the global at the start of `when program starts`, or
   make the other global a constant with a fixed value.
 
@@ -807,7 +835,10 @@ Codes by area:
   enum, or a calculation from those and constants with fixed values. A
   condition may use numbers, characters, true/false values and such
   constants. Variables and the answers of functions are only known when the
-  program runs.
+  program runs. Another module's shared constant counts only when its
+  header holds its value (`inline constexpr`): a shared constant whose value
+  uses something its module does not share is declared `extern const`, so
+  other modules know its value only when the program runs.
 * **Example:** `case (limit)` where `limit` is a variable, or `case (1.5)`.
 * **Message:** "A 'case' label must be a value that is fixed when the program
   is built: a whole number, a character, a value of an enum, or a constant

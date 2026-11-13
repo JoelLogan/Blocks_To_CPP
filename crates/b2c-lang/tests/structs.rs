@@ -218,9 +218,10 @@ fn the_scope_query_lists_user_types_with_their_members_everywhere() {
 }
 
 #[test]
-fn a_struct_or_enum_of_another_module_is_not_a_type_here_yet() {
-    // Each module is its own `.cpp` (W2), so module `main` can't name
-    // `util`'s types: as a variable's type, in a list, or as a field's type.
+fn a_struct_or_enum_another_module_does_not_share_is_not_a_type_here() {
+    // Module `main` can name only the types `util` shares (w3-modules.md
+    // §2.1): not its unshared ones, as a variable's type, in a list, or as a
+    // field's type.
     let d = doc_modules(vec![
         (
             "main",
@@ -244,15 +245,16 @@ fn a_struct_or_enum_of_another_module_is_not_a_type_here_yet() {
     assert_eq!(found.len(), 3, "{}", render_all(&a));
     assert!(
         found.contains(
-            &"`Student` is a struct of another module (`util`). Using structs and enums from other modules \
-              isn't supported yet, so move it into this module."
+            &"`Student` belongs to module `util`, which does not share it. To use it here, tick 'share with \
+              other modules' on its 'struct' block."
         ),
         "{found:?}"
     );
     assert!(
-        found
-            .iter()
-            .any(|m| m.starts_with("`Action` is an enum of another module")),
+        found.contains(
+            &"`Action` belongs to module `util`, which does not share it. To use it here, tick 'share with \
+              other modules' on its 'enum' block."
+        ),
         "{found:?}"
     );
     // In their own module they are types as before.

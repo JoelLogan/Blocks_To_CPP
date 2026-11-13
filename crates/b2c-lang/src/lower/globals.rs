@@ -14,6 +14,18 @@
 //! (`B2C-E0308`). The declaration graph (`order.rs`) puts the globals in
 //! order, and reports a circle of them (`B2C-E0421`).
 //!
+//! In a project of several modules (w3-modules.md §1.3, §2.1) a global
+//! ticked *share with other modules* is seen by every module that has no
+//! global of its name, and its module's header declares it: `extern` for a
+//! variable or a `const` constant, `inline constexpr` with its value for a
+//! `constexpr` constant. A shared constant whose value names something its
+//! module does not share is not `constexpr` (the header could not print
+//! the value), so other modules see it only as `extern const`, which is no
+//! constant expression there (`B2C-E0424` as a `case` label). Names are
+//! unique among the module's own globals, structs, enums and functions; a
+//! name shared by two modules is `B2C-E0210`, and one that is not shared
+//! but is another's shared name `B2C-E0213` (`crate::layout`).
+//!
 //! *flip* turns a `bool` variable that may change to its other value.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,30 +56,21 @@ pub(super) struct DeclaredGlobal<'d> {
 impl<'d> Lowerer<'d> {
     /// Declares every enabled global of the program, after the user types
     /// (a global may hold one) and before the functions. Its name is unique
-    /// among the program's globals, structs, enums and functions
-    /// (`B2C-E0210`): every module is still compiled on its own, and two
-    /// definitions with one name would not link or would be ambiguous.
+    /// among its module's globals, structs, enums and functions
+    /// (`B2C-E0210`): two definitions with one name in one file would be
+    /// ambiguous. Globals of different modules may share a name unless one
+    /// of them is shared (`crate::layout`: `B2C-E0210`, `B2C-E0213`).
     pub(super) fn declare_globals(&mut self) -> Vec<DeclaredGlobal<'d>> {
         let document = self.document;
-        let mut names: BTreeMap<String, SymbolId> = BTreeMap::new();
-        // The structs and enums by name, the first by symbol for a name used
-        // twice: looked up for each global, not searched for.
-        let mut type_names: BTreeMap<String, SymbolId> = BTreeMap::new();
-        for (sym, symbol) in &self.symbols.symbols {
-            if matches!(symbol.kind, SymbolKind::Struct { .. } | SymbolKind::Enum { .. }) {
-                type_names
-                    .entry(symbol.name.as_str().to_owned())
-                    .or_insert_with(|| sym.clone());
-            }
-        }
         let mut declared = Vec::new();
         for (index, module) in document.modules.iter().enumerate() {
             self.enter_module(index, &module.id);
+            let mut names: BTreeMap<String, SymbolId> = BTreeMap::new();
             for block in sorted_blocks(module) {
                 if block.disabled || block.block_type != "var.global" {
                     continue;
                 }
-                if let Some(sym) = self.declare_global(block, &mut names, &type_names) {
+                if let Some(sym) = self.declare_global(block, &mut names) {
                     declared.push(DeclaredGlobal {
                         module: index,
                         block,
@@ -80,12 +83,7 @@ impl<'d> Lowerer<'d> {
     }
 
     /// Declares one global's symbol. Returns it when it is in the table.
-    fn declare_global(
-        &mut self,
-        block: &Block,
-        names: &mut BTreeMap<String, SymbolId>,
-        type_names: &BTreeMap<String, SymbolId>,
-    ) -> Option<SymbolId> {
+    fn declare_global(&mut self, block: &Block, names: &mut BTreeMap<String, SymbolId>) -> Option<SymbolId> {
         let name_loc = self.loc(&block.id, field("NAME"));
         let is_const = self.choice(block, "KIND", false, &[("variable", false), ("constant", true)]);
         let ty = self.type_setting(block, "TYPE", "int", TypeUse::Variable);
@@ -95,7 +93,7 @@ impl<'d> Lowerer<'d> {
             return None;
         };
         let ident = self.ident(&decl.name, &name_loc, true);
-        self.check_definition_name(&decl.name, &name_loc, names, type_names);
+        self.check_definition_name(&decl.name, &name_loc, names);
         let symbol = Symbol {
             name: ident,
             kind: SymbolKind::Global { is_const },
@@ -122,13 +120,12 @@ impl<'d> Lowerer<'d> {
     }
 
     /// Reports a global named like another global, a struct, an enum or a
-    /// function of the program (`B2C-E0210`).
+    /// function of its module (`B2C-E0210`).
     fn check_definition_name(
         &mut self,
         name: &str,
         location: &b2c_ir::diag::Location,
         names: &BTreeMap<String, SymbolId>,
-        type_names: &BTreeMap<String, SymbolId>,
     ) {
         if let Some(other) = names.get(name).cloned() {
             let message = format!(
@@ -144,11 +141,11 @@ impl<'d> Lowerer<'d> {
             );
             return;
         }
-        let user_type = type_names.get(name).cloned();
+        let user_type = self.module_type(self.module_index, name).cloned();
         let function = self
             .module_functions
-            .iter()
-            .find_map(|functions| functions.get(name))
+            .get(self.module_index)
+            .and_then(|functions| functions.get(name))
             .cloned();
         let (other, what, note) = match (user_type, function) {
             (Some(other), _) => (other, "a struct or enum", "the type"),
@@ -286,32 +283,103 @@ impl<'d> Lowerer<'d> {
     /// Checks a lowered global (nesting, flow, L10), recording a constant's
     /// value, and marks a constant `constexpr` when C++ allows it: a
     /// `bool`, `char`, `int` or `double` whose value is a constant
-    /// expression (w2.md §2.7).
+    /// expression (w2.md §2.7), and, for a shared one, whose value names
+    /// nothing its module does not share, since its header prints the value
+    /// (w3-modules.md §1.3, §2.4). A shared constant that is not `constexpr`
+    /// is `extern const` in its header: no constant expression in another
+    /// module.
     fn check_global(&mut self, id: &BlockId) {
         let Some(mut item) = self.global_items.remove(id) else {
             return;
         };
         if self.check_nesting(&item) {
             flow::check_item(&item, &self.symbols, &mut self.diags);
+            let opaque = self.opaque_constants();
             consts::check_item(
                 &item,
                 &self.symbols,
-                self.unchecked,
+                consts::Seen {
+                    unchecked: self.unchecked,
+                    opaque: &opaque,
+                },
                 &mut self.diags,
                 &mut self.constants,
             );
         }
-        if let ItemKind::Global(def) = &mut item.kind {
-            let scalar = self.symbols.get(&def.symbol).is_some_and(|symbol| {
+        let shared = self.shared_blocks.contains(id);
+        if let ItemKind::Global(def) = &item.kind {
+            let symbol = self.symbols.get(&def.symbol);
+            let scalar = symbol.is_some_and(|symbol| {
                 matches!(symbol.ty, Type::Bool | Type::Char | Type::Int | Type::Double)
             });
-            def.constexpr = scalar
+            let constexpr = scalar
                 && self
                     .constants
                     .get(&def.symbol)
-                    .is_some_and(|constant| constant.constant_expression);
+                    .is_some_and(|constant| constant.constant_expression)
+                && !(shared && def.init.as_ref().is_some_and(|value| self.names_private(value)));
+            let constant =
+                symbol.is_some_and(|symbol| matches!(symbol.kind, SymbolKind::Global { is_const: true }));
+            if shared && constant && !constexpr {
+                self.extern_constants
+                    .insert(def.symbol.clone(), self.module_index);
+            }
+            if let ItemKind::Global(def) = &mut item.kind {
+                def.constexpr = constexpr;
+            }
         }
         self.global_items.insert(id.clone(), item);
+    }
+
+    /// Whether a value names a definition of the module being lowered that
+    /// the module does not share: a function it calls, a global it reads, an
+    /// enum value's enum, or a struct or enum its values have.
+    fn names_private(&self, value: &Expr) -> bool {
+        let mut stack = vec![value];
+        while let Some(expr) = stack.pop() {
+            let mut named: Vec<&SymbolId> = Vec::new();
+            match &expr.kind {
+                ExprKind::Call { function, .. } => named.push(function),
+                ExprKind::Var(sym) => named.push(sym),
+                ExprKind::Enumerator(value) => {
+                    if let Some(SymbolKind::Enumerator { owner }) = self.symbols.get(value).map(|s| &s.kind) {
+                        named.push(owner);
+                    }
+                }
+                _ => {}
+            }
+            let mut types = vec![&expr.ty];
+            while let Some(ty) = types.pop() {
+                match ty {
+                    Type::Named(id) => named.push(id),
+                    Type::Lib(app) => types.extend(app.args()),
+                    _ => {}
+                }
+            }
+            if named.into_iter().any(|sym| self.is_private_definition(sym)) {
+                return true;
+            }
+            stack.extend(flow::children(expr));
+        }
+        false
+    }
+
+    /// Whether a symbol is a definition (a function, struct, enum or global)
+    /// of the module being lowered that the module does not share.
+    fn is_private_definition(&self, sym: &SymbolId) -> bool {
+        let Some(decl) = self.decls.get(sym) else {
+            return false;
+        };
+        let definition = matches!(
+            self.symbols.get(sym).map(|symbol| &symbol.kind),
+            Some(
+                SymbolKind::Function { .. }
+                    | SymbolKind::Struct { .. }
+                    | SymbolKind::Enum { .. }
+                    | SymbolKind::Global { .. }
+            )
+        );
+        definition && decl.module == self.module_index && !self.shared_symbols.contains(sym)
     }
 
     /// *flip* (`done = !done;`): a `bool` variable that may change.

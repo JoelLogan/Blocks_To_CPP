@@ -1,44 +1,53 @@
 //! The program's files (ADR-0019; `docs/plans/m3-contracts/modules.md` §1,
 //! §3, §4; `w3-modules.md` §1.7, §2.1 to §2.4): which files each module
-//! gets, what they include and in which order their declarations are
-//! printed. The analyser computes the [`Layout`] and reports its problems;
-//! code generation only prints it.
+//! gets, what they include and forward-declare, and in which order their
+//! declarations are printed. The analyser computes the [`Layout`] and
+//! reports its problems; code generation only prints it.
 //!
 //! [`compute_layout`] starts from milestone M2's flat layout (one `.cpp` per
 //! module, named by its [`FileStem`], or `module<N>` for a name the stem
-//! refuses), orders each module's declarations with the declaration graph
-//! (`crate::order`), and then asks three hooks what goes into headers:
+//! refuses), orders each module's declarations with the program's
+//! declaration graph (`crate::order`), and then works out the headers:
 //!
 //! * [`shared_items`]: the items whose declarations go into their module's
-//!   header. Package F turned functions on ([`FUNCTIONS_IN_HEADERS`]: a
-//!   shared function's declaration, with its default values); package T
-//!   turns on structs, enums, globals and constants
-//!   ([`TYPES_AND_GLOBALS_IN_HEADERS`]).
+//!   header: a shared function's declaration, with its default values; a
+//!   shared struct's or enum's definition (an enum's print support declared
+//!   right after it); a shared variable's or `const` constant's `extern`
+//!   declaration; a shared `constexpr` constant's definition.
 //! * [`header_parts`]: the order of those declarations in the header
-//!   (`header_order`), the declaration graph's; T's program-wide graph
-//!   replaces it.
-//! * [`includes`]: the project headers each file includes. A `.cpp`
-//!   includes its own header and the header of each module whose shared
-//!   functions its code calls; a header includes the header of each module
-//!   whose shared functions the default values it prints call ([`Needs`]).
-//!   T adds types, constants and globals, and the forward declarations.
+//!   (`header_order`), the program graph's.
+//! * [`includes`]: the project headers each file includes, and the types a
+//!   header forward-declares instead ([`Needs`], w3-modules.md §2.4). A
+//!   header includes another module's header when a header part needs a
+//!   complete type or a declaration from it: a default value (a function's
+//!   or a field's), a `constexpr` constant's value, a field that names it,
+//!   a shared global's type. A type named only in a function's inputs and
+//!   result is forward-declared. A field that names another module's struct
+//!   only inside lists includes its header too (unlike modules.md §3.3): the
+//!   field's `{}` initialiser makes `std::vector`'s constructor and
+//!   destructor need the struct complete, so a header that only declared it
+//!   would not compile alone (g++ 11 to 14, clang 18; the struct of the
+//!   module's own header is complete at the end of it, so a forward
+//!   declaration still serves there). A `.cpp` includes its own header, the
+//!   header of each module whose shared definitions its code names, and the
+//!   headers of the types its included headers forward-declare, so that
+//!   every type it touches is complete.
 //!
 //! The headers bring the rules of w3-modules.md §2.1 to §2.4, reported here
-//! for functions in a project of several modules:
+//! in a project of several modules:
 //!
-//! * `B2C-E0213`: a function that is not shared has the name of a shared
-//!   function, of its own module or of any other (W3M-D10: program-wide, so
-//!   it never appears because of an unrelated edit). The message names the
+//! * `B2C-E0210`: two modules share definitions with one name (two shared
+//!   functions are `B2C-E0211`, reported where functions are declared).
+//! * `B2C-E0213`: a definition that is not shared has the name of a shared
+//!   one, of its own module or of any other (W3M-D10: program-wide, so it
+//!   never appears because of an unrelated edit). The message names the
 //!   cause when the module's file does include that header, with the chain
 //!   of includes as related locations.
-//! * `B2C-E0214`: what a shared function's header part shows (its inputs'
-//!   types, its result's type, its default values) names a definition of
-//!   its module that is not shared.
-//! * `B2C-E0421`: functions of different modules whose default values call
-//!   each other in a circle (a circle within one module is the declaration
-//!   graph's).
-//! * `B2C-E0422`: headers that would include each other when no such circle
-//!   of definitions explains it.
+//! * `B2C-E0214`: what a shared definition's header part shows names a
+//!   definition of its module that is not shared.
+//! * `B2C-E0422`: headers that would include each other when no circle of
+//!   definitions explains it. A circle of definitions, also across modules,
+//!   is the declaration graph's (`B2C-E0420`, `B2C-E0421`).
 //!
 //! A single-module project shares nothing, so it gets M2's layout and its
 //! C++ does not change. The layout also reports `B2C-E0221` for a module
@@ -49,34 +58,34 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use b2c_ir::diag::{DiagSource, Diagnostic, Location, Part};
 use b2c_ir::ids::SymbolId;
 use b2c_ir::layout::{Layout, ModuleFiles};
-use b2c_ir::sast::{Block, Expr, ExprKind, Item, ItemKind, Module, SymbolKind, SymbolTable};
+use b2c_ir::sast::{Block, Expr, ExprKind, Item, ItemKind, Module, Stmt, StmtKind, SymbolKind, SymbolTable};
 use b2c_ir::text::{FileStem, StemError};
 use b2c_ir::types::Type;
 
 use crate::codes;
+use crate::consts::Constant;
 use crate::messages::{Diags, quoted};
-use crate::order::{Dep, Graph, Need, Node, NodeKind};
-
-/// Whether a shared function's declaration goes into its module's header
-/// (package F, w3-modules.md §1.2).
-const FUNCTIONS_IN_HEADERS: bool = true;
-
-/// Whether a shared struct, enum, global or constant goes into its module's
-/// header (package T, w3-modules.md §1.3).
-const TYPES_AND_GLOBALS_IN_HEADERS: bool = false;
+use crate::order::item_symbol;
 
 /// The message of `B2C-E0221` (modules.md §2).
 const RESERVED_MODULE_MESSAGE: &str =
     "Module names that start with `b2c` are kept for files that Blocks2Cpp writes. Rename the module.";
 
 /// The layout of a lowered program, with its problems: the declaration
-/// graph's cycles (`B2C-E0420`, `B2C-E0421`), module names that start with
-/// `b2c` (`B2C-E0221`), and the rules of shared functions (`B2C-E0213`,
-/// `B2C-E0214`, `B2C-E0421` across modules, `B2C-E0422`).
-pub(crate) fn compute_layout(modules: &[Module], symbols: &SymbolTable, diags: &mut Diags) -> Layout {
+/// graph's cycles (`B2C-E0420`, `B2C-E0421`) and `B2C-E0423`, module names
+/// that start with `b2c` (`B2C-E0221`), and the rules of shared definitions
+/// (`B2C-E0210`, `B2C-E0213`, `B2C-E0214`, `B2C-E0422`). `constants` holds
+/// the values L10 knows (`B2C-E0423` lets another module read a constant
+/// C++ sets before any code runs).
+pub(crate) fn compute_layout(
+    modules: &[Module],
+    symbols: &SymbolTable,
+    constants: &BTreeMap<SymbolId, Constant>,
+    diags: &mut Diags,
+) -> Layout {
     check_module_names(modules, diags);
     let mut layout = Layout::flat(modules, symbols);
-    crate::order::order_declarations(modules, symbols, &mut layout, diags);
+    let explained = crate::order::order_declarations(modules, symbols, constants, &mut layout, diags);
     for (module, files) in modules.iter().zip(&mut layout.modules) {
         let shared = shared_items(module);
         files.header_order = header_parts(files, &shared);
@@ -84,10 +93,9 @@ pub(crate) fn compute_layout(modules: &[Module], symbols: &SymbolTable, diags: &
     }
     let program = ProgramView::new(modules, symbols);
     let needs = Needs::collect(&program, &layout);
-    includes(&mut layout, &needs);
+    includes(&mut layout, &needs, symbols);
     if layout.multi_module() {
         check_header_parts(&program, &layout, diags);
-        let explained = check_function_cycles(&program, diags);
         check_header_cycles(&program, &layout, &needs, &explained, diags);
         check_shared_names(&program, &layout, &needs, diags);
     }
@@ -113,7 +121,7 @@ fn check_module_names(modules: &[Module], diags: &mut Diags) {
 
 /// The items of a module whose declarations go into its header, by index
 /// into `Module::items`: the shared ones (`Item::shared`, which the analyser
-/// sets only in a project of several modules) of a kind headers hold yet.
+/// sets only in a project of several modules).
 pub(crate) fn shared_items(module: &Module) -> Vec<usize> {
     module
         .items
@@ -128,8 +136,7 @@ pub(crate) fn shared_items(module: &Module) -> Vec<usize> {
 fn goes_into_header(item: &Item) -> bool {
     item.shared
         && match &item.kind {
-            ItemKind::Function(_) => FUNCTIONS_IN_HEADERS,
-            ItemKind::Struct(_) | ItemKind::Enum(_) | ItemKind::Global(_) => TYPES_AND_GLOBALS_IN_HEADERS,
+            ItemKind::Function(_) | ItemKind::Struct(_) | ItemKind::Enum(_) | ItemKind::Global(_) => true,
             // `main` and *use header* are never shared.
             ItemKind::Main(_) | ItemKind::UseHeader { .. } => false,
         }
@@ -146,12 +153,17 @@ pub(crate) fn header_parts(files: &ModuleFiles, shared: &[usize]) -> Vec<usize> 
         .collect()
 }
 
-/// The project headers each file includes, each list sorted by file name. A
-/// `.cpp` includes its own header, before its definitions (w3-modules.md
-/// §1.7: without it a `const` constant's definition has internal linkage
-/// and does not link), and the header of every module its code needs; a
-/// header includes the header of every module its declarations need.
-pub(crate) fn includes(layout: &mut Layout, needs: &Needs<'_>) {
+/// The project headers each file includes, each list sorted by file name,
+/// and the other modules' types each header forward-declares, sorted by
+/// name (no type is in a namespace yet). A `.cpp` includes its own header,
+/// before its definitions (w3-modules.md §1.7: without it a `const`
+/// constant's definition has internal linkage and does not link), and the
+/// header of every module its code needs ([`Needs::source`], which holds
+/// the headers of the types its included headers forward-declare too); a
+/// header includes the header of every module its declarations need
+/// complete, and forward-declares the types of the other modules it names
+/// only where a declaration is enough.
+pub(crate) fn includes(layout: &mut Layout, needs: &Needs<'_>, symbols: &SymbolTable) {
     let headers: Vec<bool> = layout.modules.iter().map(|files| files.header).collect();
     let stems: Vec<FileStem> = layout.modules.iter().map(|files| files.stem.clone()).collect();
     let ids: Vec<_> = layout.modules.iter().map(|files| files.module.clone()).collect();
@@ -175,19 +187,29 @@ pub(crate) fn includes(layout: &mut Layout, needs: &Needs<'_>) {
             source.insert(m);
         }
         files.source_includes = listed(source);
-        files.header_includes = if files.header {
-            listed(
-                needs
-                    .header
-                    .get(m)
-                    .into_iter()
-                    .flat_map(BTreeMap::keys)
-                    .copied()
-                    .collect(),
-            )
+        if files.header {
+            let included: BTreeSet<usize> = needs
+                .header
+                .get(m)
+                .into_iter()
+                .flat_map(BTreeMap::keys)
+                .copied()
+                .collect();
+            let mut forward: Vec<(&str, &SymbolId)> = needs
+                .forward
+                .get(m)
+                .into_iter()
+                .flatten()
+                .filter(|(_, (module, _))| !included.contains(module))
+                .filter_map(|(id, _)| Some((symbols.get(id)?.name.as_str(), *id)))
+                .collect();
+            forward.sort();
+            files.forward = forward.into_iter().map(|(_, id)| id.clone()).collect();
+            files.header_includes = listed(included);
         } else {
-            Vec::new()
-        };
+            files.header_includes = Vec::new();
+            files.forward = Vec::new();
+        }
     }
 }
 
@@ -254,16 +276,24 @@ impl<'p> ProgramView<'p> {
     fn location(&self, symbol: &SymbolId) -> Option<Location> {
         self.symbols.get(symbol).map(|s| s.origin.location())
     }
-}
 
-/// The symbol an item defines (a function, struct, enum or global).
-fn item_symbol(item: &Item) -> Option<&SymbolId> {
-    match &item.kind {
-        ItemKind::Function(def) => Some(&def.symbol),
-        ItemKind::Struct(def) => Some(&def.symbol),
-        ItemKind::Enum(def) => Some(&def.symbol),
-        ItemKind::Global(def) => Some(&def.symbol),
-        ItemKind::Main(_) | ItemKind::UseHeader { .. } => None,
+    /// The index of the module a symbol is declared in.
+    fn module_of(&self, symbol: &SymbolId) -> Option<usize> {
+        let module = &self.symbols.get(symbol)?.origin.module;
+        self.modules.iter().position(|m| m.id == *module)
+    }
+
+    /// What a definition is, for messages: `function`, `struct`, `enum`,
+    /// `global variable` or `global constant`.
+    fn kind_word(&self, symbol: &SymbolId) -> &'static str {
+        match self.symbols.get(symbol).map(|s| &s.kind) {
+            Some(SymbolKind::Function { .. }) => "function",
+            Some(SymbolKind::Struct { .. }) => "struct",
+            Some(SymbolKind::Enum { .. }) => "enum",
+            Some(SymbolKind::Global { is_const: true }) => "global constant",
+            Some(SymbolKind::Global { is_const: false }) => "global variable",
+            _ => "definition",
+        }
     }
 }
 
@@ -276,6 +306,23 @@ fn header_name(layout: &Layout, module: usize) -> String {
         .unwrap_or_default()
 }
 
+/// Which header part of a shared definition makes a need, for messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Why {
+    /// A function's default value.
+    DefaultValue,
+    /// A struct's field, which holds the type.
+    Field,
+    /// A struct's field's default value.
+    FieldDefault,
+    /// A `constexpr` constant's value.
+    Value,
+    /// A shared global's type.
+    GlobalType,
+    /// A function's inputs or result (a forward declaration is enough).
+    Signature,
+}
+
 /// Why a file needs another module's header: the first use of one of that
 /// module's shared definitions in it.
 #[derive(Debug, Clone)]
@@ -285,15 +332,49 @@ pub(crate) struct Reason<'p> {
     /// The shared definition used.
     used: &'p SymbolId,
     /// For a header's need, the shared definition of the module whose
-    /// header part (a default value) uses it.
+    /// header part uses it.
     by: Option<&'p SymbolId>,
+    /// Which part of `by` uses it.
+    why: Why,
+}
+
+impl Reason<'_> {
+    /// What makes the need, for messages: `` the default value of `f` uses
+    /// `g` ``, `` `Shape` holds `Palette` ``.
+    fn cause(&self, program: &ProgramView<'_>) -> String {
+        let by = self.by.map(|by| program.name(by)).unwrap_or_default();
+        let used = program.name(self.used);
+        match self.why {
+            Why::DefaultValue => format!("the default value of {by} uses {used}"),
+            Why::Field => format!("{by} holds {used}"),
+            Why::FieldDefault => format!("a default value of {by} uses {used}"),
+            Why::Value => format!("the value of {by} uses {used}"),
+            Why::GlobalType => format!("the type of {by} uses {used}"),
+            Why::Signature => format!("{by} names {used}"),
+        }
+    }
+
+    /// The part that makes the need, for related locations: `the default
+    /// value of `f``, `the fields of `Shape``.
+    fn part(&self, program: &ProgramView<'_>) -> String {
+        let by = self.by.map(|by| program.name(by)).unwrap_or_default();
+        match self.why {
+            Why::DefaultValue => format!("the default value of {by}"),
+            Why::Field => format!("the fields of {by}"),
+            Why::FieldDefault => format!("the default values of {by}'s fields"),
+            Why::Value => format!("the value of {by}"),
+            Why::GlobalType => format!("the type of {by}"),
+            Why::Signature => format!("the inputs and result of {by}"),
+        }
+    }
 }
 
 /// What each module's files need of the other modules' headers
 /// (w3-modules.md §2.4): for a `.cpp`, the first reason for each; for a
-/// header, the first reason of each shared function whose default values
-/// need it, in order, since `B2C-E0422` goes on each of them. The first
-/// reason is the one the include and the chain of `B2C-E0213` name.
+/// header, the first reason of each shared definition whose header part
+/// needs it, in order, since `B2C-E0422` goes on each of them, and the
+/// types it may forward-declare. The first reason is the one the include
+/// and the chain of `B2C-E0213` name.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Needs<'p> {
     /// By module index: the modules whose headers its `.cpp` needs.
@@ -301,22 +382,157 @@ pub(crate) struct Needs<'p> {
     /// By module index: the modules whose headers its header needs, each
     /// with at least one reason.
     header: Vec<BTreeMap<usize, Vec<Reason<'p>>>>,
+    /// By module index: the other modules' types its header names only
+    /// where a declaration is enough, each with its module and first reason.
+    forward: Vec<BTreeMap<&'p SymbolId, (usize, Reason<'p>)>>,
+}
+
+/// How a header part names a type: complete, or where a forward
+/// declaration is enough.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Want {
+    Complete,
+    Forward,
+}
+
+/// What one item prints in its module's header and in its `.cpp`: the
+/// types it names (each with how the header needs it) and the expressions
+/// and statements it prints.
+#[derive(Default)]
+struct ItemParts<'p> {
+    /// The header's types, with how they are needed, where and why.
+    header_types: Vec<(&'p Type, Want, Location, Why)>,
+    /// The header's expressions, why each is printed there.
+    header_exprs: Vec<(&'p Expr, Why)>,
+    /// The `.cpp`'s types, each with where.
+    source_types: Vec<(&'p Type, Location)>,
+    /// The `.cpp`'s expressions.
+    source_exprs: Vec<&'p Expr>,
+    /// The `.cpp`'s statement lists.
+    source_bodies: Vec<&'p Block>,
+}
+
+impl<'p> ItemParts<'p> {
+    /// Splits an item between its header (when it goes into one) and its
+    /// `.cpp` (modules.md §3.2, w3-modules.md §1.7).
+    fn of(item: &'p Item, symbols: &'p SymbolTable, in_header: bool) -> Self {
+        let mut parts = ItemParts::default();
+        let ty_of = |id: &SymbolId| symbols.get(id).map(|s| (&s.ty, s.origin.location()));
+        match &item.kind {
+            ItemKind::Main(main) => parts.source_bodies.push(&main.body),
+            ItemKind::Function(def) => {
+                let signature = def
+                    .params
+                    .iter()
+                    .filter_map(|p| ty_of(&p.symbol))
+                    .chain(std::iter::once((&def.ret, item.origin.location())));
+                let defaults = def.params.iter().filter_map(|p| p.default.as_ref());
+                for (ty, location) in signature {
+                    if in_header {
+                        parts
+                            .header_types
+                            .push((ty, Want::Forward, location.clone(), Why::Signature));
+                    }
+                    parts.source_types.push((ty, location));
+                }
+                if in_header {
+                    parts
+                        .header_exprs
+                        .extend(defaults.map(|e| (e, Why::DefaultValue)));
+                } else {
+                    parts.source_exprs.extend(defaults);
+                }
+                parts.source_bodies.push(&def.body);
+            }
+            ItemKind::Struct(def) => {
+                let Some(SymbolKind::Struct { fields, .. }) = symbols.get(&def.symbol).map(|s| &s.kind)
+                else {
+                    return parts;
+                };
+                for field in fields {
+                    let Some((ty, location)) = ty_of(field) else {
+                        continue;
+                    };
+                    if in_header {
+                        parts
+                            .header_types
+                            .push((ty, Want::Complete, location, Why::Field));
+                    } else {
+                        parts.source_types.push((ty, location));
+                    }
+                }
+                if in_header {
+                    parts
+                        .header_exprs
+                        .extend(def.defaults.values().map(|e| (e, Why::FieldDefault)));
+                } else {
+                    parts.source_exprs.extend(def.defaults.values());
+                }
+            }
+            ItemKind::Global(def) => {
+                let Some((ty, location)) = ty_of(&def.symbol) else {
+                    return parts;
+                };
+                match (in_header, def.constexpr) {
+                    (true, true) => {
+                        parts
+                            .header_types
+                            .push((ty, Want::Complete, location, Why::GlobalType));
+                        parts
+                            .header_exprs
+                            .extend(def.init.iter().map(|e| (e, Why::Value)));
+                    }
+                    (true, false) => {
+                        parts
+                            .header_types
+                            .push((ty, Want::Complete, location.clone(), Why::GlobalType));
+                        parts.source_types.push((ty, location));
+                        parts.source_exprs.extend(def.init.iter());
+                    }
+                    (false, _) => {
+                        parts.source_types.push((ty, location));
+                        parts.source_exprs.extend(def.init.iter());
+                    }
+                }
+            }
+            ItemKind::Enum(_) | ItemKind::UseHeader { .. } => {}
+        }
+        parts
+    }
+}
+
+/// The symbols a statement changes or names by ID, not through an
+/// expression: assignment targets, a collection changed, a file written.
+fn stmt_symbols(stmt: &Stmt) -> Vec<&SymbolId> {
+    match &stmt.kind {
+        StmtKind::Assign { target, .. }
+        | StmtKind::CompoundAssign { target, .. }
+        | StmtKind::Ask { target, .. }
+        | StmtKind::SetField { target, .. }
+        | StmtKind::Flip { target } => vec![target],
+        StmtKind::CollectionOp { collection, .. } => vec![collection],
+        StmtKind::WriteFile { file, .. } => vec![file],
+        _ => Vec::new(),
+    }
 }
 
 impl<'p> Needs<'p> {
-    /// Walks every item once: a call to another module's function that goes
-    /// into that module's header is a need of the file that prints the call
-    /// (a function's default values are printed with its declaration, so in
-    /// its header when it has one).
+    /// Walks every item once: a use of another module's shared definition
+    /// is a need of the file that prints it (an item's header part is
+    /// printed in its module's header when it is shared, the rest in its
+    /// `.cpp`). Then each `.cpp` also needs the header of every type that a
+    /// header it includes forward-declares.
     fn collect(program: &ProgramView<'p>, layout: &Layout) -> Self {
         let count = program.modules.len();
         let mut needs = Needs {
             source: vec![BTreeMap::new(); count],
             header: vec![BTreeMap::new(); count],
+            forward: vec![BTreeMap::new(); count],
         };
         if count < 2 {
             return needs;
         }
+        let symbols = program.symbols;
         for (m, module) in program.modules.iter().enumerate() {
             let in_header: BTreeSet<usize> = layout
                 .modules
@@ -324,194 +540,389 @@ impl<'p> Needs<'p> {
                 .map(|files| files.header_order.iter().copied().collect())
                 .unwrap_or_default();
             for (index, item) in module.items.iter().enumerate() {
-                let (printed, declared) = item_exprs(item);
-                let (to_header, by) = match &item.kind {
-                    ItemKind::Function(def) if in_header.contains(&index) => (true, Some(&def.symbol)),
-                    _ => (false, None),
-                };
-                for expr in printed {
-                    needs.walk(program, m, expr, None, false);
+                let shared = in_header.contains(&index);
+                let by = shared.then(|| item_symbol(item)).flatten();
+                let parts = ItemParts::of(item, symbols, shared);
+                for (ty, want, location, why) in &parts.header_types {
+                    for id in user_types(ty) {
+                        let place = Place {
+                            m,
+                            by,
+                            why: *why,
+                            location,
+                        };
+                        needs.header_type(program, id, *want, &place);
+                    }
                 }
-                for expr in declared {
-                    needs.walk(program, m, expr, by, to_header);
+                for (expr, why) in &parts.header_exprs {
+                    needs.walk(program, m, expr, Some((by, *why)));
+                }
+                for (ty, location) in &parts.source_types {
+                    for id in user_types(ty) {
+                        needs.source_use(program, m, id, location);
+                    }
+                }
+                for expr in &parts.source_exprs {
+                    needs.walk(program, m, expr, None);
+                }
+                for body in parts.source_bodies {
+                    for stmt in body_stmts(body) {
+                        let location = stmt.origin.location();
+                        for id in stmt_symbols(stmt) {
+                            needs.source_use(program, m, id, &location);
+                        }
+                        for expr in crate::nesting::parts(stmt).0 {
+                            needs.walk(program, m, expr, None);
+                        }
+                    }
                 }
             }
         }
+        // The locals' types: variables, loop items and parameters, which a
+        // module's `.cpp` declares.
+        for (id, symbol) in &symbols.symbols {
+            let local = matches!(
+                symbol.kind,
+                SymbolKind::Variable { .. } | SymbolKind::Parameter { .. } | SymbolKind::LoopVariable
+            );
+            if local && let Some(m) = program.module_of(id) {
+                for used in user_types(&symbol.ty) {
+                    needs.source_use(program, m, used, &symbol.origin.location());
+                }
+            }
+        }
+        needs.close_sources(layout);
         needs
     }
 
-    /// Records the needs of one expression tree of module `m`.
+    /// Records a `.cpp`'s use of the definition `used`, when it is another
+    /// module's and goes into that module's header.
+    fn source_use(&mut self, program: &ProgramView<'p>, m: usize, used: &'p SymbolId, location: &Location) {
+        let Some(def) = program.def(used) else {
+            return;
+        };
+        if def.module == m || !program.item(def).is_some_and(goes_into_header) {
+            return;
+        }
+        if let Some(list) = self.source.get_mut(m) {
+            list.entry(def.module).or_insert(Reason {
+                location: location.clone(),
+                used,
+                by: None,
+                why: Why::DefaultValue,
+            });
+        }
+    }
+
+    /// Records a header part's use of the definition `used`: an include, or
+    /// a forward declaration when one is enough.
+    fn header_type(
+        &mut self,
+        program: &ProgramView<'p>,
+        used: &'p SymbolId,
+        want: Want,
+        place: &Place<'_, 'p>,
+    ) {
+        let Some(def) = program.def(used) else {
+            return;
+        };
+        if def.module == place.m || !program.item(def).is_some_and(goes_into_header) {
+            return;
+        }
+        let reason = Reason {
+            location: place.location.clone(),
+            used,
+            by: place.by,
+            why: place.why,
+        };
+        match want {
+            Want::Complete => self.header_need(place.m, def.module, reason),
+            Want::Forward => {
+                if let Some(list) = self.forward.get_mut(place.m) {
+                    list.entry(used).or_insert((def.module, reason));
+                }
+            }
+        }
+    }
+
+    /// Records that module `m`'s header needs module `n`'s: the reason is
+    /// kept when it is the first of its shared definition.
+    fn header_need(&mut self, m: usize, n: usize, reason: Reason<'p>) {
+        if let Some(list) = self.header.get_mut(m) {
+            let reasons = list.entry(n).or_default();
+            if !reasons.iter().any(|known| known.by == reason.by) {
+                reasons.push(reason);
+            }
+        }
+    }
+
+    /// Records the needs of one expression tree of module `m`, printed in
+    /// the header for `in_header`'s shared definition and part, or else in
+    /// the `.cpp`: each function it calls, each global it reads, each enum
+    /// value's enum and each user type its values have.
     fn walk(
         &mut self,
         program: &ProgramView<'p>,
         m: usize,
         root: &'p Expr,
-        by: Option<&'p SymbolId>,
-        header: bool,
+        in_header: Option<(Option<&'p SymbolId>, Why)>,
     ) {
-        let mut stack = vec![root];
-        while let Some(expr) = stack.pop() {
-            if let ExprKind::Call { function, .. } = &expr.kind
-                && let Some(def) = program.def(function)
-                && def.module != m
-                && program.item(def).is_some_and(goes_into_header)
-            {
-                let reason = Reason {
-                    location: expr.origin.location(),
-                    used: function,
-                    by,
-                };
-                if header {
-                    if let Some(list) = self.header.get_mut(m) {
-                        let reasons = list.entry(def.module).or_default();
-                        if !reasons.iter().any(|known| known.by == by) {
-                            reasons.push(reason);
-                        }
+        for (used, location) in named_in(root, program.symbols) {
+            match in_header {
+                Some((by, why)) => {
+                    let place = Place {
+                        m,
+                        by,
+                        why,
+                        location: &location,
+                    };
+                    self.header_type(program, used, Want::Complete, &place);
+                }
+                None => self.source_use(program, m, used, &location),
+            }
+        }
+    }
+
+    /// Adds to each `.cpp`'s needs the header of every type that a header
+    /// it includes (its own, or one it needs, directly or through other
+    /// headers) forward-declares, with the reason of that forward
+    /// declaration, until nothing is added.
+    fn close_sources(&mut self, layout: &Layout) {
+        for m in 0..self.source.len() {
+            let mut queue: VecDeque<usize> = self.source[m].keys().copied().collect();
+            if layout.modules.get(m).is_some_and(|files| files.header) {
+                queue.push_back(m);
+            }
+            let mut seen: BTreeSet<usize> = queue.iter().copied().collect();
+            while let Some(h) = queue.pop_front() {
+                let next: Vec<usize> = self.header[h].keys().copied().collect();
+                for n in next {
+                    if seen.insert(n) {
+                        queue.push_back(n);
                     }
-                } else if let Some(list) = self.source.get_mut(m) {
-                    list.entry(def.module).or_insert(reason);
+                }
+                let forwarded: Vec<(usize, Reason<'p>)> = self.forward[h].values().cloned().collect();
+                for (n, reason) in forwarded {
+                    if n != m && !self.source[m].contains_key(&n) {
+                        self.source[m].insert(n, reason);
+                    }
+                    if seen.insert(n) {
+                        queue.push_back(n);
+                    }
                 }
             }
-            let mut children = crate::flow::children(expr);
-            children.reverse();
-            stack.extend(children);
         }
     }
 }
 
-/// The expressions of an item: those printed only with its definition (a
-/// body, a global's starting value, a struct's default values), and those
-/// printed with its declaration (a function's default values).
-fn item_exprs(item: &Item) -> (Vec<&Expr>, Vec<&Expr>) {
-    match &item.kind {
-        ItemKind::Main(main) => (body_exprs(&main.body), Vec::new()),
-        ItemKind::Function(def) => (
-            body_exprs(&def.body),
-            def.params.iter().filter_map(|p| p.default.as_ref()).collect(),
-        ),
-        ItemKind::Global(def) => (def.init.iter().collect(), Vec::new()),
-        ItemKind::Struct(def) => (def.defaults.values().collect(), Vec::new()),
-        ItemKind::Enum(_) | ItemKind::UseHeader { .. } => (Vec::new(), Vec::new()),
-    }
+/// Where a header part names something: its module, its shared
+/// definition, which part and where.
+struct Place<'l, 'p> {
+    m: usize,
+    by: Option<&'p SymbolId>,
+    why: Why,
+    location: &'l Location,
 }
 
-/// Every expression directly in a statement of a list, at any depth of
-/// statements, in order.
-fn body_exprs(body: &Block) -> Vec<&Expr> {
-    let mut exprs = Vec::new();
+/// Every statement of a list, at any depth of statements, in order.
+fn body_stmts(body: &Block) -> Vec<&Stmt> {
+    let mut stmts = Vec::new();
     let mut lists = vec![body];
     while let Some(list) = lists.pop() {
         for stmt in &list.stmts {
-            let (values, nested) = crate::nesting::parts(stmt);
-            exprs.extend(values);
-            lists.extend(nested.into_iter().rev());
+            stmts.push(stmt);
+            lists.extend(crate::nesting::parts(stmt).1.into_iter().rev());
         }
     }
-    exprs
+    stmts
 }
 
-// --- B2C-E0214: what a shared function's header shows ------------------------
+// --- B2C-E0214: what a shared definition's header shows ----------------------
 
-/// Reports each definition of a shared function's own module that its
+/// Reports each definition of a shared definition's own module that its
 /// header part names but the module does not share (`B2C-E0214`,
-/// w3-modules.md §1.9): the types of its inputs and its result, and what
-/// its default values call, read or build. Other modules could not use the
-/// declaration. A body is printed only in the module's `.cpp`, so what it
-/// names never counts; another module's definition that is not shared is
-/// `B2C-E0206` where it is used.
+/// w3-modules.md §1.9): a function's inputs' and result's types and its
+/// default values; a struct's fields' types and default values; a shared
+/// global's type. Other modules could not use the declaration. A body, a
+/// variable's starting value and a `const` constant's value are printed only
+/// in the module's `.cpp`, so what they name never counts, and a constant
+/// whose value names something not shared is printed `extern const` (the
+/// analyser does not make it `constexpr`); another module's definition that
+/// is not shared is `B2C-E0206` where it is used.
 fn check_header_parts(program: &ProgramView<'_>, layout: &Layout, diags: &mut Diags) {
     for (m, files) in layout.modules.iter().enumerate() {
         for &index in &files.header_order {
             let Some(item) = program.modules.get(m).and_then(|module| module.items.get(index)) else {
                 continue;
             };
-            let ItemKind::Function(def) = &item.kind else {
+            let Some(owner) = item_symbol(item) else {
                 continue;
             };
-            let function = program.name(&def.symbol);
-            let mut reported: BTreeSet<(usize, SymbolId)> = BTreeSet::new();
-            let mut report =
-                |diags: &mut Diags, row: usize, target: &SymbolId, location: Location, what: String| {
-                    if !reported.insert((row, target.clone())) {
-                        return;
-                    }
-                    let name = program.name(target);
-                    let message =
-                        format!("{function} is shared, but {what}, which is not. Share {name} too.");
-                    let mut diagnostic = Diagnostic::error(
-                        codes::NOT_SHARED_IN_HEADER,
-                        DiagSource::Analyser,
-                        location,
-                        message,
-                    );
-                    if let Some(at) = program.location(target) {
-                        diagnostic =
-                            diagnostic.with_related(at, format!("{name} is defined here, not shared"));
-                    }
-                    diags.push(diagnostic);
-                };
-            let private = |id: &SymbolId| {
-                program
-                    .def(id)
-                    .filter(|d| d.module == m)
-                    .and_then(|d| program.item(d))
-                    .is_some_and(|item| !item.shared)
+            let mut check = HeaderCheck {
+                program,
+                m,
+                owner: program.name(owner),
+                reported: BTreeSet::new(),
+                diags: &mut *diags,
             };
-            for (row, param) in def.params.iter().enumerate() {
-                let Some(symbol) = program.symbols.get(&param.symbol) else {
-                    continue;
-                };
-                for id in user_types(&symbol.ty) {
-                    if private(id) {
-                        let what = if symbol.ty == Type::Named(id.clone()) {
-                            format!(
-                                "its input {} has the type {}",
-                                quoted(symbol.name.as_str()),
-                                program.name(id)
-                            )
-                        } else {
-                            format!(
-                                "the type of its input {} uses {}",
-                                quoted(symbol.name.as_str()),
-                                program.name(id)
-                            )
-                        };
-                        report(diags, row, id, param.origin.location(), what);
-                    }
-                }
+            match &item.kind {
+                ItemKind::Function(def) => check.function(def, item),
+                ItemKind::Struct(def) => check.structure(def),
+                ItemKind::Global(def) => check.global(&def.symbol),
+                ItemKind::Enum(_) | ItemKind::Main(_) | ItemKind::UseHeader { .. } => {}
             }
-            let result = Location {
-                part: Part::Field {
-                    name: String::from("RETURNS"),
-                },
-                ..item.origin.location()
+        }
+    }
+}
+
+/// The `B2C-E0214` checks of one shared definition's header part.
+struct HeaderCheck<'a, 'p> {
+    program: &'a ProgramView<'p>,
+    /// Its module.
+    m: usize,
+    /// Its name, quoted.
+    owner: String,
+    /// What was reported, by part (a row, or `usize::MAX` for the result
+    /// or the type) and definition.
+    reported: BTreeSet<(usize, SymbolId)>,
+    diags: &'a mut Diags,
+}
+
+impl HeaderCheck<'_, '_> {
+    /// Whether `id` is a definition of the module that it does not share.
+    fn private(&self, id: &SymbolId) -> bool {
+        self.program
+            .def(id)
+            .filter(|d| d.module == self.m)
+            .and_then(|d| self.program.item(d))
+            .is_some_and(|item| !item.shared)
+    }
+
+    fn report(&mut self, row: usize, target: &SymbolId, location: Location, what: &str) {
+        if !self.reported.insert((row, target.clone())) {
+            return;
+        }
+        let name = self.program.name(target);
+        let message = format!(
+            "{} is shared, but {what}, which is not. Share {name} too.",
+            self.owner
+        );
+        let mut diagnostic = Diagnostic::error(
+            codes::NOT_SHARED_IN_HEADER,
+            DiagSource::Analyser,
+            location,
+            message,
+        );
+        if let Some(at) = self.program.location(target) {
+            diagnostic = diagnostic.with_related(at, format!("{name} is defined here, not shared"));
+        }
+        self.diags.push(diagnostic);
+    }
+
+    /// The types a part's type names: `has the type` for the type itself,
+    /// `uses` for one inside it.
+    fn types(&mut self, row: usize, ty: &Type, location: &Location, subject: &str) {
+        for id in user_types(ty) {
+            if self.private(id) {
+                let name = self.program.name(id);
+                let what = if *ty == Type::Named(id.clone()) {
+                    format!("{subject} has the type {name}")
+                } else {
+                    format!("the type of {subject} uses {name}")
+                };
+                self.report(row, id, location.clone(), &what);
+            }
+        }
+    }
+
+    /// The definitions a default value names.
+    fn value(&mut self, row: usize, value: &Expr, subject: &str) {
+        for (id, location) in named_in(value, self.program.symbols) {
+            if self.private(id) {
+                let what = format!("the default value of {subject} uses {}", self.program.name(id));
+                self.report(row, id, location, &what);
+            }
+        }
+    }
+
+    /// A shared function: its inputs' types, its result's type, its default
+    /// values.
+    fn function(&mut self, def: &b2c_ir::sast::FunctionDef, item: &Item) {
+        let symbols = self.program.symbols;
+        for (row, param) in def.params.iter().enumerate() {
+            let Some(symbol) = symbols.get(&param.symbol) else {
+                continue;
             };
-            for id in user_types(&def.ret) {
-                if private(id) {
-                    let what = if def.ret == Type::Named(id.clone()) {
-                        format!("its result has the type {}", program.name(id))
-                    } else {
-                        format!("the type of its result uses {}", program.name(id))
-                    };
-                    report(diags, usize::MAX, id, result.clone(), what);
-                }
-            }
-            for (row, param) in def.params.iter().enumerate() {
-                let Some(default) = &param.default else {
-                    continue;
+            let subject = format!("its input {}", quoted(symbol.name.as_str()));
+            self.types(row, &symbol.ty, &param.origin.location(), &subject);
+        }
+        let result = Location {
+            part: Part::Field {
+                name: String::from("RETURNS"),
+            },
+            ..item.origin.location()
+        };
+        for id in user_types(&def.ret) {
+            if self.private(id) {
+                let name = self.program.name(id);
+                let what = if def.ret == Type::Named(id.clone()) {
+                    format!("its result has the type {name}")
+                } else {
+                    format!("the type of its result uses {name}")
                 };
-                let input = program
-                    .symbols
-                    .get(&param.symbol)
-                    .map(|s| quoted(s.name.as_str()))
-                    .unwrap_or_default();
-                for (id, location) in named_in(default, program.symbols) {
-                    if private(id) {
-                        let what =
-                            format!("the default value of its input {input} uses {}", program.name(id));
-                        report(diags, row, id, location, what);
-                    }
-                }
+                self.report(usize::MAX, id, result.clone(), &what);
+            }
+        }
+        for (row, param) in def.params.iter().enumerate() {
+            let Some(default) = &param.default else {
+                continue;
+            };
+            let input = symbols
+                .get(&param.symbol)
+                .map(|s| quoted(s.name.as_str()))
+                .unwrap_or_default();
+            self.value(row, default, &format!("its input {input}"));
+        }
+    }
+
+    /// A shared struct: its fields' types and default values.
+    fn structure(&mut self, def: &b2c_ir::sast::StructDef) {
+        let symbols = self.program.symbols;
+        let Some(SymbolKind::Struct { fields, .. }) = symbols.get(&def.symbol).map(|s| &s.kind) else {
+            return;
+        };
+        for (row, field) in fields.iter().enumerate() {
+            let Some(symbol) = symbols.get(field) else {
+                continue;
+            };
+            let subject = format!("its field {}", quoted(symbol.name.as_str()));
+            self.types(row, &symbol.ty, &symbol.origin.location(), &subject);
+            if let Some(value) = def.defaults.get(field) {
+                self.value(row, value, &subject);
+            }
+        }
+    }
+
+    /// A shared global: its type.
+    fn global(&mut self, symbol: &SymbolId) {
+        let Some(found) = self.program.symbols.get(symbol) else {
+            return;
+        };
+        let location = Location {
+            part: Part::Field {
+                name: String::from("TYPE"),
+            },
+            ..found.origin.location()
+        };
+        for id in user_types(&found.ty) {
+            if self.private(id) {
+                let name = self.program.name(id);
+                let what = if found.ty == Type::Named(id.clone()) {
+                    format!("its type is {name}")
+                } else {
+                    format!("its type uses {name}")
+                };
+                self.report(usize::MAX, id, location.clone(), &what);
             }
         }
     }
@@ -532,9 +943,9 @@ fn user_types(ty: &Type) -> Vec<&SymbolId> {
 }
 
 /// What an expression tree names that a declaration printing it needs: the
-/// functions it calls, the globals it reads and the user types of its
-/// values, each with where.
-fn named_in<'e>(root: &'e Expr, symbols: &SymbolTable) -> Vec<(&'e SymbolId, Location)> {
+/// functions it calls, the globals it reads, each enum value's enum and the
+/// user types of its values, each with where.
+fn named_in<'e>(root: &'e Expr, symbols: &'e SymbolTable) -> Vec<(&'e SymbolId, Location)> {
     let mut found = Vec::new();
     let mut stack = vec![root];
     while let Some(expr) = stack.pop() {
@@ -544,6 +955,11 @@ fn named_in<'e>(root: &'e Expr, symbols: &SymbolTable) -> Vec<(&'e SymbolId, Loc
                 if matches!(symbols.get(sym).map(|s| &s.kind), Some(SymbolKind::Global { .. })) =>
             {
                 found.push((sym, expr.origin.location()));
+            }
+            ExprKind::Enumerator(value) => {
+                if let Some(SymbolKind::Enumerator { owner }) = symbols.get(value).map(|s| &s.kind) {
+                    found.push((owner, expr.origin.location()));
+                }
             }
             _ => {}
         }
@@ -557,137 +973,16 @@ fn named_in<'e>(root: &'e Expr, symbols: &SymbolTable) -> Vec<(&'e SymbolId, Loc
     found
 }
 
-// --- B2C-E0421 and B2C-E0422: circles across modules -------------------------
-
-/// Reports functions of different modules whose default values call each
-/// other in a circle (`B2C-E0421`, w3-modules.md §2.2): each needs the
-/// other's declaration first, which no order of headers gives. A circle
-/// within one module is the declaration graph's, reported with the module,
-/// so a function on one is not reported again when a wider circle across
-/// modules holds it (one code per cycle). Returns the functions of each
-/// such wider circle: a header's need through a call between two of them is
-/// explained by it (`B2C-E0422` is not reported for it).
-fn check_function_cycles<'p>(program: &ProgramView<'p>, diags: &mut Diags) -> Vec<BTreeSet<&'p SymbolId>> {
-    // Every function of the program, with what its default values call.
-    let mut graph = Graph::default();
-    let mut node_of: BTreeMap<&SymbolId, usize> = BTreeMap::new();
-    let mut places: Vec<(usize, &'p Item, &'p SymbolId)> = Vec::new();
-    for (m, module) in program.modules.iter().enumerate() {
-        for (index, item) in module.items.iter().enumerate() {
-            let ItemKind::Function(def) = &item.kind else {
-                continue;
-            };
-            let Some(symbol) = program.symbols.get(&def.symbol) else {
-                continue;
-            };
-            if node_of.contains_key(&def.symbol) {
-                continue;
-            }
-            let node = graph.add(Node {
-                kind: NodeKind::Function,
-                name: symbol.name.as_str().to_owned(),
-                seq: 0,
-                block: item.origin.block.clone(),
-                item: index,
-            });
-            node_of.insert(&def.symbol, node);
-            places.push((m, item, &def.symbol));
-        }
-    }
-    let mut crossing: BTreeSet<(usize, usize)> = BTreeSet::new();
-    for (node, (m, item, _)) in places.iter().enumerate() {
-        let ItemKind::Function(def) = &item.kind else {
-            continue;
-        };
-        let mut seen = BTreeSet::new();
-        for default in def.params.iter().filter_map(|p| p.default.as_ref()) {
-            for (called, location) in calls_in(default) {
-                let Some(&on) = node_of.get(called) else {
-                    continue;
-                };
-                if on == node || !seen.insert(on) {
-                    continue;
-                }
-                if places[on].0 != *m {
-                    crossing.insert((node, on));
-                }
-                graph.deps[node].push(Dep {
-                    on,
-                    need: Need::Complete,
-                    via: Some((graph.nodes[on].name.clone(), location)),
-                    field: false,
-                });
-            }
-        }
-    }
-    if crossing.is_empty() {
-        return Vec::new();
-    }
-    // The functions on a circle within one module, which its declaration
-    // graph has reported.
-    let mut local = graph.clone();
-    for (node, deps) in local.deps.iter_mut().enumerate() {
-        deps.retain(|dep| places[dep.on].0 == places[node].0);
-    }
-    let reported: BTreeSet<usize> = local.cycles().into_iter().flatten().collect();
-    // Only the circles that cross a module, alone in a graph of their own.
-    let mut circles = Graph::default();
-    let mut skipped = BTreeSet::new();
-    let mut explained = Vec::new();
-    for cycle in graph.cycles() {
-        let members: BTreeSet<usize> = cycle.iter().copied().collect();
-        let crosses = crossing
-            .iter()
-            .any(|(a, b)| members.contains(a) && members.contains(b));
-        if !crosses {
-            continue;
-        }
-        explained.push(cycle.iter().map(|node| places[*node].2).collect());
-        let renumbered: BTreeMap<usize, usize> = cycle
-            .iter()
-            .map(|&node| (node, circles.add(graph.nodes[node].clone())))
-            .collect();
-        skipped.extend(
-            renumbered
-                .iter()
-                .filter(|(old, _)| reported.contains(old))
-                .map(|(_, &new)| new),
-        );
-        for (&old, &new) in &renumbered {
-            for dep in &graph.deps[old] {
-                if let Some(&on) = renumbered.get(&dep.on) {
-                    circles.deps[new].push(Dep { on, ..dep.clone() });
-                }
-            }
-        }
-    }
-    circles.report_cycles_except(&skipped, diags);
-    explained
-}
-
-/// The functions an expression tree calls, with where, in order.
-fn calls_in(root: &Expr) -> Vec<(&SymbolId, Location)> {
-    let mut found = Vec::new();
-    let mut stack = vec![root];
-    while let Some(expr) = stack.pop() {
-        if let ExprKind::Call { function, .. } = &expr.kind {
-            found.push((function, expr.origin.location()));
-        }
-        let mut children = crate::flow::children(expr);
-        children.reverse();
-        stack.extend(children);
-    }
-    found
-}
+// --- B2C-E0422: headers that would include each other -----------------------
 
 /// Reports headers that would include each other (`B2C-E0422`,
 /// w3-modules.md §2.2, §2.4) when no circle of definitions explains it: on
-/// each shared function whose default value makes its header need the next
+/// each shared definition whose header part makes its header need the next
 /// one round the circle, with the rest of the circle as related locations.
-/// A need through a call between two functions of one circle of
-/// `explained` (already `B2C-E0421`) is not reported; every other need
-/// between two headers of a circle closes a circle that no circle of
-/// functions explains.
+/// A need between two definitions of one circle of `explained` (the
+/// declaration graph's circles that join modules, already `B2C-E0420` or
+/// `B2C-E0421`) is not reported; every other need between two headers of a
+/// circle closes a circle that no circle of definitions explains.
 fn check_header_cycles(
     program: &ProgramView<'_>,
     layout: &Layout,
@@ -787,7 +1082,6 @@ fn report_header_cycle(
     }
     back.reverse();
     let by = reason.by.map(|by| program.name(by)).unwrap_or_default();
-    let used = program.name(reason.used);
     let through: Vec<String> = back
         .iter()
         .skip(1)
@@ -798,7 +1092,7 @@ fn report_header_cycle(
     } else {
         format!(" through {}", listing(&through))
     };
-    // One function to move on each side only when each side's need has a
+    // One definition to move on each side only when each side's need has a
     // single reason: with two, moving one leaves the other's need.
     let single = |from: usize, to: usize| {
         needs
@@ -807,6 +1101,9 @@ fn report_header_cycle(
             .and_then(|list| list.get(&to))
             .is_some_and(|reasons| reasons.len() == 1)
     };
+    let functions = std::iter::once(reason)
+        .chain(back.iter().map(|(_, _, why)| *why))
+        .all(|why| why.why == Why::DefaultValue);
     let fix = match back.as_slice() {
         [(_, _, only)] if single(a, b) && single(b, a) => format!(
             "Move {by} into module {}, or {} into module {}.",
@@ -814,13 +1111,15 @@ fn report_header_cycle(
             program.name(only.by.unwrap_or(only.used)),
             program.module_name(a)
         ),
-        _ => String::from("Move one of these shared functions into another module."),
+        _ if functions => String::from("Move one of these shared functions into another module."),
+        _ => String::from("Move one of these shared definitions into another module."),
     };
     let message = format!(
-        "{} would need {}, because the default value of {by} uses {used} of module {}, but {} already needs {}{way_back}. \
-         Two headers can't each include the other. {fix}",
+        "{} would need {}, because {} of module {}, but {} already needs {}{way_back}. Two headers can't each \
+         include the other. {fix}",
         header_name(layout, a),
         header_name(layout, b),
+        reason.cause(program),
         program.module_name(b),
         header_name(layout, b),
         header_name(layout, a),
@@ -833,10 +1132,10 @@ fn report_header_cycle(
     );
     for (from, to, why) in back {
         let note = format!(
-            "{} needs {} for the default value of {}",
+            "{} needs {} for {}",
             header_name(layout, from),
             header_name(layout, to),
-            why.by.map(|by| program.name(by)).unwrap_or_default()
+            why.part(program)
         );
         diagnostic = diagnostic.with_related(why.location.clone(), note);
     }
@@ -852,7 +1151,7 @@ fn listing(names: &[String]) -> String {
     }
 }
 
-// --- B2C-E0213: a name that is not shared meets a shared one -----------------
+// --- B2C-E0210 and B2C-E0213: names of shared definitions --------------------
 
 /// How a module's `.cpp` comes to include a header ([`reached`]).
 #[derive(Debug, Clone, Copy)]
@@ -895,67 +1194,88 @@ fn reached<'n, 'p>(layout: &Layout, needs: &'n Needs<'p>, m: usize) -> BTreeMap<
     found
 }
 
-/// Reports each function that is not shared but has the name of a shared
-/// function (`B2C-E0213`, w3-modules.md §2.1, W3M-D10): of its own module,
-/// whose `.cpp` declares both, or of any other module, since the `.cpp`
-/// includes that module's header as soon as it uses anything the header
-/// declares, and C++ then could not tell the two apart (`::scale` would
-/// silently reach the other one). The rule is program-wide, so it never
-/// depends on what the module uses; the message names the cause when the
-/// `.cpp` does include the header, with the use and each include of the
+/// A shared definition of the program: its symbol, its module and whether
+/// it is a function.
+#[derive(Debug, Clone, Copy)]
+struct SharedDef<'p> {
+    symbol: &'p SymbolId,
+    module: usize,
+    function: bool,
+}
+
+/// Reports the names of shared definitions that C++ could not tell apart
+/// (w3-modules.md §2.1): two modules sharing definitions with one name
+/// (`B2C-E0210`; two shared functions are `B2C-E0211`, reported with the
+/// functions), and a definition that is not shared but has the name of a
+/// shared one (`B2C-E0213`, W3M-D10): of its own module, whose `.cpp`
+/// declares both (only two functions get here: any other pair of one module
+/// is `B2C-E0210` where it is declared), or of any other module, since the
+/// `.cpp` includes that module's header as soon as it uses anything the
+/// header declares, and C++ then could not tell the two apart (`::scale`
+/// would silently reach the other one). The rule is program-wide, so it
+/// never depends on what the module uses; the message names the cause when
+/// the `.cpp` does include the header, with the use and each include of the
 /// chain as related locations.
 fn check_shared_names(program: &ProgramView<'_>, layout: &Layout, needs: &Needs<'_>, diags: &mut Diags) {
-    let mut shared: BTreeMap<&str, Vec<(&SymbolId, usize)>> = BTreeMap::new();
+    let mut shared: BTreeMap<&str, Vec<SharedDef<'_>>> = BTreeMap::new();
     for (m, module) in program.modules.iter().enumerate() {
         for item in module.items.iter().filter(|item| item.shared) {
-            if let ItemKind::Function(def) = &item.kind
-                && let Some(symbol) = program.symbols.get(&def.symbol)
+            if let Some(symbol) = item_symbol(item)
+                && let Some(found) = program.symbols.get(symbol)
             {
-                shared
-                    .entry(symbol.name.as_str())
-                    .or_default()
-                    .push((&def.symbol, m));
+                shared.entry(found.name.as_str()).or_default().push(SharedDef {
+                    symbol,
+                    module: m,
+                    function: matches!(item.kind, ItemKind::Function(_)),
+                });
             }
         }
     }
     if shared.is_empty() {
         return;
     }
+    check_shared_twice(program, &shared, diags);
     for (m, module) in program.modules.iter().enumerate() {
         let mut paths = None;
         for item in module.items.iter().filter(|item| !item.shared) {
-            let ItemKind::Function(def) = &item.kind else {
+            let Some(symbol_id) = item_symbol(item) else {
                 continue;
             };
-            let Some(symbol) = program.symbols.get(&def.symbol) else {
+            let Some(symbol) = program.symbols.get(symbol_id) else {
                 continue;
             };
             let Some(list) = shared.get(symbol.name.as_str()) else {
                 continue;
             };
+            let function = matches!(item.kind, ItemKind::Function(_));
             let paths = paths.get_or_insert_with(|| reached(layout, needs, m));
-            // The module's own shared function first, then one whose header
-            // the file includes, then the first one.
-            let Some(&(other, owner)) = list
+            // The module's own shared function first (another definition of
+            // the module with that name is `B2C-E0210`), then one whose
+            // header the file includes, then the first one of another module.
+            let own = list
                 .iter()
-                .find(|(_, owner)| *owner == m)
-                .or_else(|| list.iter().find(|(_, owner)| paths.contains_key(owner)))
-                .or_else(|| list.first())
+                .find(|def| def.module == m && def.function && function);
+            let others = || list.iter().filter(|def| def.module != m);
+            let Some(other) = own
+                .or_else(|| others().find(|def| paths.contains_key(&def.module)))
+                .or_else(|| others().next())
+                .copied()
             else {
                 continue;
             };
             let name = quoted(symbol.name.as_str());
             let location = symbol.origin.location();
-            let diagnostic = if owner == m {
+            let diagnostic = if other.module == m {
                 let message = format!(
                     "{name} is also the name of a function this module shares, and C++ could not tell the two \
                      apart. Rename one of them, or share this one too."
                 );
                 Diagnostic::error(codes::SHARED_NAME_CLASH, DiagSource::Analyser, location, message)
             } else {
-                shared_name_clash(program, layout, paths, (&name, location), (other, owner))
+                let kinds = (program.kind_word(symbol_id), program.kind_word(other.symbol));
+                shared_name_clash(program, layout, paths, (&name, location, kinds), other.module)
             };
-            let diagnostic = match program.location(other) {
+            let diagnostic = match program.location(other.symbol) {
                 Some(at) => diagnostic.with_related(at, format!("the shared {name}")),
                 None => diagnostic,
             };
@@ -964,22 +1284,57 @@ fn check_shared_names(program: &ProgramView<'_>, layout: &Layout, needs: &Needs<
     }
 }
 
-/// `B2C-E0213` for a function named like another module's (`owner`'s)
-/// shared function `other`: with the chain of includes that brings its
-/// header into this file, if one does.
+/// `B2C-E0210` on each shared definition with the name of a shared
+/// definition of an earlier module, unless both are functions
+/// (`B2C-E0211`): the headers would declare one name twice.
+fn check_shared_twice(
+    program: &ProgramView<'_>,
+    shared: &BTreeMap<&str, Vec<SharedDef<'_>>>,
+    diags: &mut Diags,
+) {
+    for (name, list) in shared {
+        for (at, def) in list.iter().enumerate() {
+            let Some(first) = list[..at]
+                .iter()
+                .find(|other| other.module != def.module && !(other.function && def.function))
+            else {
+                continue;
+            };
+            let Some(location) = program.location(def.symbol) else {
+                continue;
+            };
+            let message = format!(
+                "{} is already shared by module {}. Two modules can't share definitions with one name, so \
+                 rename one of them.",
+                quoted(name),
+                program.module_name(first.module)
+            );
+            let mut diagnostic =
+                Diagnostic::error(codes::DUPLICATE_NAME, DiagSource::Analyser, location, message);
+            if let Some(other) = program.location(first.symbol) {
+                diagnostic = diagnostic.with_related(other, format!("the other shared {}", quoted(name)));
+            }
+            diags.push(diagnostic);
+        }
+    }
+}
+
+/// `B2C-E0213` for a definition named like another module's (`owner`'s)
+/// shared definition, the kinds of both given: with the chain of includes
+/// that brings its header into this file, if one does.
 fn shared_name_clash(
     program: &ProgramView<'_>,
     layout: &Layout,
     paths: &BTreeMap<usize, Link<'_, '_>>,
-    (name, location): (&str, Location),
-    (_other, owner): (&SymbolId, usize),
+    (name, location, (kind, other_kind)): (&str, Location, (&str, &str)),
+    owner: usize,
 ) -> Diagnostic {
     let module = program.module_name(owner);
     let header = header_name(layout, owner);
     if !paths.contains_key(&owner) {
         let message = format!(
-            "{name} is also shared by module {module}. A function that is not shared can't have the name of a \
-             shared function of any module: once this file includes {header}, C++ could not tell the two \
+            "{name} is also shared by module {module}. A {kind} that is not shared can't have the name of a \
+             shared {other_kind} of any module: once this file includes {header}, C++ could not tell the two \
              apart. Rename this {name}."
         );
         return Diagnostic::error(codes::SHARED_NAME_CLASH, DiagSource::Analyser, location, message);
@@ -1031,10 +1386,10 @@ fn shared_name_clash(
             }
             Link::Through(from, reason) => {
                 let note = format!(
-                    "{} includes {} for the default value of {}",
+                    "{} includes {} for {}",
                     header_name(layout, *from),
                     header_name(layout, *h),
-                    reason.by.map(|by| program.name(by)).unwrap_or_default()
+                    reason.part(program)
                 );
                 diagnostic = diagnostic.with_related(reason.location.clone(), note);
             }
@@ -1084,7 +1439,7 @@ mod tests {
     }
 
     #[test]
-    fn only_shared_functions_go_into_a_header_until_package_t() {
+    fn shared_definitions_go_into_a_header() {
         let main = item(
             ItemKind::Main(MainDef {
                 body: Block::default(),
@@ -1099,11 +1454,11 @@ mod tests {
             true,
         );
         let module = module("utils", vec![main, function(true), function(false), colour]);
-        assert_eq!(shared_items(&module), [1]);
+        assert_eq!(shared_items(&module), [1, 3]);
         let mut diags = Diags::default();
         // Items whose symbols the table lacks are not in the declaration
         // graph's order, so they reach no header.
-        let layout = compute_layout(&[module], &SymbolTable::default(), &mut diags);
+        let layout = compute_layout(&[module], &SymbolTable::default(), &BTreeMap::new(), &mut diags);
         assert!(diags.list.is_empty());
         let files = &layout.modules[0];
         assert!(!files.header);
@@ -1118,13 +1473,13 @@ mod tests {
         files.header_order = header_parts(files, &[1, 3]);
         assert_eq!(files.header_order, [3, 1]);
         files.header = true;
-        includes(&mut layout, &Needs::default());
+        includes(&mut layout, &Needs::default(), &SymbolTable::default());
         assert_eq!(
             layout.modules[0].source_includes,
             [ModuleId::new("mod_utils").expect("id")]
         );
         layout.modules[0].header = false;
-        includes(&mut layout, &Needs::default());
+        includes(&mut layout, &Needs::default(), &SymbolTable::default());
         assert!(layout.modules[0].source_includes.is_empty());
     }
 
@@ -1137,7 +1492,7 @@ mod tests {
             module("xb2c", Vec::new()),
         ];
         let mut diags = Diags::default();
-        let layout = compute_layout(&modules, &SymbolTable::default(), &mut diags);
+        let layout = compute_layout(&modules, &SymbolTable::default(), &BTreeMap::new(), &mut diags);
         let reported: Vec<(&str, Option<&str>, &str)> = diags
             .list
             .iter()

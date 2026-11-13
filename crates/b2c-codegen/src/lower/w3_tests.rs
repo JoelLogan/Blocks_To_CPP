@@ -834,3 +834,217 @@ fn a_call_is_never_written_global_where_an_included_header_declares_the_name() {
     assert!(main.contains("std::cout << ::half(8) << '\\n';"), "{main}");
     insta::assert_snapshot!("w3_f_global_guard", main);
 }
+
+// --- Package T: types, globals and constants across modules (§5.2 T) ----------
+
+/// A global `<kind> <ty> <name> = <value>` with block ID `b_<sym>`, ticked
+/// to share or not.
+#[allow(clippy::needless_pass_by_value, reason = "built in place by each caller")]
+fn global(sym: &str, name: &str, kind: &str, ty: &str, value: Value, shared: bool) -> Value {
+    json!({"id": format!("b_{sym}"), "type": "var.global", "v": 1,
+           "fields": {"KIND": kind, "TYPE": ty, "NAME": {"sym": sym, "name": name}, "SHARED": shared},
+           "inputs": {"VALUE": {"expr": value}}})
+}
+
+/// Module `kinds`: a shared enum `Colour`; a shared printable struct `Tag`
+/// with a field of that enum; a constant `kBase` it does not share and a
+/// shared constant `kTop` set from it, so `kTop` is `extern const` in the
+/// header; a shared variable `made` and a variable `spare` it does not share
+/// set from `made`; `rank`, not shared, which uses `kTop` as a `case`
+/// label; and the shared `count_tags`, which calls `rank`.
+fn kinds_module() -> Value {
+    json!([
+        {"id": "b_colour", "type": "type.enum", "v": 1,
+         "fields": {"NAME": {"sym": "s_Colour", "name": "Colour"}, "SHARED": true},
+         "extra": {"values": [{"name": "Red", "sym": "s_Red"}, {"name": "Green", "sym": "s_Green"}]}},
+        {"id": "b_tag", "type": "type.struct", "v": 1,
+         "fields": {"NAME": {"sym": "s_Tag", "name": "Tag"}, "COMPARABLE": false, "PRINTABLE": true,
+                    "SHARED": true},
+         "extra": {"fields": [{"sym": "s_tag_colour", "name": "colour", "type": {"ref": "s_Colour"}},
+                              {"sym": "s_tag_size", "name": "size", "type": "int"}]}},
+        global("s_kBase", "kBase", "constant", "int", json!([{"num": "40"}]), false),
+        global("s_kTop", "kTop", "constant", "int", json!([{"ref": "s_kBase"}, {"op": "+"}, {"num": "2"}]), true),
+        global("s_made", "made", "variable", "int", json!([{"num": "42"}]), true),
+        global("s_spare", "spare", "variable", "int", json!([{"ref": "s_made"}, {"op": "+"}, {"num": "1"}]), false),
+        define("s_rank", "rank", "int", &[("s_rank_v", "v", "int")], json!([
+            {"id": "b_rank_switch", "type": "control.switch", "v": 1,
+             "extra": {"caseCount": 1, "hasDefault": false},
+             "inputs": {"VALUE": {"expr": [{"ref": "s_rank_v"}]}, "CASE0": {"expr": [{"ref": "s_kTop"}]}},
+             "statements": {"DO0": give("rank_top", json!([{"ref": "s_spare"}]))}},
+            {"id": "b_rank_zero", "type": "func.return", "v": 1, "inputs": {"VALUE": {"expr": [{"num": "0"}]}}}
+        ]), false),
+        define("s_count_tags", "count_tags", "int", &[], give("count_r",
+            json!([{"ref": "s_rank"}, {"op": "("}, {"ref": "s_made"}, {"op": ")"}])), true),
+    ])
+}
+
+/// Module `cards`: a shared struct `Card` whose fields' default values name
+/// `kinds`' `kTop` (an `extern const` constant) and `Colour::Red`, so its
+/// header includes `kinds.hpp`; and a shared function that takes a list of
+/// `Tag`s, which needs only a forward declaration.
+fn cards_module() -> Value {
+    json!([
+        {"id": "b_card", "type": "type.struct", "v": 1,
+         "fields": {"NAME": {"sym": "s_Card", "name": "Card"}, "COMPARABLE": false, "PRINTABLE": false,
+                    "SHARED": true},
+         "extra": {"fields": [{"sym": "s_card_limit", "name": "limit", "type": "int"},
+                              {"sym": "s_card_colour", "name": "colour", "type": {"ref": "s_Colour"}}]},
+         "inputs": {"DEFAULT0": {"expr": [{"ref": "s_kTop"}]},
+                    "DEFAULT1": {"block": {"id": "b_red", "type": "type.enum_value", "v": 1,
+                        "fields": {"ENUM": {"ref": "s_Colour"}, "VALUE": {"ref": "s_Red"}}}}}},
+        {"id": "b_tally", "type": "func.define", "v": 1,
+         "fields": {"NAME": {"sym": "s_tally", "name": "tally"}, "RETURNS": "int", "SHARED": true},
+         "extra": {"params": [{"mode": "read_only", "name": "tags", "sym": "s_tags",
+                               "type": {"std::vector": {"ref": "s_Tag"}}}]},
+         "statements": {"BODY": [
+            {"id": "b_tally_return", "type": "func.return", "v": 1,
+             "inputs": {"VALUE": {"block": {"id": "b_tally_length", "type": "coll.length", "v": 1,
+                "fields": {"LIST": {"ref": "s_tags"}}}}}}
+         ]}}
+    ])
+}
+
+/// `main`: a `Tag` of `kinds`, printed (its hidden friend prints the enum
+/// field) and its colour joined into text; a `Card` of `cards` with its
+/// default values; `count_tags` and `tally` called; the shared variable
+/// `made` read.
+fn shop_main() -> Value {
+    json!([{"id": "b_main", "type": "program.main", "v": 1, "statements": {"BODY": [
+        {"id": "b_t", "type": "var.declare", "v": 1,
+         "fields": {"CONST": false, "NAME": {"sym": "s_t", "name": "t"}, "TYPE": {"ref": "s_Tag"}},
+         "inputs": {"VALUE": {"block": {"id": "b_new_tag", "type": "type.new", "v": 1,
+            "extra": {"fieldCount": 2}, "fields": {"TYPE": {"ref": "s_Tag"}},
+            "inputs": {"FIELD0": {"block": {"id": "b_green", "type": "type.enum_value", "v": 1,
+                           "fields": {"ENUM": {"ref": "s_Colour"}, "VALUE": {"ref": "s_Green"}}}},
+                       "FIELD1": {"expr": [{"num": "3"}]}}}}}},
+        {"id": "b_c", "type": "var.declare", "v": 1,
+         "fields": {"CONST": false, "NAME": {"sym": "s_c", "name": "c"}, "TYPE": {"ref": "s_Card"}}},
+        {"id": "b_print_t", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+         "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "out"},
+         "inputs": {"ITEM0": {"expr": [{"ref": "s_t"}]}}},
+        {"id": "b_print_join", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+         "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "out"},
+         "inputs": {"ITEM0": {"block": {"id": "b_join", "type": "text.join", "v": 1, "extra": {"itemCount": 2},
+            "inputs": {"ITEM0": {"expr": [{"str": "colour "}]},
+                       "ITEM1": {"block": {"id": "b_t_colour", "type": "type.field", "v": 1,
+                           "fields": {"MEMBER": {"ref": "s_tag_colour"}},
+                           "inputs": {"OBJ": {"expr": [{"ref": "s_t"}]}}}}}}}}},
+        {"id": "b_print_card", "type": "io.print", "v": 1, "extra": {"itemCount": 3},
+         "fields": {"NEWLINE": true, "SEP": "space", "STREAM": "out"},
+         "inputs": {"ITEM0": {"block": {"id": "b_c_limit", "type": "type.field", "v": 1,
+                        "fields": {"MEMBER": {"ref": "s_card_limit"}},
+                        "inputs": {"OBJ": {"expr": [{"ref": "s_c"}]}}}},
+                    "ITEM1": {"expr": [{"ref": "s_count_tags"}, {"op": "("}, {"op": ")"}]},
+                    "ITEM2": {"expr": [{"ref": "s_made"}]}}},
+        {"id": "b_tags", "type": "var.declare", "v": 1,
+         "fields": {"CONST": false, "NAME": {"sym": "s_list", "name": "tags"},
+                    "TYPE": {"std::vector": {"ref": "s_Tag"}}},
+         "inputs": {"VALUE": {"block": {"id": "b_tags_list", "type": "coll.list_of", "v": 1,
+            "extra": {"itemCount": 1}, "inputs": {"ITEM0": {"expr": [{"ref": "s_t"}]}}}}}},
+        {"id": "b_print_tally", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+         "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "out"},
+         "inputs": {"ITEM0": {"expr": [{"ref": "s_tally"}, {"op": "("}, {"ref": "s_list"}, {"op": ")"}]}}}
+    ]}}])
+}
+
+/// Every row of §1.7 but functions (package F's) in one program of three
+/// modules: `kinds.hpp` defines the enum `Colour` with its print support
+/// declared right after it, the printable struct `Tag` (hidden friends),
+/// `extern const int kTop;` and `extern int made;`; `kinds.cpp` includes its
+/// own header first, defines `operator<<` and `b2c::to_text` without
+/// `inline`, `kTop` and `made` at global scope, and keeps `kBase`, `spare`
+/// (after `made`, the anonymous namespace opened again) and `rank` (whose
+/// `case kTop` is a constant expression here) in the anonymous namespace.
+/// `cards.hpp` includes `kinds.hpp` for its field defaults and
+/// forward-declares nothing it includes. Each header compiles alone, and
+/// the program prints the struct and joins the enum from another module.
+#[test]
+fn shared_types_globals_and_constants_go_into_their_headers() {
+    let program = analyse(
+        &project(&[
+            ("mod_main", "main", shop_main()),
+            ("mod_kinds", "kinds", kinds_module()),
+            ("mod_cards", "cards", cards_module()),
+        ]),
+        &[],
+    );
+    let project = generate(&program);
+    let paths: Vec<&str> = project.files.iter().map(|file| file.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        ["main.cpp", "kinds.cpp", "kinds.hpp", "cards.cpp", "cards.hpp"]
+    );
+    let kinds_header = text(&project, "kinds.hpp");
+    let in_order = |contents: &str, parts: &[&str]| {
+        let mut at = 0;
+        for part in parts {
+            let Some(found) = contents[at..].find(part) else {
+                panic!("{part:?} is not after byte {at} in:\n{contents}");
+            };
+            at += found + part.len();
+        }
+    };
+    in_order(
+        kinds_header,
+        &[
+            "#pragma once",
+            "#include <ostream>",
+            "#include <string>",
+            "extern const int kTop;",
+            "enum class Colour { Red, Green };\n\nstd::ostream& operator<<(std::ostream& out, Colour value);",
+            "namespace b2c {\n\nstd::string to_text(Colour value);\n\n}  // namespace b2c",
+            "struct Tag {",
+            "friend std::ostream& operator<<(",
+            "int count_tags();",
+            "extern int made;",
+        ],
+    );
+    let kinds_source = text(&project, "kinds.cpp");
+    in_order(
+        kinds_source,
+        &[
+            "#include \"kinds.hpp\"",
+            "namespace {\n\nconstexpr int kBase = 40;",
+            "const int kTop = kBase + 2;",
+            "std::ostream& operator<<(std::ostream& out, Colour value) {",
+            "namespace b2c {\n\nstd::string to_text(Colour value) {",
+            "int made = 42;",
+            "namespace {\n\nint spare = made + 1;",
+            "case kTop:",
+            "int count_tags() {",
+        ],
+    );
+    assert!(!kinds_source.contains("inline"), "{kinds_source}");
+    assert!(
+        !kinds_source.contains("enum class") && !kinds_source.contains("struct Tag"),
+        "{kinds_source}"
+    );
+    let cards_header = text(&project, "cards.hpp");
+    in_order(
+        cards_header,
+        &[
+            "#include \"kinds.hpp\"",
+            "struct Card {\n    int limit = kTop;\n    Colour colour = Colour::Red;\n};",
+            "int tally(const std::vector<Tag>& tags);",
+        ],
+    );
+    assert!(!cards_header.contains("struct Tag;"), "{cards_header}");
+    in_order(
+        text(&project, "main.cpp"),
+        &["#include \"cards.hpp\"\n#include \"kinds.hpp\""],
+    );
+    insta::assert_snapshot!("w3_t_types_globals_constants", render(&project));
+    let compilers = compilers();
+    if compilers.is_empty() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    headers_compile_alone(&project, &compilers, &dir.path().join("alone"));
+    compile_and_run(
+        &project,
+        &compilers,
+        &dir.path().join("run"),
+        "",
+        "Tag{colour: Green, size: 3}\ncolour Green\n42 43 42\n1\n",
+    );
+}

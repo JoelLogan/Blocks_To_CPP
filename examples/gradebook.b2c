@@ -1,0 +1,1179 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 2,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.3.0"
+  },
+  "project": {
+    "id": "prj_gradebook",
+    "name": "Gradebook",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b000",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "comment": {
+              "text": "Student records, split into modules: records and report."
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b001",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_count",
+                      "name": "count"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b002",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "MODE": "keep_asking",
+                    "VAR": {
+                      "ref": "s_count"
+                    }
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "How many students? "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b004",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_students",
+                      "name": "students"
+                    },
+                    "TYPE": {
+                      "std::vector": {
+                        "ref": "s_Student"
+                      }
+                    }
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "block": {
+                        "id": "b003",
+                        "type": "coll.list_of",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 0
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b011",
+                  "type": "control.repeat",
+                  "v": 1,
+                  "inputs": {
+                    "TIMES": {
+                      "expr": [
+                        {
+                          "ref": "s_count"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b005",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_name",
+                            "name": "name"
+                          },
+                          "TYPE": "std::string"
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "str": ""
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b006",
+                        "type": "io.ask",
+                        "v": 1,
+                        "fields": {
+                          "MODE": "keep_asking",
+                          "VAR": {
+                            "ref": "s_name"
+                          }
+                        },
+                        "inputs": {
+                          "PROMPT": {
+                            "expr": [
+                              {
+                                "str": "Name: "
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b007",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_mark",
+                            "name": "mark"
+                          },
+                          "TYPE": "int"
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b008",
+                        "type": "io.ask",
+                        "v": 1,
+                        "fields": {
+                          "MODE": "keep_asking",
+                          "VAR": {
+                            "ref": "s_mark"
+                          }
+                        },
+                        "inputs": {
+                          "PROMPT": {
+                            "expr": [
+                              {
+                                "str": "Mark: "
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b010",
+                        "type": "coll.add",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_students"
+                          }
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "block": {
+                              "id": "b009",
+                              "type": "type.new",
+                              "v": 1,
+                              "extra": {
+                                "fieldCount": 2
+                              },
+                              "fields": {
+                                "TYPE": {
+                                  "ref": "s_Student"
+                                }
+                              },
+                              "inputs": {
+                                "FIELD0": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_name"
+                                    }
+                                  ]
+                                },
+                                "FIELD1": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_mark"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b012",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": ""
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b013",
+                  "type": "func.call_stmt",
+                  "v": 1,
+                  "extra": {
+                    "argCount": 1
+                  },
+                  "fields": {
+                    "FUNC": {
+                      "ref": "s_print_report"
+                    }
+                  },
+                  "inputs": {
+                    "ARG0": {
+                      "expr": [
+                        {
+                          "ref": "s_students"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "mod_records",
+      "name": "records",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b101",
+            "type": "type.struct",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "comment": {
+              "text": "Shared: its header holds the whole struct."
+            },
+            "extra": {
+              "fields": [
+                {
+                  "name": "name",
+                  "sym": "s_Student_name",
+                  "type": "std::string"
+                },
+                {
+                  "name": "mark",
+                  "sym": "s_Student_mark",
+                  "type": "int"
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Student",
+                "name": "Student"
+              },
+              "PRINTABLE": false,
+              "SHARED": true
+            }
+          },
+          {
+            "id": "b102",
+            "type": "type.enum",
+            "v": 1,
+            "x": 40,
+            "y": 200,
+            "extra": {
+              "values": [
+                {
+                  "name": "Fail",
+                  "sym": "s_Grade_fail"
+                },
+                {
+                  "name": "Pass",
+                  "sym": "s_Grade_pass"
+                },
+                {
+                  "name": "Distinction",
+                  "sym": "s_Grade_distinction"
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_Grade",
+                "name": "Grade"
+              },
+              "SHARED": true
+            }
+          },
+          {
+            "id": "b103",
+            "type": "var.global",
+            "v": 1,
+            "x": 40,
+            "y": 320,
+            "comment": {
+              "text": "Shared, and fixed when the program is built."
+            },
+            "fields": {
+              "KIND": "constant",
+              "NAME": {
+                "sym": "s_kPassMark",
+                "name": "kPassMark"
+              },
+              "SHARED": true,
+              "TYPE": "int"
+            },
+            "inputs": {
+              "VALUE": {
+                "expr": [
+                  {
+                    "num": "50"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "b114",
+            "type": "func.define",
+            "v": 1,
+            "x": 40,
+            "y": 420,
+            "extra": {
+              "params": [
+                {
+                  "mode": "read_only",
+                  "name": "student",
+                  "sym": "s_go_student",
+                  "type": {
+                    "ref": "s_Student"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_grade_of",
+                "name": "grade_of"
+              },
+              "RETURNS": {
+                "ref": "s_Grade"
+              },
+              "SHARED": true
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b106",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_go_mark",
+                      "name": "mark"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "block": {
+                        "id": "b105",
+                        "type": "func.call",
+                        "v": 1,
+                        "extra": {
+                          "argCount": 1
+                        },
+                        "fields": {
+                          "FUNC": {
+                            "ref": "s_clamp_mark"
+                          }
+                        },
+                        "inputs": {
+                          "ARG0": {
+                            "block": {
+                              "id": "b104",
+                              "type": "type.field",
+                              "v": 1,
+                              "fields": {
+                                "MEMBER": {
+                                  "ref": "s_Student_mark"
+                                }
+                              },
+                              "inputs": {
+                                "OBJ": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_go_student"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b111",
+                  "type": "control.if",
+                  "v": 1,
+                  "extra": {
+                    "elseIfCount": 1,
+                    "hasElse": false
+                  },
+                  "inputs": {
+                    "COND0": {
+                      "expr": [
+                        {
+                          "ref": "s_go_mark"
+                        },
+                        {
+                          "op": ">="
+                        },
+                        {
+                          "num": "70"
+                        }
+                      ]
+                    },
+                    "COND1": {
+                      "expr": [
+                        {
+                          "ref": "s_go_mark"
+                        },
+                        {
+                          "op": ">="
+                        },
+                        {
+                          "ref": "s_kPassMark"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b108",
+                        "type": "func.return",
+                        "v": 1,
+                        "inputs": {
+                          "VALUE": {
+                            "block": {
+                              "id": "b107",
+                              "type": "type.enum_value",
+                              "v": 1,
+                              "fields": {
+                                "ENUM": {
+                                  "ref": "s_Grade"
+                                },
+                                "VALUE": {
+                                  "ref": "s_Grade_distinction"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "DO1": [
+                      {
+                        "id": "b110",
+                        "type": "func.return",
+                        "v": 1,
+                        "inputs": {
+                          "VALUE": {
+                            "block": {
+                              "id": "b109",
+                              "type": "type.enum_value",
+                              "v": 1,
+                              "fields": {
+                                "ENUM": {
+                                  "ref": "s_Grade"
+                                },
+                                "VALUE": {
+                                  "ref": "s_Grade_pass"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b113",
+                  "type": "func.return",
+                  "v": 1,
+                  "inputs": {
+                    "VALUE": {
+                      "block": {
+                        "id": "b112",
+                        "type": "type.enum_value",
+                        "v": 1,
+                        "fields": {
+                          "ENUM": {
+                            "ref": "s_Grade"
+                          },
+                          "VALUE": {
+                            "ref": "s_Grade_fail"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b119",
+            "type": "func.define",
+            "v": 1,
+            "x": 40,
+            "y": 700,
+            "comment": {
+              "text": "Not shared: only grade_of uses it."
+            },
+            "extra": {
+              "params": [
+                {
+                  "mode": "copy",
+                  "name": "mark",
+                  "sym": "s_cm_mark",
+                  "type": "int"
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_clamp_mark",
+                "name": "clamp_mark"
+              },
+              "RETURNS": "int"
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b117",
+                  "type": "control.if",
+                  "v": 1,
+                  "extra": {
+                    "elseIfCount": 1,
+                    "hasElse": false
+                  },
+                  "inputs": {
+                    "COND0": {
+                      "expr": [
+                        {
+                          "ref": "s_cm_mark"
+                        },
+                        {
+                          "op": "<"
+                        },
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    },
+                    "COND1": {
+                      "expr": [
+                        {
+                          "ref": "s_cm_mark"
+                        },
+                        {
+                          "op": ">"
+                        },
+                        {
+                          "num": "100"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b115",
+                        "type": "func.return",
+                        "v": 1,
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "DO1": [
+                      {
+                        "id": "b116",
+                        "type": "func.return",
+                        "v": 1,
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "num": "100"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b118",
+                  "type": "func.return",
+                  "v": 1,
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "ref": "s_cm_mark"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "mod_report",
+      "name": "report",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b220",
+            "type": "func.define",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "comment": {
+              "text": "Its header needs only a forward declaration of Student."
+            },
+            "extra": {
+              "params": [
+                {
+                  "mode": "read_only",
+                  "name": "students",
+                  "sym": "s_pr_students",
+                  "type": {
+                    "std::vector": {
+                      "ref": "s_Student"
+                    }
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_print_report",
+                "name": "print_report"
+              },
+              "RETURNS": "void",
+              "SHARED": true
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b201",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_pr_passed",
+                      "name": "passed"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b217",
+                  "type": "coll.for_each",
+                  "v": 1,
+                  "fields": {
+                    "ITEM": {
+                      "sym": "s_pr_student",
+                      "name": "student"
+                    },
+                    "MODE": "read_only"
+                  },
+                  "inputs": {
+                    "LIST": {
+                      "expr": [
+                        {
+                          "ref": "s_pr_students"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b204",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 4
+                        },
+                        "fields": {
+                          "NEWLINE": false,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "block": {
+                              "id": "b202",
+                              "type": "type.field",
+                              "v": 1,
+                              "fields": {
+                                "MEMBER": {
+                                  "ref": "s_Student_name"
+                                }
+                              },
+                              "inputs": {
+                                "OBJ": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_pr_student"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "str": ": "
+                              }
+                            ]
+                          },
+                          "ITEM2": {
+                            "block": {
+                              "id": "b203",
+                              "type": "type.field",
+                              "v": 1,
+                              "fields": {
+                                "MEMBER": {
+                                  "ref": "s_Student_mark"
+                                }
+                              },
+                              "inputs": {
+                                "OBJ": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_pr_student"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "ITEM3": {
+                            "expr": [
+                              {
+                                "str": " "
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b212",
+                        "type": "control.switch",
+                        "v": 1,
+                        "extra": {
+                          "caseCount": 3,
+                          "hasDefault": false
+                        },
+                        "inputs": {
+                          "CASE0": {
+                            "block": {
+                              "id": "b206",
+                              "type": "type.enum_value",
+                              "v": 1,
+                              "fields": {
+                                "ENUM": {
+                                  "ref": "s_Grade"
+                                },
+                                "VALUE": {
+                                  "ref": "s_Grade_distinction"
+                                }
+                              }
+                            }
+                          },
+                          "CASE1": {
+                            "block": {
+                              "id": "b208",
+                              "type": "type.enum_value",
+                              "v": 1,
+                              "fields": {
+                                "ENUM": {
+                                  "ref": "s_Grade"
+                                },
+                                "VALUE": {
+                                  "ref": "s_Grade_pass"
+                                }
+                              }
+                            }
+                          },
+                          "CASE2": {
+                            "block": {
+                              "id": "b210",
+                              "type": "type.enum_value",
+                              "v": 1,
+                              "fields": {
+                                "ENUM": {
+                                  "ref": "s_Grade"
+                                },
+                                "VALUE": {
+                                  "ref": "s_Grade_fail"
+                                }
+                              }
+                            }
+                          },
+                          "VALUE": {
+                            "block": {
+                              "id": "b205",
+                              "type": "func.call",
+                              "v": 1,
+                              "extra": {
+                                "argCount": 1
+                              },
+                              "fields": {
+                                "FUNC": {
+                                  "ref": "s_grade_of"
+                                }
+                              },
+                              "inputs": {
+                                "ARG0": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_pr_student"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b207",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "NEWLINE": true,
+                                "SEP": "none",
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "str": "distinction"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ],
+                          "DO1": [
+                            {
+                              "id": "b209",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "NEWLINE": true,
+                                "SEP": "none",
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "str": "pass"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ],
+                          "DO2": [
+                            {
+                              "id": "b211",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "NEWLINE": true,
+                                "SEP": "none",
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "str": "fail"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "id": "b216",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 0,
+                          "hasElse": false
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "block": {
+                              "id": "b213",
+                              "type": "math.compare",
+                              "v": 1,
+                              "fields": {
+                                "OP": "ge"
+                              },
+                              "inputs": {
+                                "A": {
+                                  "block": {
+                                    "id": "b214",
+                                    "type": "type.field",
+                                    "v": 1,
+                                    "fields": {
+                                      "MEMBER": {
+                                        "ref": "s_Student_mark"
+                                      }
+                                    },
+                                    "inputs": {
+                                      "OBJ": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_pr_student"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                "B": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_kPassMark"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b215",
+                              "type": "var.change",
+                              "v": 1,
+                              "fields": {
+                                "OP": "add",
+                                "VAR": {
+                                  "ref": "s_pr_passed"
+                                }
+                              },
+                              "inputs": {
+                                "BY": {
+                                  "expr": [
+                                    {
+                                      "num": "1"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b219",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 4
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Passed: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_pr_passed"
+                        }
+                      ]
+                    },
+                    "ITEM2": {
+                      "expr": [
+                        {
+                          "str": " of "
+                        }
+                      ]
+                    },
+                    "ITEM3": {
+                      "block": {
+                        "id": "b218",
+                        "type": "coll.length",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_pr_students"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

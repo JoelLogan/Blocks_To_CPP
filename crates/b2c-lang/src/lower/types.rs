@@ -64,10 +64,15 @@ impl Lowerer<'_> {
     /// ([`Lowerer::check_field_requirements`]).
     pub(super) fn declare_user_types(&mut self) -> Vec<PendingField> {
         let document = self.document;
-        let mut names: BTreeMap<String, SymbolId> = BTreeMap::new();
+        // The program's types by name (the first for a name two modules
+        // use), and each module's own: a name is unique in its module, and
+        // modules may each have one unless one of them is shared
+        // (w3-modules.md §2.1, `crate::layout`).
+        let mut program: BTreeMap<String, SymbolId> = BTreeMap::new();
         let mut declared: Vec<(usize, &Block, SymbolId)> = Vec::new();
         for (index, module) in document.modules.iter().enumerate() {
             self.enter_module(index, &module.id);
+            let mut names: BTreeMap<String, SymbolId> = BTreeMap::new();
             for block in sorted_blocks(module) {
                 if block.disabled || !matches!(block.block_type.as_str(), "type.struct" | "type.enum") {
                     continue;
@@ -76,8 +81,11 @@ impl Lowerer<'_> {
                     declared.push((index, block, sym));
                 }
             }
+            for (name, sym) in names {
+                program.entry(name).or_insert(sym);
+            }
         }
-        self.user_types = names;
+        self.user_types = program;
         let mut pending = Vec::new();
         for (index, block, sym) in declared {
             self.enter_module(index, &document.modules[index].id);
@@ -126,8 +134,8 @@ impl Lowerer<'_> {
         }
         let function = self
             .module_functions
-            .iter()
-            .find_map(|functions| functions.get(&decl.name))
+            .get(self.module_index)
+            .and_then(|functions| functions.get(&decl.name))
             .cloned();
         if let Some(function) = function {
             let message = format!(
@@ -687,7 +695,10 @@ impl Lowerer<'_> {
     /// an enum definition (`B2C-E0207`) or does not exist (`B2C-E0201`).
     fn enum_definition(&mut self, sym: &SymbolId, location: &Location) -> Option<SymbolId> {
         match self.symbols.get(sym).map(|symbol| &symbol.kind) {
-            Some(SymbolKind::Enum { .. }) => return Some(sym.clone()),
+            // Another module's enum that it does not share is `B2C-E0206`.
+            Some(SymbolKind::Enum { .. }) => {
+                return self.check_type_module(sym, location).then(|| sym.clone());
+            }
             Some(SymbolKind::Struct { .. }) => {
                 let message = format!(
                     "{} is a struct, not an enum: choose an enum here.",

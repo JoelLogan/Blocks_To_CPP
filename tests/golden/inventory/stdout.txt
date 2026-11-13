@@ -1,0 +1,19 @@
+Welcome to Corner Shop
+Choice 1 (1: add, 2: remove, 0: quit): Change 1: 1
+Corner Shop has 1 items.
+Choice 2 (1: add, 2: remove, 0: quit): Change 2: 1
+Corner Shop has 2 items.
+Choice 3 (1: add, 2: remove, 0: quit): Change 3: 1
+Corner Shop is full.
+Choice 4 (1: add, 2: remove, 0: quit): No room for another item.
+Corner Shop is full.
+Choice 5 (1: add, 2: remove, 0: quit): Change 4: -1
+Corner Shop has 2 items.
+Choice 6 (1: add, 2: remove, 0: quit): Please enter a whole number.
+ (1: add, 2: remove, 0: quit): Change 5: -1
+Corner Shop has 1 items.
+Choice 7 (1: add, 2: remove, 0: quit): Change 6: -1
+Corner Shop is empty.
+Choice 8 (1: add, 2: remove, 0: quit): There is nothing to remove.
+Corner Shop is empty.
+Choice 9 (1: add, 2: remove, 0: quit): Goodbye from Corner Shop

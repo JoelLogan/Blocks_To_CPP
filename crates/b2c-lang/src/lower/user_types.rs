@@ -74,9 +74,10 @@ fn named_structs(ty: &Type) -> Vec<SymbolId> {
 impl Lowerer<'_> {
     /// Checks a reference to a user type in a type term: it must name a
     /// struct or an enum (`B2C-E0201` for a symbol that does not exist,
-    /// `B2C-E0207` for one that is not a type) of this module (`B2C-E0206`:
-    /// each module is its own `.cpp` until shared definitions arrive, as for
-    /// functions and globals). Returns whether it does.
+    /// `B2C-E0207` for one that is not a type) of this module or one another
+    /// module shares (`B2C-E0206` otherwise: each module is its own `.cpp`,
+    /// and only a shared type is in its module's header, w3-modules.md
+    /// §2.1). Returns whether it does.
     pub(super) fn check_type_reference(&mut self, id: &SymbolId, location: &Location) -> bool {
         let symbol = self.symbols.get(id);
         if let Some(symbol) = symbol
@@ -123,32 +124,36 @@ impl Lowerer<'_> {
         false
     }
 
-    /// Whether the struct or enum `id` belongs to the module being lowered;
-    /// `B2C-E0206` when it is another module's.
-    fn check_type_module(&mut self, id: &SymbolId, location: &Location) -> bool {
+    /// Whether the module being lowered may name the struct or enum `id`:
+    /// one of its own, or one another module shares; `B2C-E0206` when it is
+    /// another module's that it does not share.
+    pub(super) fn check_type_module(&mut self, id: &SymbolId, location: &Location) -> bool {
         let Some(decl) = self.decls.get(id) else {
             return true;
         };
-        if decl.module == self.module_index {
+        if decl.module == self.module_index || self.shared_symbols.contains(id) {
             return true;
         }
-        let what = if decl.kind == DeclKind::Enum {
-            "an enum"
+        let block = if decl.kind == DeclKind::Enum {
+            "enum"
         } else {
-            "a struct"
+            "struct"
         };
-        let module = self
-            .document
-            .modules
-            .get(decl.module)
-            .map(|m| quoted(&m.name))
-            .unwrap_or_default();
         let message = format!(
-            "{} is {what} of another module ({module}). Using structs and enums from other modules isn't \
-             supported yet, so move it into this module.",
-            quoted(&decl.name)
+            "{} belongs to module {}, which does not share it. To use it here, tick 'share with other \
+             modules' on its '{block}' block.",
+            quoted(&decl.name),
+            self.module_name(decl.module)
         );
-        self.diags.error(codes::OTHER_MODULE, location.clone(), message);
+        let related = decl.location.clone();
+        let diagnostic = b2c_ir::Diagnostic::error(
+            codes::OTHER_MODULE,
+            b2c_ir::DiagSource::Analyser,
+            location.clone(),
+            message,
+        )
+        .with_related(related, format!("{} is created here", quoted(&decl.name)));
+        self.diags.push(diagnostic);
         false
     }
 

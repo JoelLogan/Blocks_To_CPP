@@ -50,6 +50,23 @@ grade_average.b2c:
   b031: "double"
   b032: "int"
   b039: "int"
+gradebook.b2c:
+  b003: {"std::vector":{"ref":"s_Student"}}
+  b009: {"ref":"s_Student"}
+  b104: "int"
+  b105: "int"
+  b107: {"ref":"s_Grade"}
+  b109: {"ref":"s_Grade"}
+  b112: {"ref":"s_Grade"}
+  b202: "std::string"
+  b203: "int"
+  b205: {"ref":"s_Grade"}
+  b206: {"ref":"s_Grade"}
+  b208: {"ref":"s_Grade"}
+  b210: {"ref":"s_Grade"}
+  b213: "bool"
+  b214: "int"
+  b218: "int"
 greeting.b2c:
   b003: "std::string"
 guessing_game.b2c:
@@ -61,6 +78,8 @@ input_validation.b2c:
   b008: "std::string"
   b020: "int"
   b025: "std::string"
+inventory.b2c:
+  b102: "std::string"
 matrix_sum.b2c:
   b015: "std::string"
   b027: "int"

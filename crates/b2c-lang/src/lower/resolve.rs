@@ -300,11 +300,13 @@ impl Lowerer<'_> {
                     self.module_name(decl.module)
                 ),
             ),
+            // Another module's global that it does not share (a shared one
+            // is among the module's globals, `Lowerer::see_shared_globals`).
             (DeclStatus::Active, DeclKind::Global) if decl.module != self.module_index => (
                 codes::OTHER_MODULE,
                 format!(
-                    "{name} is a global of another module ({}). Using globals from other modules isn't \
-                     supported yet, so move it into this module.",
+                    "{name} belongs to module {}, which does not share it. To use it here, tick 'share \
+                     with other modules' on its 'global' block.",
                     self.module_name(decl.module)
                 ),
             ),

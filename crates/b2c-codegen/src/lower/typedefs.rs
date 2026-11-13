@@ -13,6 +13,10 @@
 //! modules.md §4), so each comes after the types it holds; a struct named
 //! only in the lists of one printed before it gets a forward declaration
 //! there.
+//!
+//! A shared enum (ADR-0019, w3-modules.md §1.7, §2.3) always gets both
+//! `operator<<` and `b2c::to_text`: its header declares them right after
+//! the enum, and its `.cpp` defines them, not `inline` (`crate::emit`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -114,8 +118,11 @@ impl Lowerer<'_> {
                 printed.insert(def.symbol.clone());
             }
             ItemKind::Enum(def) => {
-                let print = uses.printed.contains(&def.symbol);
-                let joined = uses.joined.contains(&def.symbol);
+                // A shared enum's header always declares its print support,
+                // so that the header never depends on what prints it
+                // (w3-modules.md §1.7): its `.cpp` defines both functions.
+                let print = item.shared || uses.printed.contains(&def.symbol);
+                let joined = item.shared || uses.joined.contains(&def.symbol);
                 if let Some(mut lowered) = self.enum_def(&def.symbol, print, joined) {
                     lowered.comment.clone_from(&item.comment);
                     lowered.place_in(self.namespace_names(item));

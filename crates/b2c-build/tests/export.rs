@@ -22,18 +22,23 @@ use common::run_data::RunData;
 
 /// The examples built here: plain output, input, vectors and text, and
 /// each example of several modules (w3-modules.md §2.8): `unit_converter`,
-/// with two headers and `b2c_support.hpp`.
-const EXAMPLES: [&str; 5] = [
+/// with two headers and `b2c_support.hpp`; `gradebook`, whose headers hold a
+/// struct, an enum with its print support and a `constexpr` constant, and
+/// forward-declare a struct; `inventory`, whose header declares a shared
+/// variable and an `extern const` constant.
+const EXAMPLES: [&str; 7] = [
     "hello_world",
     "greeting",
     "matrix_sum",
     "palindrome",
     "unit_converter",
+    "gradebook",
+    "inventory",
 ];
 
 /// The examples of several modules, which CMake builds too.
 #[cfg(unix)]
-const MULTI_MODULE: [&str; 1] = ["unit_converter"];
+const MULTI_MODULE: [&str; 3] = ["unit_converter", "gradebook", "inventory"];
 
 /// A command for a build tool. Production code spawns processes only
 /// through b2c-process; tests drive the tools directly.

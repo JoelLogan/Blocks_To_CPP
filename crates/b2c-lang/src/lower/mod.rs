@@ -103,17 +103,29 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
     });
     // Other modules see a module's shared functions where they have no
     // definition of that name (w3-modules.md §2.1).
-    let shared = lowerer
+    let shared_functions = lowerer
         .functions
         .iter()
         .filter(|(_, sig)| sig.shared)
         .map(|(sym, sig)| (sig.module, sig.name.as_str(), sym));
+    // And the structs, enums and globals they share.
+    let shared_definitions = lowerer.shared_symbols.iter().filter_map(|sym| {
+        let symbol = lowerer.symbols.get(sym)?;
+        let module = lowerer.decls.get(sym)?.module;
+        matches!(
+            symbol.kind,
+            SymbolKind::Struct { .. } | SymbolKind::Enum { .. } | SymbolKind::Global { .. }
+        )
+        .then(|| (module, symbol.name.as_str(), sym))
+    });
+    let shared = shared_functions.chain(shared_definitions);
     lowerer
         .index
         .finish(trail, document.modules.len(), functions.chain(user_types), shared);
     // Each module's files, what they include and the order of their
     // declarations (ADR-0019, modules.md §4, w3-modules.md §1.7).
-    let layout = crate::layout::compute_layout(&modules, &lowerer.symbols, &mut lowerer.diags);
+    let layout =
+        crate::layout::compute_layout(&modules, &lowerer.symbols, &lowerer.constants, &mut lowerer.diags);
     Analysis {
         program: Program {
             standard,
@@ -252,6 +264,16 @@ struct Lowerer<'d> {
     /// (w3-modules.md §2.1). Packages F and T add the lookups that fall back
     /// to it when a module has no definition of a name.
     shared: BTreeMap<Option<SymbolId>, BTreeMap<String, Vec<SymbolId>>>,
+    /// The symbols of every shared definition.
+    shared_symbols: BTreeSet<SymbolId>,
+    /// The globals each module sees, by name, once every global is
+    /// declared: its own, then those other modules share that it has no
+    /// global of that name for (w3-modules.md §2.1). Empty until then.
+    visible_globals: Vec<BTreeMap<String, SymbolId>>,
+    /// The shared constants that other modules see only as `extern const`
+    /// (w3-modules.md §1.3, §2.1), by symbol, with their module's index:
+    /// there they are no constant expression (`B2C-E0424`).
+    extern_constants: BTreeMap<SymbolId, usize>,
     /// The globals' items, lowered before any body so that a constant's
     /// value is known wherever it is used, by defining block.
     global_items: BTreeMap<BlockId, Item>,
@@ -426,6 +448,9 @@ impl<'d> Lowerer<'d> {
             module_types: vec![BTreeMap::new(); document.modules.len()],
             shared_blocks: BTreeSet::new(),
             shared: BTreeMap::new(),
+            shared_symbols: BTreeSet::new(),
+            visible_globals: Vec::new(),
+            extern_constants: BTreeMap::new(),
             global_items: BTreeMap::new(),
             functions: BTreeMap::new(),
             symbols: SymbolTable::default(),
@@ -466,6 +491,7 @@ impl<'d> Lowerer<'d> {
         // Globals next: their types may be user types, and every function's
         // parameters, defaults and body see them (w2.md §2.7).
         let globals = self.declare_globals();
+        self.see_shared_globals();
         // The functions of the whole program by name: a module's own
         // functions with one name are overloads, which calls must tell
         // apart, and two modules may not share functions with one name
@@ -520,10 +546,14 @@ impl<'d> Lowerer<'d> {
                     let checked = matches!(item.kind, ItemKind::Global(_));
                     if !checked && self.check_nesting(&item) {
                         flow::check_item(&item, &self.symbols, &mut self.diags);
+                        let opaque = self.opaque_constants();
                         consts::check_item(
                             &item,
                             &self.symbols,
-                            self.unchecked,
+                            consts::Seen {
+                                unchecked: self.unchecked,
+                                opaque: &opaque,
+                            },
                             &mut self.diags,
                             &mut self.constants,
                         );
@@ -614,11 +644,64 @@ impl<'d> Lowerer<'d> {
         self.module_index = index;
         self.module = id.clone();
         if self.globals_loaded != Some(index)
-            && let Some(globals) = self.module_globals.get(index)
+            && let Some(globals) = self
+                .visible_globals
+                .get(index)
+                .or_else(|| self.module_globals.get(index))
         {
             self.scopes.set_globals(globals);
             self.globals_loaded = Some(index);
         }
+    }
+
+    /// Once every global is declared, makes each module see the globals the
+    /// other modules share, beneath its own (w3-modules.md §2.1): a module's
+    /// own global of a name hides another module's shared one (and is
+    /// `B2C-E0213` or `B2C-E0210`).
+    fn see_shared_globals(&mut self) {
+        if self.document.modules.len() < 2 {
+            return;
+        }
+        let shared: Vec<(usize, &str, &SymbolId)> = self
+            .shared_symbols
+            .iter()
+            .filter(|sym| {
+                matches!(
+                    self.symbols.get(sym).map(|symbol| &symbol.kind),
+                    Some(SymbolKind::Global { .. })
+                )
+            })
+            .filter_map(|sym| {
+                let decl = self.decls.get(sym)?;
+                Some((decl.module, decl.name.as_str(), sym))
+            })
+            .collect();
+        let visible: Vec<BTreeMap<String, SymbolId>> = self
+            .module_globals
+            .iter()
+            .enumerate()
+            .map(|(module, own)| {
+                let mut seen = own.clone();
+                for &(owner, name, sym) in &shared {
+                    if owner != module {
+                        seen.entry(name.to_owned()).or_insert_with(|| sym.clone());
+                    }
+                }
+                seen
+            })
+            .collect();
+        self.visible_globals = visible;
+        self.globals_loaded = None;
+    }
+
+    /// The shared constants of other modules that the module being lowered
+    /// sees only as `extern const`, which are no constant expression there.
+    fn opaque_constants(&self) -> BTreeSet<SymbolId> {
+        self.extern_constants
+            .iter()
+            .filter(|(_, module)| **module != self.module_index)
+            .map(|(sym, _)| sym.clone())
+            .collect()
     }
 
     /// Reports missing or extra `when program starts` blocks and returns the
@@ -1333,7 +1416,20 @@ impl<'d> Lowerer<'d> {
     /// The struct or enum of the program called `name`, with what it is for
     /// messages ("struct" or "enum").
     fn user_type_named(&self, name: &str) -> Option<(SymbolId, &'static str)> {
-        let sym = self.user_types.get(name)?;
+        let sym = if self.document.modules.len() < 2 {
+            self.user_types.get(name)?
+        } else {
+            // A module sees its own types and those the others share
+            // (w3-modules.md §2.1).
+            self.module_type(self.module_index, name).or_else(|| {
+                self.shared_definitions(None, name).iter().find(|sym| {
+                    matches!(
+                        self.symbols.get(sym).map(|symbol| &symbol.kind),
+                        Some(SymbolKind::Struct { .. } | SymbolKind::Enum { .. })
+                    )
+                })
+            })?
+        };
         let what = match self.symbols.get(sym).map(|symbol| &symbol.kind)? {
             SymbolKind::Struct { .. } => "struct",
             SymbolKind::Enum { .. } => "enum",
@@ -1568,6 +1664,7 @@ impl<'d> Lowerer<'d> {
     /// global namespace until namespaces arrive).
     fn share(&mut self, block: &Block, name: &str, sym: &SymbolId) {
         self.shared_blocks.insert(block.id.clone());
+        self.shared_symbols.insert(sym.clone());
         self.shared
             .entry(None)
             .or_default()
@@ -1579,7 +1676,6 @@ impl<'d> Lowerer<'d> {
     /// The shared definitions called `name` in a namespace (`None` for the
     /// global namespace), in declaration order: what a module that has no
     /// definition of that name sees (w3-modules.md §2.1).
-    #[cfg_attr(not(test), allow(dead_code, reason = "looked up by W3's packages F and T"))]
     fn shared_definitions(&self, namespace: Option<&SymbolId>, name: &str) -> &[SymbolId] {
         self.shared
             .get(&namespace.cloned())
@@ -1589,7 +1685,6 @@ impl<'d> Lowerer<'d> {
 
     /// The struct or enum called `name` that the module with this index
     /// defines (the first one for duplicates).
-    #[cfg_attr(not(test), allow(dead_code, reason = "looked up by W3's package T"))]
     fn module_type(&self, module: usize, name: &str) -> Option<&SymbolId> {
         self.module_types.get(module)?.get(name)
     }
