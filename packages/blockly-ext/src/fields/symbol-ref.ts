@@ -122,6 +122,7 @@ function isAssignable(symbol: SymbolInfo): boolean {
     case 'field':
     case 'enum':
     case 'enumerator':
+    case 'namespace':
       return false;
   }
 }
