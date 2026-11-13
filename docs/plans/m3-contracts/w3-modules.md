@@ -1390,6 +1390,47 @@ corrected in place and the correction is recorded here with its reason.
 | The type picker lists other modules' shared structs and enums after the module's own, one group per module headed *Module: records*, as the toolbox heads shared functions: `symbols.ts`'s `userTypes` adds the shared types whose name no own type has (§2.1's precedence), and blockly-ext's `SymbolProvider` gains an optional `otherModuleName(moduleId)` (`null` for the module shown) that the type field passes on as `PickerUserType.moduleName` | the picker had the module's ID only, and E's provider listed the module's own types | §3.3 W4 type-field row (T) |
 | The static *Types* category's blocks are marked with the module count too, and the toolbox installs its definition again when the count crosses one and two (the plugin's mode key holds the count), so a kept flyout *struct* or *enum* never shows the layout of the other count | only dynamic categories were built again; *global* is in the dynamic *Variables* | "From the W4 and W5 merges" (T) |
 | The E2E flow `modules-types.e2e.ts` opens a copy of `gradebook` (its `records` shares `Student`, which `grade_of` takes) instead of building the program block by block | a *define* with an input of a struct needs the mutator's dialog; the example already has every part §5.2 asks for | §5.2 T (T) |
+| The `definition` connection is a rule of the connection checker, not a Blockly check string: the five member blocks carry `namespace_member = true` in the catalog (`BlockDef::namespace_member`, `namespaceMember` in `catalog.json`) and the mouth `definitions = true` (`StatementDef::definitions`), both written only when set; a mouth, and the next connection of a block in one, take only members (and placeholders), and a member goes nowhere else | blockly-ext gives no connection a Blockly check (`blocks/shape.ts`); the catalog, the resolver and the editor read one flag | §2.10, §2.12 (N1) |
+| The depth refusal applies to drags only; a hand-edited file nested deeper loads into its mouths and the analyser reports it (`B2C-E0219` on the first namespace past 14, not on those inside it) | a refused connection while loading would turn the namespaces into placeholders | §2.10, §2.12 (N1) |
+| N1 also changes `apps/desktop/src/editor/sync/catalog.ts` (`shapeFits` lets a definition be built for a statement slot; the connection checker refuses every place but a mouth, so the block becomes a placeholder elsewhere as before), `packages/blockly-ext/src/checker/slots.ts` (a *return* takes the result type of the nearest *define*, not of the root block), `blocks/shape.ts`, `blocks/register.ts` and the field registration (`fields/register.ts`, `values.ts`), and excludes `std_names.rs` from mutation testing (`.cargo/mutants.toml`), as `reserved_names.rs` is | without them the definitions in a mouth load as placeholders and a function in a namespace loses its typed *return* | §3.2 N1, §3.3 (N1) |
+| One namespace in several blocks or modules: each block declares its own symbol; the first block of a name in one enclosing namespace (in module order, then by block ID, outer before inner) stands for the namespace, as the `parent` of the namespaces nested in any of its blocks and in the map from each definition to its namespace. A namespace named `std` or starting with `b2c` is `B2C-E0220`; one without a name `B2C-E0430`; a reference to a namespace where a variable is expected `B2C-E0207` (*"`geo` is a namespace, not a variable: choose one of the definitions it holds."*) | the format stores one symbol per block, and a nested block needs one parent | §2.12, §1.9 (N1) |
+| The *use namespace* menu offers `std` and the top-level namespaces of the module's canvas, each name once (the block with the lowest ID stands for it); a value it does not list is kept and shown by name. The other modules' namespaces join it with N2's lookup | the scope query lists no namespace before N2 (`scope.rs`, `clipboard.rs`: a payload names no namespace yet; a pasted *use namespace* keeps the symbol ID it holds) | §1.4, §2.12 (N1) |
+| `tools/gen-std-names.py` probes each g++ under C++17 to C++26, strict and GNU modes, with `using std::NAME;`, `namespace a = std::NAME;` and kind probes; a probe g++ crashes on counts as refused and the probes after it run again (GCC 13 crashes on a concept given as a template template argument). The table names its GCCs (`STD_NAMES_GCC`, `NEWEST_GCC_MAJOR`), the kind and the first standard of each name. b2c-codegen's `std_names` test runs the tool in check mode with the g++ on `PATH` when it is not newer than the table; the GCC 15 step of the `gcc` job prints GCC 15's list for `--merge` and fails until the integration step merges it | §2.12 asked for both; the crash made the first local table wrong (every name after the crash counted as a class template) | §2.12, §3.2 N1, §5.3 (N1) |
+| The every-block project (`crates/b2c-codegen/tests/fixtures/every_block.b2c`) gains a *namespace* holding a function and a *use namespace* `::std`; its C++ and output do not change until N2 prints them | the test that the project uses every catalog block | §5.2 N1 (N1) |
+| *namespace* and *use namespace* are basic blocks (`BASIC_BLOCKS` in `editor/gating/table.ts`, W4 §11 row 8's recommendation: 03 §3.7.1 does not make them advanced); a new namespace is named `myNamespace` (`editor/toolbox/names.ts`, module scope); their search words are `namespace`, `group`, `scope` and `using`, `namespace`, `std` | the toolbox test shows every default name in the basic toolbox, and the textbook's `using namespace std;` is a beginner's line | §7.1 *From the W4 and W5 merges* (N1) |
+
+#### The W3M-D2 spike (N1)
+
+The spike was clean, so N1 builds the container (W3M-D2's recommendation),
+not the fallback field:
+
+1. **Rendering.** Zelos draws a definition's hat only when the block has no
+   previous connection. blockly-ext's renderer (`blocks/namespace.ts`) is
+   Zelos with one change: while a namespace member's previous connection is
+   unconnected (on the canvas, in the flyout), it is measured as if it had
+   neither connection, so it keeps the hat and the flat bottom it has today;
+   in a mouth it shows a statement's notches. It is registered under
+   Zelos's own name, so no workspace option changes, the outline of every
+   block at the top level stays the same (a test compares it with the block
+   without the two connections) and the visual baselines do not change.
+2. **Storage.** The mouth is the namespace block's statement list
+   `DEFINITIONS` (05 §5.4), definitions in order; nothing is a `stack`, no
+   key is new, and the member blocks keep their fields. A single-module
+   project without namespaces reads and writes exactly as before.
+3. **Under a top-level definition.** The connection checker refuses a
+   definition (or anything) below a top-level definition, when dragging and
+   when loading; a file that stacks blocks under one is `B2C-E0604` as
+   before, and the editor keeps it as a placeholder.
+4. **Placement in hand-edited files** (`resolve.rs`): a mouth is a position
+   of its own; a namespace member fits the top level and a mouth; anything
+   else in a mouth (a statement, a value, *when program starts*, *use
+   header*, *use namespace*) and a member anywhere else are `B2C-E0604`,
+   with messages that name the place.
+5. **The analyser.** `collect.rs` records a namespace and walks its
+   mouth's members as definitions of the module (a disabled namespace
+   disables them); `lower/mod.rs`'s `sorted_blocks` reaches into enabled
+   mouths; `query.rs`'s `DEFINITION_TYPES` gains the two blocks, which are
+   never parked. Namespace members in the scope query are N2's.
 
 #### From the W4 and W5 merges
 

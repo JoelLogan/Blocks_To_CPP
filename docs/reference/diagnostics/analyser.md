@@ -170,7 +170,9 @@ Codes by area:
   field of `Student`.").
 * **Example:** typing `area * 2` in a slot, where `area` is a function.
 * **Message:** "`area` is a function, not a value. To run it and use its
-  result, call it: use its call block or write area() in an expression."
+  result, call it: use its call block or write area() in an expression." /
+  "`geo` is a namespace, not a variable: choose one of the definitions it
+  holds."
 * **How to fix:** call the function (`area(3, 4) * 2`), or pick a variable
   instead.
 
@@ -188,7 +190,9 @@ Codes by area:
   `B2C-E0211`); and a variable, function
   input, loop item, caught error, the program's arguments or a field named
   like a struct or enum (the generated C++ names the type as it is, so C++
-  would find the other name instead).
+  would find the other name instead). Also a namespace named like a
+  function, struct, enum or global of any module, shared or not, in the same
+  enclosing namespace.
 * **Example:**
 
   ```text
@@ -208,7 +212,10 @@ Codes by area:
   have the name of a struct or an enum: inside `Car`, C++ would find the
   field `Color` instead of the enum. Rename the field." / "`Point` is
   already shared by module `shapes`. Two modules can't share definitions
-  with one name, so rename one of them."
+  with one name, so rename one of them." / "There is already a function
+  called `helper` of module `utils` in the same place, and C++ would not
+  know which of the two the name means. Rename the namespace or the
+  function."
 * **How to fix:** rename one of them.
 
 ## B2C-E0211 Duplicate function
@@ -318,7 +325,12 @@ Codes by area:
 ## B2C-E0219 Namespaces nested too deeply
 
 * **Severity:** error
-* **Meaning:** *namespace* blocks are nested more than 14 deep.
+* **Meaning:** *namespace* blocks are nested more than 14 deep. The first
+  namespace past the limit is reported; the ones inside it are not reported
+  again.
+* **Message:** "This namespace is inside 14 other namespaces, which is as
+  deep as namespaces go. Move it, or the namespaces in it, out of one of the
+  namespaces around it."
 * **How to fix:** move some of the definitions into a namespace that is
   nested less deeply.
 
