@@ -410,8 +410,14 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   if (toolbox instanceof B2cContinuousToolbox) {
     toolbox.setContentsKey(() => dynamicContentsKey(contentsContext));
   }
-  /** The mode the toolbox definition was installed for (`modeKey`). */
-  let installedMode = modeKey(editorMode(store.getState()));
+  /**
+   * What the static categories' blocks are built for: the mode (`modeKey`) and whether the project
+   * has several modules (their *struct* and *enum* show *share with other modules* then).
+   */
+  const definitionKey = (): string =>
+    JSON.stringify([modeKey(editorMode(store.getState())), isMultiModule(contentsContext)]);
+  /** The {@link definitionKey} the toolbox definition was installed for. */
+  let installedMode = definitionKey();
   /** The toolbox definition installed last, serialised. */
   let installedDefinition = '';
   /** The toolbox search's query, or `null`. */
@@ -455,7 +461,7 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   /** The definition the toolbox shows now: the search results, or the categories of the mode. */
   const currentDefinition = (): Blockly.utils.toolbox.ToolboxInfo =>
     searchQuery === null
-      ? toolboxDefinition(editorMode(store.getState()))
+      ? toolboxDefinition(editorMode(store.getState()), isMultiModule(contentsContext))
       : resultsDefinition(searchQuery);
   /**
    * Runs the search again for the query shown, after what the toolbox offers changed: installs the
@@ -482,7 +488,7 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
       listener();
     }
   }
-  const firstDefinition = toolboxDefinition(editorMode(store.getState()));
+  const firstDefinition = currentDefinition();
   installedDefinition = JSON.stringify(firstDefinition);
   const installed = setToolbox(workspace, firstDefinition);
   if (installed) {
@@ -508,15 +514,14 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   workspace.addChangeListener(onEvent);
   /**
    * The editor's mode changed (the label or advanced settings, the project's standard or options,
-   * the toolchain): the static categories' blocks and the categories shown may change, so the
-   * toolbox definition is installed again when it differs from the one installed (a toolchain
-   * found after the project opened changes the mode but, with no gated block, nothing shown; a
-   * definition installed again would build every flyout block again); the dynamic categories follow
-   * through their contents key, which holds the mode.
+   * the toolchain), or the module count crossed one and two: the static categories' blocks and the
+   * categories shown may change, so the toolbox definition is installed again when it differs from
+   * the one installed (a toolchain found after the project opened changes the mode but, with no
+   * gated block, nothing shown; a definition installed again would build every flyout block again);
+   * the dynamic categories follow through their contents key, which holds the mode and the count.
    */
   const followMode = (): void => {
-    const mode = editorMode(store.getState());
-    const key = modeKey(mode);
+    const key = definitionKey();
     if (key === installedMode || !installed) {
       return;
     }
@@ -562,7 +567,8 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     if (
       state.settings !== previous.settings ||
       state.toolchains !== previous.toolchains ||
-      state.project?.document.project !== previous.project?.document.project
+      state.project?.document.project !== previous.project?.document.project ||
+      state.project?.document.modules !== previous.project?.document.modules
     ) {
       followMode();
     }

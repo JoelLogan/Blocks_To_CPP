@@ -64,6 +64,8 @@ export interface SymbolServiceDeps {
    * without it, a project counts as having one.
    */
   readonly multiModule?: () => boolean;
+  /** The name of the module with this ID, or `null` when the project has none. */
+  readonly moduleName?: (moduleId: string) => string | null;
 }
 
 /**
@@ -138,6 +140,8 @@ export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
     userTypes: () => userTypesOf(deps),
     sharesName: (funcId) => sharesName(deps, funcId),
     multiModule: () => deps.multiModule?.() ?? false,
+    otherModuleName: (moduleId) =>
+      moduleId === deps.activeModule() ? null : (deps.moduleName?.(moduleId) ?? null),
   };
 }
 
@@ -190,17 +194,25 @@ function namedStructFields(
 }
 
 /**
- * The structs and enums of the module shown, from the latest preview, which the type fields list
- * (w2.md §2.3). The preview's symbols are the whole program's: another module's types can't be
- * used yet (`B2C-E0206`), as its functions and globals can't.
+ * The structs and enums the type fields list (w2.md §2.3), from the latest preview: the module
+ * shown's own, then those the other modules share whose name none of its own has
+ * (docs/plans/m3-contracts/w3-modules.md §2.1: a module's own definition hides another module's
+ * shared one). A type another module does not share is `B2C-E0206` where it is named, so it is not
+ * listed.
  */
 function userTypesOf(
   deps: Pick<SymbolServiceDeps, 'preview' | 'activeModule'>,
 ): readonly SymbolInfo[] {
   const module = deps.activeModule();
-  return (deps.preview()?.symbols ?? []).filter(
-    (symbol) => (symbol.kind === 'struct' || symbol.kind === 'enum') && symbol.module === module,
+  const types = (deps.preview()?.symbols ?? []).filter(
+    (symbol) => symbol.kind === 'struct' || symbol.kind === 'enum',
   );
+  const own = types.filter((symbol) => symbol.module === module);
+  const ownNames = new Set(own.map((symbol) => symbol.name));
+  const shared = types.filter(
+    (symbol) => symbol.module !== module && symbol.shared === true && !ownNames.has(symbol.name),
+  );
+  return [...own, ...shared];
 }
 
 /**

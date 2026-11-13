@@ -47,6 +47,8 @@ export function createSymbolServices(deps: {
   readonly activeModule: () => string | null;
   /** Whether the open project has several modules; one when absent. */
   readonly multiModule?: () => boolean;
+  /** The name of the module with this ID, or `null`. */
+  readonly moduleName?: (moduleId: string) => string | null;
 }): EditorSymbolServices {
   const names = new SymbolNames();
   return {
@@ -59,6 +61,7 @@ export function createSymbolServices(deps: {
       workspace: deps.workspace,
       activeModule: deps.activeModule,
       ...(deps.multiModule === undefined ? {} : { multiModule: deps.multiModule }),
+      ...(deps.moduleName === undefined ? {} : { moduleName: deps.moduleName }),
     }),
     types: createTypeOracle({
       preview: deps.preview,

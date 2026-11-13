@@ -125,6 +125,10 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
     activeModule: () => deps.store.getState().project?.activeModuleId ?? null,
     // Definitions show *share with other modules* only then (w3-modules.md §1.2).
     multiModule: () => (deps.store.getState().project?.document.modules.length ?? 0) > 1,
+    // The type picker lists other modules' shared types under their names (w3-modules.md §1.3).
+    moduleName: (moduleId) =>
+      deps.store.getState().project?.document.modules.find((module) => module.id === moduleId)
+        ?.name ?? null,
   });
   const uninstallServices = installEditorServices({
     symbols: services.symbols,

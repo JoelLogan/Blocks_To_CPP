@@ -15,6 +15,7 @@
 import {
   PICKER_GROUP_TITLES,
   acceptsArgument,
+  moduleGroupTitle,
   acceptsTerm,
   addArgument,
   argumentEntries,
@@ -160,18 +161,26 @@ export function createTypePicker(options: TypePickerOptions): TypePicker {
     list.replaceChildren();
     optionElements = [];
     let group: HTMLElement | null = null;
-    let groupName: PickerGroup | 'typed' | null = null;
+    let groupName: string | null = null;
     shown.forEach((entry, index) => {
       const name: PickerGroup | 'typed' = typed !== null && index === 0 ? 'typed' : entry.group;
-      if (group === null || name !== groupName) {
-        groupName = name;
+      // Another module's shared types are a group of their own, under its name.
+      const module = name !== 'typed' && entry.kind === 'type' ? entry.module : undefined;
+      const title =
+        name === 'typed'
+          ? 'Typed'
+          : module === undefined
+            ? PICKER_GROUP_TITLES[name]
+            : moduleGroupTitle(module);
+      if (group === null || title !== groupName) {
+        groupName = title;
         group = doc.createElement('div');
         group.setAttribute('role', 'group');
         const heading = doc.createElement('div');
         heading.className = `${TYPE_PICKER_CLASS}-heading`;
         heading.id = `${base}-group-${String(index)}`;
         heading.setAttribute('role', 'presentation');
-        heading.textContent = name === 'typed' ? 'Typed' : PICKER_GROUP_TITLES[name];
+        heading.textContent = title;
         group.setAttribute('aria-labelledby', heading.id);
         group.append(heading);
         list.append(group);

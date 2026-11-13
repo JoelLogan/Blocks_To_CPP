@@ -110,6 +110,50 @@ describe('the picker model', () => {
     expect(deep.some((entry) => entry.kind === 'collection')).toBe(false);
   });
 
+  it('lists the types other modules share after the module’s own, under each module (w3-modules.md §1.3)', () => {
+    const shared = [
+      STUDENT,
+      {
+        id: 'sym_point',
+        name: 'Point',
+        kind: 'struct' as const,
+        module: 'mod_b',
+        moduleName: 'shapes',
+      },
+      {
+        id: 'sym_item',
+        name: 'Item',
+        kind: 'struct' as const,
+        module: 'mod_a',
+        moduleName: 'records',
+      },
+      {
+        id: 'sym_grade',
+        name: 'Grade',
+        kind: 'enum' as const,
+        module: 'mod_a',
+        moduleName: 'records',
+      },
+      LEVEL,
+    ];
+    const entries = rootEntries(context({ userTypes: shared, fixed: [] })).filter(
+      (entry) => entry.kind === 'type',
+    );
+    expect(entries.map((entry) => [entry.label, entry.module])).toEqual([
+      ['Level', undefined],
+      ['Student', undefined],
+      ['Grade', 'records'],
+      ['Item', 'records'],
+      ['Point', 'shapes'],
+    ]);
+    // An argument's step lists them the same way.
+    expect(
+      labels(argumentEntries(context({ userTypes: shared }), 'std::vector', 0, 1)).filter((label) =>
+        /^[A-Z]/u.test(label),
+      ),
+    ).toEqual(['Level', 'Student', 'Grade', 'Item', 'Point']);
+  });
+
   it('builds a collection argument by argument', () => {
     let step = addArgument([{ name: 'std::map', arity: 2, args: [] }], text);
     expect(step.done).toBeNull();
@@ -206,6 +250,22 @@ describe('the popover', () => {
     await expectNoAxeViolations(picker.element);
   });
 
+  it('heads another module’s shared types with its name, one group per module', async () => {
+    const { picker } = open({
+      fixed: [],
+      userTypes: [
+        STUDENT,
+        { id: 'sym_point', name: 'Point', kind: 'struct', module: 'mod_b', moduleName: 'shapes' },
+        { id: 'sym_item', name: 'Item', kind: 'struct', module: 'mod_a', moduleName: 'records' },
+      ],
+    });
+    const headings = [...picker.element.querySelectorAll('[role="group"]')].map(
+      (group) => group.firstElementChild?.textContent,
+    );
+    expect(headings).toEqual(['My types', 'Module: records', 'Module: shapes', 'Collections']);
+    await expectNoAxeViolations(picker.element);
+  });
+
   it('chooses map from string to list of int with the keyboard alone', () => {
     const { picker, key, onChoose, active } = open();
     picker.search('map');
@@ -291,5 +351,35 @@ describe('the type field', () => {
     expect(field.getValue()).toBe('{"std::vector":{"ref":"sym_student"}}');
     expect(field.getText()).toBe('list of Student');
     expect(Blockly.DropDownDiv.isVisible()).toBe(false);
+  });
+
+  it('heads another module’s shared types with its name, from the services', () => {
+    setEditorServices({
+      ...DEFAULT_EDITOR_SERVICES,
+      symbols: {
+        symbolsAt: () => [],
+        nameOf: () => null,
+        userTypes: () => [
+          symbol(STUDENT.id, 'Student', 'struct'),
+          symbol('sym_grade', 'Grade', 'enum', { module: 'mod_records' }),
+        ],
+        otherModuleName: (id) => (id === 'mod_records' ? 'records' : null),
+      },
+    });
+    const workspace = renderedWorkspace();
+    const field = renderedBlock(workspace, 'var.declare').getField('TYPE');
+    if (!(field instanceof B2cTypeField)) {
+      throw new Error('var.declare has no type field');
+    }
+    expect(field.pickerContext().userTypes).toEqual([
+      { id: STUDENT.id, name: 'Student', kind: 'struct', module: 'mod_main' },
+      {
+        id: 'sym_grade',
+        name: 'Grade',
+        kind: 'enum',
+        module: 'mod_records',
+        moduleName: 'records',
+      },
+    ]);
   });
 });

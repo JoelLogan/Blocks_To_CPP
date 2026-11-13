@@ -3,11 +3,13 @@
  * docs/plans/m3-contracts/w4-editor-tools.md §2.2): pure, no DOM and no Blockly.
  *
  * The first step lists the field's own types (*Common*), the module's structs and enums its class
- * takes (*My types*), and the collections its class takes (*Collections*: list, deque, set, map,
- * queue, stack, priority queue). A collection is a constructor: choosing it opens a step for each
- * of its arguments, which lists the value types an argument may be (the basic types, the module's
- * structs and enums, and the collections again, to {@link MAX_PICKER_DEPTH}). A map's key and the
- * element of a set or a priority queue must be *comparable*.
+ * takes (*My types*), then those other modules share, under each module's name (*Module: records*;
+ * docs/plans/m3-contracts/w3-modules.md §1.3), and the collections its class takes (*Collections*:
+ * list, deque, set, map, queue, stack, priority queue). A collection is a constructor: choosing it
+ * opens a step for each of its arguments, which lists the value types an argument may be (the basic
+ * types, the module's structs and enums and those shared with it, and the collections again, to
+ * {@link MAX_PICKER_DEPTH}). A map's key and the element of a set or a priority queue must be
+ * *comparable*.
  *
  * Every type offered is built as a term and checked with the type rules (`inClass`), and kept only
  * when they do not refuse it: a type the rules cannot judge (a struct the facts do not know yet) is
@@ -38,6 +40,11 @@ export interface PickerUserType {
   readonly kind: 'struct' | 'enum';
   /** The module that declares it, when known (W3's types shared across modules). */
   readonly module?: string;
+  /**
+   * The name of the module that declares it, when that is not the module shown: another module
+   * shares it, and the picker lists it under that module's heading.
+   */
+  readonly moduleName?: string;
 }
 
 /** What the picker works from, for one type field. */
@@ -46,7 +53,7 @@ export interface PickerContext {
   readonly typeClass: TypeClass | null;
   /** The field's own types, as it stores them (names and term keys), in catalog order. */
   readonly fixed: readonly string[];
-  /** The module's structs and enums. */
+  /** The module's structs and enums, and those the other modules share. */
   readonly userTypes: readonly PickerUserType[];
   /** What the type rules know of user types (comparable, printable). */
   readonly facts: TypeFactsTs;
@@ -65,6 +72,11 @@ export const PICKER_GROUP_TITLES: Readonly<Record<PickerGroup, string>> = {
   basic: 'Basic types',
 };
 
+/** The heading of another module's shared types (as the toolbox heads its shared functions). */
+export function moduleGroupTitle(moduleName: string): string {
+  return `Module: ${moduleName}`;
+}
+
 /** One thing a step lists: a type, or a collection to build. */
 export type PickerEntry =
   | {
@@ -74,6 +86,8 @@ export type PickerEntry =
       readonly key: string;
       readonly term: TypeTerm;
       readonly label: string;
+      /** For another module's shared type, that module's name: it is listed under its heading. */
+      readonly module?: string;
     }
   | {
       readonly kind: 'collection';
@@ -167,26 +181,48 @@ export function withinLimits(term: TypeTerm): boolean {
   return parseTerm(termJson(term)) !== null;
 }
 
-/** The module's structs (with `structs`) and enums (with `enums`) as terms, sorted by name. */
+/**
+ * The structs (with `structs`) and enums (with `enums`) as terms: the module's own sorted by name,
+ * then the other modules' shared ones, by module name, then name.
+ */
 function userTerms(
   context: PickerContext,
   structs: boolean,
   enums: boolean,
-): { readonly term: TypeTerm; readonly name: string }[] {
+): { readonly term: TypeTerm; readonly name: string; readonly module?: string }[] {
+  const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
   return context.userTypes
     .filter((user) => (user.kind === 'struct' ? structs : enums))
     .map((user) => {
       const term: TypeTerm = { kind: 'ref', id: user.id };
-      return { term, name: user.name };
+      return user.moduleName === undefined
+        ? { term, name: user.name }
+        : { term, name: user.name, module: user.moduleName };
     })
-    .sort((a, b) =>
-      a.name < b.name ? -1 : a.name > b.name ? 1 : termKey(a.term) < termKey(b.term) ? -1 : 1,
+    .sort(
+      (a, b) =>
+        (a.module === undefined ? 0 : 1) - (b.module === undefined ? 0 : 1) ||
+        order(a.module ?? '', b.module ?? '') ||
+        order(a.name, b.name) ||
+        order(termKey(a.term), termKey(b.term)),
     );
 }
 
-/** A type entry for `term`. */
-function typeEntry(term: TypeTerm, group: PickerGroup, context: PickerContext): PickerEntry {
-  return { kind: 'type', group, key: termKey(term), term, label: termLabel(term, context) };
+/** A type entry for `term`, under `module`'s heading when it is another module's. */
+function typeEntry(
+  term: TypeTerm,
+  group: PickerGroup,
+  context: PickerContext,
+  module?: string,
+): PickerEntry {
+  const entry = {
+    kind: 'type' as const,
+    group,
+    key: termKey(term),
+    term,
+    label: termLabel(term, context),
+  };
+  return module === undefined ? entry : { ...entry, module };
 }
 
 /** A collection entry. */
@@ -233,11 +269,11 @@ export function rootEntries(context: PickerContext): PickerEntry[] {
   }
   const structs = cls === 'value' || cls === 'struct' || cls === 'any';
   const enums = cls === 'value' || cls === 'enum' || cls === 'any';
-  for (const { term } of userTerms(context, structs, enums)) {
+  for (const { term, module } of userTerms(context, structs, enums)) {
     const key = termKey(term);
     if (!seen.has(key)) {
       seen.add(key);
-      entries.push(typeEntry(term, 'mine', context));
+      entries.push(typeEntry(term, 'mine', context, module));
     }
   }
   if (cls === 'struct' || cls === 'enum') {
@@ -273,9 +309,9 @@ export function argumentEntries(
       entries.push(typeEntry(term, 'basic', context));
     }
   }
-  for (const { term } of userTerms(context, true, true)) {
+  for (const { term, module } of userTerms(context, true, true)) {
     if (keep(term)) {
-      entries.push(typeEntry(term, 'mine', context));
+      entries.push(typeEntry(term, 'mine', context, module));
     }
   }
   if (depth < MAX_PICKER_DEPTH) {

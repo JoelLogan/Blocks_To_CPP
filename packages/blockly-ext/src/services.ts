@@ -135,6 +135,12 @@ export interface SymbolProvider {
    * one module.
    */
   multiModule?(): boolean;
+  /**
+   * Optional: the name of module `moduleId` when it is not the module shown, or null for the module
+   * shown (docs/plans/m3-contracts/w3-modules.md §1.3). The type picker lists another module's
+   * shared structs and enums under that name; without it, they are listed with the module's own.
+   */
+  otherModuleName?(moduleId: string): string | null;
 }
 
 /**
@@ -299,6 +305,22 @@ export function multiModule(): boolean {
     return current.symbols.multiModule?.() === true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * The name of module `moduleId` when it is not the module shown
+ * ({@link SymbolProvider.otherModuleName}); null for the module shown, or when the provider does not
+ * say or fails.
+ */
+export function otherModuleName(moduleId: string | undefined): string | null {
+  if (moduleId === undefined) {
+    return null;
+  }
+  try {
+    return current.symbols.otherModuleName?.(moduleId) ?? null;
+  } catch {
+    return null;
   }
 }
 

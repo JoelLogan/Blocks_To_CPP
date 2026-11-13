@@ -903,6 +903,30 @@ describe('the Functions category and Your functions', () => {
     expect(withModuleCount(functionsContents(two), false)).toEqual(functionsContents(two));
   });
 
+  it('marks struct, enum and global too, in the static Types category and in Variables (w3-modules.md §1.3)', () => {
+    const marked = (items: readonly Item[]): string[] =>
+      blocksOf(items)
+        .filter((block) => (block as unknown as Record<string, unknown>)['modules'] === 'several')
+        .map((block) => block.type);
+    expect(marked(staticCategoryContents('types', null, true))).toEqual([
+      'type.struct',
+      'type.enum',
+    ]);
+    expect(marked(staticCategoryContents('types'))).toEqual([]);
+    expect(marked(withModuleCount(staticCategoryContents('variables'), true))).toEqual([
+      'var.global',
+    ]);
+    // The toolbox definition marks the static categories' blocks with the module count.
+    const typesOf = (multiModule: boolean): Item[] => {
+      const types = toolboxDefinition(null, multiModule).contents.find(
+        (item) => categoryOfDefinition(item) === 'types',
+      ) as { contents?: Item[] } | undefined;
+      return types?.contents ?? [];
+    };
+    expect(marked(typesOf(true))).toEqual(['type.struct', 'type.enum']);
+    expect(marked(typesOf(false))).toEqual([]);
+  });
+
   it('labels each of several functions with one name by its parameters (overloads)', () => {
     const w = symbolFixture('s_w', 'w', { kind: 'parameter', mode: 'copy', type: 'double' });
     const words = symbolFixture('s_words', 'words', {

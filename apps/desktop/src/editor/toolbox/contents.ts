@@ -189,10 +189,11 @@ export function withLabelMode(
 
 /**
  * Marks the blocks of `items` that show *share with other modules* only in a project with several
- * modules (blockly-ext's `SHARED_SHOWN_ON`: *define*), so that the flyout builds such a block again
- * when the project gains its second module or loses it, instead of keeping one built for the other
- * count (the inflater keeps a block for an equal item). Blocks read the count themselves when they
- * are built (blockly-ext's `multiModule`; docs/plans/m3-contracts/w3-modules.md §1.2).
+ * modules (blockly-ext's `SHARED_SHOWN_ON`: *define*, *struct*, *enum* and *global*), so that the
+ * flyout builds such a block again when the project gains its second module or loses it, instead
+ * of keeping one built for the other count (the inflater keeps a block for an equal item). Blocks
+ * read the count themselves when they are built (blockly-ext's `multiModule`;
+ * docs/plans/m3-contracts/w3-modules.md §1.2, §1.3).
  */
 export function withModuleCount(
   items: Blockly.utils.toolbox.FlyoutItemInfo[],
@@ -360,9 +361,12 @@ export function newVariableBlock(name: string, type = 'int'): B2cBlockInfo {
 export function staticCategoryContents(
   id: CategoryId,
   mode: ToolboxMode = null,
+  multiModule = false,
 ): Blockly.utils.toolbox.FlyoutItemInfo[] {
   const category = categoryJson(id);
-  return category === undefined ? [] : withLabelMode(entryItems(category, mode), mode);
+  return category === undefined
+    ? []
+    : withModuleCount(withLabelMode(entryItems(category, mode), mode), multiModule);
 }
 
 /** The function that declares a variable, as the Variables category groups it. */
@@ -886,18 +890,16 @@ export function categoryContents(
   context: ContentsContext,
 ): Blockly.utils.toolbox.FlyoutItemInfo[] {
   const mode = contextMode(context);
+  const multiModule = isMultiModule(context);
   switch (category.id) {
     case 'program':
-      return withLabelMode(programContents(context), mode);
+      return withModuleCount(withLabelMode(programContents(context), mode), multiModule);
     case 'variables':
-      return withLabelMode(variablesContents(context), mode);
+      return withModuleCount(withLabelMode(variablesContents(context), mode), multiModule);
     case 'functions':
-      return withModuleCount(
-        withLabelMode(functionsContents(context), mode),
-        isMultiModule(context),
-      );
+      return withModuleCount(withLabelMode(functionsContents(context), mode), multiModule);
     default:
-      return staticCategoryContents(category.id, mode);
+      return staticCategoryContents(category.id, mode, multiModule);
   }
 }
 
@@ -914,11 +916,15 @@ export type B2cCategoryInfo = Blockly.utils.toolbox.CategoryInfo & {
   readonly [CATEGORY_KEY]: CategoryId;
 };
 
-/** The category definition of one toolbox category, dynamic or static. */
+/**
+ * The category definition of one toolbox category, dynamic or static; a static one's blocks are
+ * marked with the module count ({@link withModuleCount}).
+ */
 function categoryDefinition(
   category: ToolboxCategoryJson,
   dynamic: boolean,
   mode: ToolboxMode,
+  multiModule: boolean,
 ): B2cCategoryInfo {
   const custom = dynamic ? DYNAMIC_CATEGORY[category.id] : undefined;
   const common = {
@@ -933,7 +939,7 @@ function categoryDefinition(
     [CATEGORY_KEY]: category.id,
   };
   if (custom === undefined) {
-    return { ...common, contents: staticCategoryContents(category.id, mode) };
+    return { ...common, contents: staticCategoryContents(category.id, mode, multiModule) };
   }
   // Blockly's type for a dynamic category has no `name`, but its toolbox item reads one.
   return { ...common, custom };
@@ -974,12 +980,18 @@ function shownCategories(mode: ToolboxMode): ToolboxCategoryJson[] {
  * The full toolbox: every category in catalog order (03 §3.7) that has blocks
  * ({@link isShownCategory}), with Program, Variables and Functions built when they are shown. The
  * dynamic categories need their callbacks registered on the workspace (the toolbox plugin does
- * that) before the toolbox shows them.
+ * that) before the toolbox shows them. `multiModule` marks the static categories' blocks that show
+ * *share with other modules* (*struct*, *enum*), so a kept flyout block follows the module count.
  */
-export function toolboxDefinition(mode: ToolboxMode = null): Blockly.utils.toolbox.ToolboxInfo {
+export function toolboxDefinition(
+  mode: ToolboxMode = null,
+  multiModule = false,
+): Blockly.utils.toolbox.ToolboxInfo {
   return {
     kind: 'categoryToolbox',
-    contents: shownCategories(mode).map((category) => categoryDefinition(category, true, mode)),
+    contents: shownCategories(mode).map((category) =>
+      categoryDefinition(category, true, mode, multiModule),
+    ),
   };
 }
 
@@ -993,6 +1005,8 @@ export function initialToolboxDefinition(
 ): Blockly.utils.toolbox.ToolboxInfo {
   return {
     kind: 'categoryToolbox',
-    contents: shownCategories(mode).map((category) => categoryDefinition(category, false, mode)),
+    contents: shownCategories(mode).map((category) =>
+      categoryDefinition(category, false, mode, false),
+    ),
   };
 }

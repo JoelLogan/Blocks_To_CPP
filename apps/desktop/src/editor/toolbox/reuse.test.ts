@@ -43,7 +43,9 @@ import {
   symbolFixture,
 } from './testing';
 
-// Each test here shows the flyout of every catalog block (FLYOUT_TEST_TIMEOUT_MS).
+// Each test here shows the flyout of every catalog block (FLYOUT_TEST_TIMEOUT_MS). Measured with
+// two workers, this file alone (2026-11-13): the flyout's define 1.8 s, its struct, enum and
+// global 2.0 s (three crossings of the module count), the whole file 56 s.
 vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 beforeAll(() => {
@@ -521,6 +523,61 @@ describe('the flyout’s define', () => {
     setModules(1);
     await settle();
     expect(sharedShown()).toBe(false);
+  });
+});
+
+describe('the flyout’s struct, enum and global', () => {
+  afterEach(() => {
+    resetEditorServices();
+  });
+
+  it('show share with other modules once the project has a second module, and not after', async () => {
+    setEditorServices({
+      ...DEFAULT_EDITOR_SERVICES,
+      symbols: {
+        ...DEFAULT_EDITOR_SERVICES.symbols,
+        multiModule: () => (useAppStore.getState().project?.document.modules.length ?? 0) > 1,
+      },
+    });
+    const workspace = attached();
+    await settle();
+    const types = ['type.struct', 'type.enum', 'var.global'];
+    const block = (type: string): Blockly.BlockSvg => {
+      const found = flyoutBlocks(workspace).find((candidate) => candidate.type === type);
+      if (found === undefined) {
+        throw new Error(`no ${type} in the flyout`);
+      }
+      return found;
+    };
+    const shown = (): (boolean | undefined)[] =>
+      types.map((type) => block(type).getField(SHARED_FIELD)?.isVisible());
+    const setModules = (count: number): void => {
+      const project = useAppStore.getState().project;
+      const main = project?.document.modules[0];
+      if (project === null || main === undefined) {
+        throw new Error('no project');
+      }
+      const more = Array.from({ length: count - 1 }, (_, at) => ({
+        id: `mod_more${String(at)}`,
+        name: `more${String(at)}`,
+        workspace: { blocks: [] },
+      }));
+      useAppStore
+        .getState()
+        .actions.updateProject({ document: { ...project.document, modules: [main, ...more] } });
+    };
+    expect(shown()).toEqual([false, false, false]);
+    setModules(2);
+    await settle();
+    expect(shown()).toEqual([true, true, true]);
+    // A third module changes nothing they show.
+    const kept = types.map(block);
+    setModules(3);
+    await settle();
+    expect(types.map(block)).toEqual(kept);
+    setModules(1);
+    await settle();
+    expect(shown()).toEqual([false, false, false]);
   });
 });
 

@@ -214,8 +214,8 @@ export const BASIC_OPTIONS: Readonly<Record<string, readonly string[]>> = {
 /**
  * The checkbox fields checked and offered always, by `<block>.<FIELD>`. A tick changes the code
  * a block writes and no standard or toolchain decides it. `SHARED` (ADR-0019; on *define* since
- * docs/plans/m3-contracts/w3-modules.md §1.2) is shown only in a project of several modules, by
- * the module work, not by the mode.
+ * docs/plans/m3-contracts/w3-modules.md §1.2, on *struct*, *enum* and *global* since §1.3) is shown
+ * only in a project of several modules, by the module work, not by the mode.
  */
 export const BASIC_FIELDS: ReadonlySet<string> = new Set([
   'file.write.NEWLINE',

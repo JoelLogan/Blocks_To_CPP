@@ -14,6 +14,7 @@ import {
   PLACEHOLDER_TYPE,
   REPEAT_ANCHOR,
   SHARED_FIELD,
+  SHARED_SHOWN_ON,
   ZELOS_OUTPUT_SHAPE,
   B2cSymbolRefField,
   B2cTextField,
@@ -360,27 +361,28 @@ describe('blockLayout', () => {
     }
   });
 
-  it('shows SHARED on define only, and only in a project with several modules (w3-modules.md §1.2)', () => {
-    const define = def('func.define');
-    const sharedRow = (multiModule: boolean): string | undefined =>
-      describeLayout(define, multiModule).find((row) => row.includes('SHARED'));
-    expect(sharedRow(false)).toContain('("share with other modules") (SHARED)');
-    expect(sharedRow(true)).toContain('"share with other modules" SHARED');
-    expect(sharedRow(true)).not.toContain('(SHARED)');
-    // Struct, enum and global keep it hidden until package T shows it.
-    for (const id of ['type.struct', 'type.enum', 'var.global']) {
-      expect(
-        describeLayout(def(id), true).find((row) => row.includes('SHARED')),
-        id,
-      ).toContain('(SHARED)');
+  it('shows SHARED on the four definitions, only in a project with several modules (w3-modules.md §1.2, §1.3)', () => {
+    for (const id of ['func.define', 'type.struct', 'type.enum', 'var.global']) {
+      const block = def(id);
+      const sharedRow = (multiModule: boolean): string | undefined =>
+        describeLayout(block, multiModule).find((row) => row.includes('SHARED'));
+      expect(sharedRow(false), id).toContain('("share with other modules") (SHARED)');
+      expect(sharedRow(true), id).toContain('"share with other modules" SHARED');
+      expect(sharedRow(true), id).not.toContain('(SHARED)');
+      // The other inputs and fields do not move.
+      const names = (multiModule: boolean): string[] =>
+        blockLayout(block, block.labelParts, { multiModule }).inputs.map((input) => input.name);
+      expect(names(true), id).toEqual(names(false));
     }
-    // The other inputs and fields do not move.
-    const names = (multiModule: boolean): string[] =>
-      blockLayout(define, define.labelParts, { multiModule }).inputs.map((input) => input.name);
-    expect(names(true)).toEqual(names(false));
+    expect([...SHARED_SHOWN_ON].sort()).toEqual([
+      'func.define',
+      'type.enum',
+      'type.struct',
+      'var.global',
+    ]);
   });
 
-  it('builds define with SHARED shown while the services say several modules, value kept', () => {
+  it('builds the definitions with SHARED shown while the services say several modules, value kept', () => {
     const workspace = headlessWorkspace();
     let several = false;
     setEditorServices({
@@ -388,21 +390,24 @@ describe('blockLayout', () => {
       symbols: { ...DEFAULT_EDITOR_SERVICES.symbols, multiModule: () => several },
     });
     try {
-      const hidden = workspace.newBlock('func.define');
-      expect(hidden.getField(SHARED_FIELD)?.isVisible()).toBe(false);
-      several = true;
-      const shown = workspace.newBlock('func.define');
-      expect(shown.getField(SHARED_FIELD)?.isVisible()).toBe(true);
-      shown.setFieldValue('TRUE', SHARED_FIELD);
-      const state = Blockly.serialization.blocks.save(shown);
-      if (state === null) {
-        throw new Error('define was not saved');
+      for (const type of ['func.define', 'type.struct', 'type.enum', 'var.global']) {
+        several = false;
+        const hidden = workspace.newBlock(type);
+        expect(hidden.getField(SHARED_FIELD)?.isVisible(), type).toBe(false);
+        several = true;
+        const shown = workspace.newBlock(type);
+        expect(shown.getField(SHARED_FIELD)?.isVisible(), type).toBe(true);
+        shown.setFieldValue('TRUE', SHARED_FIELD);
+        const state = Blockly.serialization.blocks.save(shown);
+        if (state === null) {
+          throw new Error(`${type} was not saved`);
+        }
+        // Built again in a single-module project, the value stays, hidden.
+        several = false;
+        const again = Blockly.serialization.blocks.append(state, workspace);
+        expect(again.getField(SHARED_FIELD)?.isVisible(), type).toBe(false);
+        expect(again.getFieldValue(SHARED_FIELD), type).toBe('TRUE');
       }
-      // Built again in a single-module project, the value stays, hidden.
-      several = false;
-      const again = Blockly.serialization.blocks.append(state, workspace);
-      expect(again.getField(SHARED_FIELD)?.isVisible()).toBe(false);
-      expect(again.getFieldValue(SHARED_FIELD)).toBe('TRUE');
       // A provider that throws counts as one module.
       setEditorServices({
         ...DEFAULT_EDITOR_SERVICES,

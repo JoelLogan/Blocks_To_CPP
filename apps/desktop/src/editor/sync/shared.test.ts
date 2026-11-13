@@ -1,7 +1,7 @@
 /**
- * *share with other modules* on *define* (docs/plans/m3-contracts/w3-modules.md §1.2, W3M-D11):
- * written into the project only while it is ticked, so a project that shares nothing stays readable
- * by M2; a value a file holds is read back as it is.
+ * *share with other modules* on *define* (docs/plans/m3-contracts/w3-modules.md §1.2, W3M-D11), and
+ * on *struct*, *enum* and *global* (§1.3): written into the project only while it is ticked, so a
+ * project that shares nothing stays readable by M2; a value a file holds is read back as it is.
  */
 import type { BdmBlock, BdmDocument } from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
@@ -71,5 +71,23 @@ describe('SHARED on define, written only when ticked (W3M-D11)', () => {
     expect(readDefine(workspace, doc)['SHARED']).toBe(true);
     block?.setFieldValue('FALSE', 'SHARED');
     expect(readDefine(workspace, doc)).not.toHaveProperty('SHARED');
+  });
+});
+
+describe('SHARED on struct, enum and global, written only when ticked (w3-modules.md §1.3)', () => {
+  it('leaves an unticked new block’s SHARED out, and writes a ticked one', () => {
+    for (const type of ['type.struct', 'type.enum', 'var.global']) {
+      const workspace = headlessWorkspace();
+      const doc = docWith([]);
+      const block = workspace.newBlock(type, 'blk_new');
+      block.moveBy(10, 10);
+      const read = (): Record<string, unknown> =>
+        readModule(workspace, doc, 'mod_main').modules[0]?.workspace.blocks[0]?.fields ?? {};
+      expect(read(), type).not.toHaveProperty('SHARED');
+      block.setFieldValue('TRUE', 'SHARED');
+      expect(read()['SHARED'], type).toBe(true);
+      block.setFieldValue('FALSE', 'SHARED');
+      expect(read(), type).not.toHaveProperty('SHARED');
+    }
   });
 });

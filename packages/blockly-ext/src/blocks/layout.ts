@@ -20,8 +20,8 @@
  * - a field named {@link SHARED_FIELD} and the label words right before it (back to the previous
  *   field or input) are hidden: the block keeps the field's value, but shows it only where it means
  *   something, in a project with several modules (w2.md §2.1, modules.md §7.1), and only on the
- *   blocks of {@link SHARED_SHOWN_ON} (docs/plans/m3-contracts/w3-modules.md §1.2: `func.define`
- *   from W3's package E on; the struct, enum and global blocks follow with package T).
+ *   blocks of {@link SHARED_SHOWN_ON} (docs/plans/m3-contracts/w3-modules.md §1.2, §1.3: `func.define`
+ *   from W3's package E on, `type.struct`, `type.enum` and `var.global` from package T on).
  */
 import type { BlockDefJson, LabelPart } from '../generated/catalog';
 import { REPEAT_ANCHOR } from './mutators';
@@ -39,10 +39,15 @@ export const SHARED_FIELD = 'SHARED';
 
 /**
  * The blocks whose {@link SHARED_FIELD} is shown in a project with several modules
- * (docs/plans/m3-contracts/w3-modules.md §1.2, §3.3). On every other block it stays hidden, with
- * its value kept.
+ * (docs/plans/m3-contracts/w3-modules.md §1.2, §1.3, §3.3): the definitions a module can share. On
+ * every other block it stays hidden, with its value kept.
  */
-export const SHARED_SHOWN_ON: ReadonlySet<string> = new Set(['func.define']);
+export const SHARED_SHOWN_ON: ReadonlySet<string> = new Set([
+  'func.define',
+  'type.struct',
+  'type.enum',
+  'var.global',
+]);
 
 /** What a layout depends on besides the block and its label parts. */
 export interface LayoutOptions {

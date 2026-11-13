@@ -20,7 +20,13 @@ import * as Blockly from 'blockly/core';
 import { blockLabelMode } from '../blocks/labelMode';
 import { blockDef } from '../checker/catalog';
 import type { TypeClass } from '../generated/catalog';
-import { getEditorServices, nameOf, symbolsAt, type SymbolInfo } from '../services';
+import {
+  getEditorServices,
+  nameOf,
+  otherModuleName,
+  symbolsAt,
+  type SymbolInfo,
+} from '../services';
 import { NO_FACTS, termKey, type TypeFactsTs, type UserTypeTs } from '../types/static-type';
 import { visibleInvisibles } from '../text';
 import { B2cOptionsFieldBase, type OptionPair } from './options-base';
@@ -154,7 +160,10 @@ export class B2cTypeField extends B2cOptionsFieldBase {
     return Object.hasOwn(def.typeVars, pattern.name) ? (def.typeVars[pattern.name] ?? null) : null;
   }
 
-  /** The module's structs and enums, from the latest analysis. */
+  /**
+   * The module's structs and enums, and those the other modules share (w3-modules.md §1.3), from
+   * the latest analysis.
+   */
   private userTypes(): readonly SymbolInfo[] {
     let symbols: readonly SymbolInfo[] | null;
     try {
@@ -232,12 +241,16 @@ export class B2cTypeField extends B2cOptionsFieldBase {
     return {
       typeClass: this.typeClass(),
       fixed: this.listsTypes ? this.fixed.map(([, value]) => value) : [],
-      userTypes: this.userTypes().map((symbol) => ({
-        id: symbol.id,
-        name: nameOf(symbol.id) ?? symbol.name,
-        kind: symbol.kind === 'enum' ? ('enum' as const) : ('struct' as const),
-        module: symbol.module,
-      })),
+      userTypes: this.userTypes().map((symbol) => {
+        const moduleName = otherModuleName(symbol.module);
+        return {
+          id: symbol.id,
+          name: nameOf(symbol.id) ?? symbol.name,
+          kind: symbol.kind === 'enum' ? ('enum' as const) : ('struct' as const),
+          module: symbol.module,
+          ...(moduleName === null ? {} : { moduleName }),
+        };
+      }),
       facts: namingFacts(),
       mode: blockLabelMode(),
     };

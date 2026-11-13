@@ -515,6 +515,43 @@ describe('the structs and enums the type fields list', () => {
     shown = null;
     expect(symbols.userTypes?.()).toEqual([]);
   });
+
+  it('add those the other modules share, unless an own type has the name (w3-modules.md §2.1)', () => {
+    const own = symbol('s_point_a', 'Point', {
+      kind: 'struct',
+      module: 'mod_a',
+      declBlock: 'st_a',
+    });
+    const sharedPoint = symbol('s_point_b', 'Point', {
+      kind: 'struct',
+      module: 'mod_b',
+      declBlock: 'st_b',
+      shared: true,
+    });
+    const grade = symbol('s_grade', 'Grade', {
+      kind: 'enum',
+      module: 'mod_b',
+      declBlock: 'en_b',
+      shared: true,
+    });
+    const hidden = symbol('s_hidden', 'Hidden', {
+      kind: 'struct',
+      module: 'mod_b',
+      declBlock: 'st_h',
+    });
+    const names: Record<string, string> = { mod_a: 'main', mod_b: 'records' };
+    const { symbols } = createSymbolServices({
+      core: () => null,
+      preview: () => ({ ...previewFixture(), symbols: [sharedPoint, grade, hidden, own] }),
+      workspace: headlessWorkspace(),
+      activeModule: () => 'mod_a',
+      moduleName: (id) => names[id] ?? null,
+    });
+    expect(symbols.userTypes?.()).toEqual([own, grade]);
+    // The type picker heads another module's types with its name, not the module shown's.
+    expect(symbols.otherModuleName?.('mod_b')).toBe('records');
+    expect(symbols.otherModuleName?.('mod_a')).toBeNull();
+  });
 });
 
 describe('whether a function has overloads', () => {
