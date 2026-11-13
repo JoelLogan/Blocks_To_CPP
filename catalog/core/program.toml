@@ -61,6 +61,43 @@ name = "HEADER"
 kind = "header"
 default = "<cmath>"
 
+# W3's package N1 (catalog 1.3.0, docs/plans/m3-contracts/w3-modules.md
+# §1.4, §2.12): a namespace is a definition with a mouth for the
+# definitions in it, nested at most 14 deep (B2C-E0219); *use namespace*
+# nominates a namespace for the whole file, std or a top-level namespace of
+# the program, stored as "::std" or as the namespace's symbol ID (§2.9).
+[[block]]
+id = "program.namespace"
+version = 1
+category = "program"
+shape = "definition"
+namespace_member = true
+label = { friendly = "namespace %NAME %DEFINITIONS", cpp = "namespace %NAME { %DEFINITIONS }" }
+lowering = "builtin"
+help = "Groups definitions under one name, so that they are called geo::area in other code and their names cannot clash with others. Put functions, structs, enums, global variables and other namespaces inside it."
+
+[[block.field]]
+name = "NAME"
+kind = "symbol_decl"
+
+[[block.statement]]
+name = "DEFINITIONS"
+definitions = true
+
+[[block]]
+id = "program.use_namespace"
+version = 1
+category = "program"
+shape = "definition"
+label = { friendly = "use namespace %NS in this file", cpp = "using namespace %NS;" }
+lowering = "builtin"
+help = "Lets the code of this module name what a namespace holds without writing the namespace's name in front, as textbooks write cout for std::cout. It never changes another module's code."
+
+[[block.field]]
+name = "NS"
+kind = "namespace"
+default = "::std"
+
 [[block]]
 id = "program.check"
 version = 1

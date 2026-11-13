@@ -58,10 +58,19 @@ export type TypeClass =
 
 /**
  * The kind of a field. `header` (types.md §5.4) holds a standard header from the header table as
- * its text, such as `<cmath>`.
+ * its text, such as `<cmath>`. `namespace` (w3-modules.md §2.9) holds a namespace as text: a
+ * standard one as `::` and its name (`::std`), or a user namespace's symbol ID.
  */
 export type FieldKind =
-  'dropdown' | 'checkbox' | 'text' | 'number' | 'type' | 'symbol_decl' | 'symbol_ref' | 'header';
+  | 'dropdown'
+  | 'checkbox'
+  | 'text'
+  | 'number'
+  | 'type'
+  | 'symbol_decl'
+  | 'symbol_ref'
+  | 'header'
+  | 'namespace';
 
 /**
  * The type of the value a reporter or predicate gives: its pattern as catalog files write it
@@ -187,6 +196,11 @@ export interface StatementDefJson {
   readonly repeat: RepeatJson | null;
   /** The input exists only while this `extra` flag is true. */
   readonly when: string | null;
+  /**
+   * Present and `true` on a namespace's mouth: it holds the blocks marked
+   * {@link BlockDefJson.namespaceMember}, not statements (w3-modules.md §2.12).
+   */
+  readonly definitions?: true;
 }
 
 /**
@@ -249,6 +263,11 @@ export interface BlockDefJson {
   readonly headers: readonly string[];
   /** The headers a dropdown option adds, by field, then option. */
   readonly optionHeaders: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
+  /**
+   * Present and `true` on a definition that also fits a namespace's mouth, after the definitions
+   * there (*define*, *struct*, *enum*, *global*, *namespace*; w3-modules.md §2.12).
+   */
+  readonly namespaceMember?: true;
 }
 
 /** Blocks the editor adds to a category for the open project. */

@@ -183,6 +183,7 @@ fn instance(def: &BlockDef, index: usize) -> Value {
                 FieldKind::SymbolDecl => json!({"sym": format!("s{index}_{name}"), "name": "x"}),
                 FieldKind::SymbolRef => json!({"ref": "s_any"}),
                 FieldKind::Header => json!("<vector>"),
+                FieldKind::Namespace => json!("::std"),
             };
             fields.insert(name, value);
         }

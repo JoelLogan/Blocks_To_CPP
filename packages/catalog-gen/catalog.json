@@ -2028,6 +2028,7 @@
           "typeClass": "value"
         }
       ],
+      "namespaceMember": true,
       "order": [
         {
           "field": "RETURNS"
@@ -3162,6 +3163,40 @@
       ]
     },
     {
+      "id": "program.namespace",
+      "version": 1,
+      "category": "program",
+      "shape": "definition",
+      "output": null,
+      "label": {
+        "friendly": "namespace %NAME %DEFINITIONS",
+        "cpp": "namespace %NAME { %DEFINITIONS }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Groups definitions under one name, so that they are called geo::area in other code and their names cannot clash with others. Put functions, structs, enums, global variables and other namespaces inside it.",
+      "field": [
+        {
+          "name": "NAME",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null
+        }
+      ],
+      "input": [],
+      "statement": [
+        {
+          "name": "DEFINITIONS",
+          "repeat": null,
+          "when": null,
+          "definitions": true
+        }
+      ],
+      "extra": [],
+      "namespaceMember": true
+    },
+    {
       "id": "program.use_header",
       "version": 1,
       "category": "program",
@@ -3181,6 +3216,32 @@
           "options": [],
           "types": [],
           "default": "<cmath>"
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "program.use_namespace",
+      "version": 1,
+      "category": "program",
+      "shape": "definition",
+      "output": null,
+      "label": {
+        "friendly": "use namespace %NS in this file",
+        "cpp": "using namespace %NS;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Lets the code of this module name what a namespace holds without writing the namespace's name in front, as textbooks write cout for std::cout. It never changes another module's code.",
+      "field": [
+        {
+          "name": "NS",
+          "kind": "namespace",
+          "options": [],
+          "types": [],
+          "default": "::std"
         }
       ],
       "input": [],
@@ -3884,7 +3945,8 @@
           "default": null,
           "types": []
         }
-      ]
+      ],
+      "namespaceMember": true
     },
     {
       "id": "type.enum_value",
@@ -4190,6 +4252,7 @@
           "typeClass": "value"
         }
       ],
+      "namespaceMember": true,
       "order": [
         {
           "input": "DEFAULT"
@@ -4531,6 +4594,7 @@
       ],
       "statement": [],
       "extra": [],
+      "namespaceMember": true,
       "order": [
         {
           "field": "TYPE"
@@ -4619,6 +4683,16 @@
           },
           {
             "block": "program.use_header",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "program.namespace",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "program.use_namespace",
             "label": null,
             "preset": null
           },

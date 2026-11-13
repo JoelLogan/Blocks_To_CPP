@@ -1067,8 +1067,10 @@ fn the_forms_program_compiles_clean_and_runs_on_every_gxx() {
 /// an int with *go on into the next case*, on a character and on an enum;
 /// *do … then repeat*), files, functions with default values and overloads,
 /// globals and constants, *add to the end*, *flip* and the bitwise changes,
-/// *with arguments*, *use header* and *check at compile time*. It is a C++20
-/// project; the C++17 program is the same project with its standard changed.
+/// *with arguments*, *use header* and *check at compile time*, and W3's
+/// *namespace* (a function in its mouth) and *use namespace* (w3-modules.md
+/// §2.12; printed from package N2 on). It is a C++20 project; the C++17
+/// program is the same project with its standard changed.
 const EVERY_BLOCK_PROJECT: &str = "tests/fixtures/every_block.b2c";
 
 /// What the every-block program prints, given [`EVERY_BLOCK_INPUT`].

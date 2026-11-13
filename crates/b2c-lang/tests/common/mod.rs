@@ -319,6 +319,9 @@ pub(crate) const AFTER_M2: &[&str] = &[
     // under `file.` above).
     "program.check",
     "program.use_header",
+    // W3's package N1: the namespace blocks (w3-modules.md §5.1).
+    "program.namespace",
+    "program.use_namespace",
 ];
 
 /// Whether `block_type` came after M2 ([`AFTER_M2`]).

@@ -694,6 +694,8 @@ describe('the Program category', () => {
       'program.main',
       'program.exit',
       'program.use_header',
+      'program.namespace',
+      'program.use_namespace',
       'program.check',
     ]);
     expect(labelsOf(items)).toEqual([]);
@@ -701,7 +703,13 @@ describe('the Program category', () => {
 
   it('says where the program starts once the project has it, and still offers stop program', () => {
     const here = programContents(context());
-    expect(typesOf(here)).toEqual(['program.exit', 'program.use_header', 'program.check']);
+    expect(typesOf(here)).toEqual([
+      'program.exit',
+      'program.use_header',
+      'program.namespace',
+      'program.use_namespace',
+      'program.check',
+    ]);
     expect(labelsOf(here)).toEqual([...PROGRAM_HERE_NOTE]);
     expect(PROGRAM_HERE_NOTE).toEqual(['Your program starts at', '“when program starts”.']);
 
@@ -715,7 +723,13 @@ describe('the Program category', () => {
         ],
       }),
     );
-    expect(typesOf(elsewhere)).toEqual(['program.exit', 'program.use_header', 'program.check']);
+    expect(typesOf(elsewhere)).toEqual([
+      'program.exit',
+      'program.use_header',
+      'program.namespace',
+      'program.use_namespace',
+      'program.check',
+    ]);
     expect(labelsOf(elsewhere)).toEqual(['Your program starts in', 'the module “game”.']);
   });
 });
@@ -1281,10 +1295,16 @@ describe('the gated toolbox (w4-editor-tools.md §2.1)', () => {
 
   it('leaves the advanced blocks out until Show advanced blocks is on', () => {
     const items = (mode: EditorMode) => programContents({ ...context(), mode: () => mode });
-    expect(typesOf(items(basic))).toEqual(['program.exit']);
+    expect(typesOf(items(basic))).toEqual([
+      'program.exit',
+      'program.namespace',
+      'program.use_namespace',
+    ]);
     expect(typesOf(items(advanced))).toEqual([
       'program.exit',
       'program.use_header',
+      'program.namespace',
+      'program.use_namespace',
       'program.check',
     ]);
     expect(typesOf(staticCategoryContents('control', basic))).not.toContain('control.fallthrough');

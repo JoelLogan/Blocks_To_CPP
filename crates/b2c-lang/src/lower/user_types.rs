@@ -96,6 +96,7 @@ impl Lowerer<'_> {
                 DeclKind::Global => "a global variable",
                 DeclKind::Field => "a field of a struct",
                 DeclKind::Enumerator => "a value of an enum",
+                DeclKind::Namespace => "a namespace",
                 // A struct or an enum is a type; one that is not in the table
                 // yet was not declared.
                 DeclKind::Struct => "a struct that could not be created",

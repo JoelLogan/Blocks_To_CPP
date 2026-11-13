@@ -42,6 +42,7 @@ id = "var.global"
 version = 1
 category = "variables"
 shape = "definition"
+namespace_member = true
 label = { friendly = "global %KIND %TYPE %NAME = %VALUE share with other modules %SHARED", cpp = "%TYPE %NAME = %VALUE;" }
 lowering = "builtin"
 help = "Creates a variable, or a constant, that every function of the module can use, wherever the block is. A constant needs a value and never changes."

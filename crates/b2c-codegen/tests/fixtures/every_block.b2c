@@ -4140,6 +4140,79 @@
                 }
               ]
             }
+          },
+          {
+            "id": "b194",
+            "type": "program.use_namespace",
+            "v": 1,
+            "x": 40,
+            "y": 4440,
+            "fields": {
+              "NS": "::std"
+            }
+          },
+          {
+            "id": "b197",
+            "type": "program.namespace",
+            "v": 1,
+            "x": 40,
+            "y": 4640,
+            "fields": {
+              "NAME": {
+                "sym": "s_shapes",
+                "name": "shapes"
+              }
+            },
+            "statements": {
+              "DEFINITIONS": [
+                {
+                  "id": "b196",
+                  "type": "func.define",
+                  "v": 1,
+                  "extra": {
+                    "params": [
+                      {
+                        "mode": "copy",
+                        "name": "n",
+                        "sym": "s_half_n",
+                        "type": "int"
+                      }
+                    ]
+                  },
+                  "fields": {
+                    "NAME": {
+                      "sym": "s_half",
+                      "name": "half"
+                    },
+                    "RETURNS": "int"
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b195",
+                        "type": "func.return",
+                        "v": 1,
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_half_n"
+                              },
+                              {
+                                "op": "/"
+                              },
+                              {
+                                "num": "2"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
           }
         ]
       }

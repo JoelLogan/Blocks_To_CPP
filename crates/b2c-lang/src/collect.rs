@@ -12,7 +12,10 @@ use b2c_ir::diag::{Location, Part};
 use b2c_ir::ids::{ModuleId, SymbolId};
 use b2c_model::{Block, Document, Input};
 
-use crate::access::{catch_count, decl_field, is_statement_type, param_rows, rows, statement_lists};
+use crate::access::{
+    NAMESPACE_MEMBERS, NAMESPACE_MOUTH, catch_count, decl_field, is_statement_type, namespace_members,
+    param_rows, rows, statement_lists,
+};
 use crate::scope::{COUNTER_LIST, ITEM_LIST, ListKey, PARAMS_LIST};
 
 /// Deepest block nesting the analyser follows (statement and value nesting
@@ -46,6 +49,8 @@ pub(crate) enum DeclKind {
     Field,
     /// A value of an enum (a row of `extra.values`).
     Enumerator,
+    /// A user namespace (`program.namespace`, w3-modules.md §2.12).
+    Namespace,
 }
 
 /// Whether a declaration is part of the program.
@@ -167,11 +172,8 @@ impl Collector {
                 self.list(block, "BODY", &path, status, 1);
                 self.other_statements(block, &["BODY"], 1, status);
             }
-            "func.define" => self.function(block, status),
-            "type.struct" | "type.enum" | "var.global" => {
-                self.definition(block, status);
-                self.other_statements(block, &[], 1, status);
-                self.inputs(block, 0, status);
+            "func.define" | "type.struct" | "type.enum" | "var.global" | "program.namespace" => {
+                self.member(block, status, 0);
             }
             _ => self.anywhere(block, Self::off_program(status), 0),
         }
@@ -182,6 +184,47 @@ impl Collector {
         for stacked in &block.stack {
             self.anywhere(stacked, DeclStatus::Detached, 0);
         }
+    }
+
+    /// A definition that may also sit in a namespace's mouth: a function, a
+    /// struct, an enum, a global or a namespace (w3-modules.md §2.12), at
+    /// namespace nesting `depth` (0 at the top level).
+    fn member(&mut self, block: &Block, status: DeclStatus, depth: usize) {
+        match block.block_type.as_str() {
+            "func.define" => self.function(block, status),
+            "program.namespace" => self.namespace(block, status, depth),
+            _ => {
+                self.definition(block, status);
+                self.other_statements(block, &[], 1, status);
+                self.inputs(block, 0, status);
+            }
+        }
+    }
+
+    /// A namespace and the definitions in its mouth, which are part of the
+    /// program like top-level ones (their paths are empty): a disabled
+    /// namespace disables them all. A block of another kind in the mouth is
+    /// not part of the program (the catalog reports it, `B2C-E0604`).
+    fn namespace(&mut self, block: &Block, status: DeclStatus, depth: usize) {
+        self.record(block, "NAME", DeclKind::Namespace, status, &[]);
+        if depth >= MAX_BLOCK_DEPTH {
+            return;
+        }
+        for nested in crate::access::statements(block, NAMESPACE_MOUTH) {
+            if !NAMESPACE_MEMBERS.contains(&nested.block_type.as_str()) {
+                self.anywhere(nested, Self::off_program(status), depth + 1);
+            }
+        }
+        for member in namespace_members(block) {
+            let status = if member.disabled && status == DeclStatus::Active {
+                DeclStatus::Disabled
+            } else {
+                status
+            };
+            self.member(member, status, depth + 1);
+        }
+        self.other_statements(block, &[NAMESPACE_MOUTH], 1, status);
+        self.inputs(block, 0, status);
     }
 
     fn function(&mut self, block: &Block, status: DeclStatus) {
@@ -358,6 +401,7 @@ impl Collector {
                 }
             }
             "type.struct" | "type.enum" | "var.global" => self.definition(block, status),
+            "program.namespace" => self.record(block, "NAME", DeclKind::Namespace, status, &[]),
             _ => {}
         }
         for list in block.statements.values() {

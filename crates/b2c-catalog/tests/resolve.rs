@@ -309,6 +309,163 @@ fn e0604_blocks_in_the_wrong_place() {
     );
 }
 
+/// A namespace's mouth (w3-modules.md §2.10, §2.12): the five namespace
+/// members sit at the top level or in a mouth, nested namespaces too, and a
+/// mouth holds nothing else. Each placement a hand-edited file can make and
+/// the editor cannot is `B2C-E0604`, on the misplaced block.
+#[test]
+fn e0604_namespaces_in_hand_edited_files() {
+    let define = |id: &str, sym: &str| {
+        json!({"id": id, "type": "func.define", "v": 1,
+               "fields": {"NAME": {"sym": sym, "name": sym}}, "extra": {"params": []}})
+    };
+    let namespace = |id: &str, sym: &str, definitions: Value| {
+        json!({"id": id, "type": "program.namespace", "v": 1,
+               "fields": {"NAME": {"sym": sym, "name": sym}},
+               "statements": {"DEFINITIONS": definitions}})
+    };
+    // Every member fits a mouth, and a namespace fits another's.
+    let members = json!([
+        define("m1", "s_area"),
+        {"id": "m2", "type": "type.struct", "v": 1, "fields": {"NAME": {"sym": "s_box", "name": "Box"}},
+         "extra": {"fields": []}},
+        {"id": "m3", "type": "type.enum", "v": 1, "fields": {"NAME": {"sym": "s_col", "name": "Colour"}},
+         "extra": {"values": []}},
+        {"id": "m4", "type": "var.global", "v": 1, "fields": {"NAME": {"sym": "s_g", "name": "g"}},
+         "inputs": {"VALUE": {"expr": [{"num": "1"}]}}},
+        namespace("m5", "s_inner", json!([define("m6", "s_half")])),
+    ]);
+    let clean = project(
+        json!([]),
+        json!([
+            namespace("n1", "s_geo", members),
+            {"id": "u1", "type": "program.use_namespace", "v": 1, "fields": {"NS": "::std"}},
+            {"id": "u2", "type": "program.use_namespace", "v": 1, "fields": {"NS": "s_geo"}},
+        ]),
+    );
+    let (document, diagnostics) = common::resolve(&clean);
+    assert_eq!(diagnostics, []);
+    // The mouth is the block's statement list (05 §5.4), kept in order.
+    let mouth = &document.modules[0].workspace.blocks[1].statements["DEFINITIONS"];
+    let ids: Vec<&str> = mouth.iter().map(|b| b.id.as_str()).collect();
+    assert_eq!(ids, ["m1", "m2", "m3", "m4", "m5"]);
+
+    let misplaced = project(
+        // A namespace in a function body (here, the program's).
+        json!([namespace("w1", "s_a", json!([]))]),
+        json!([
+            namespace("n1", "s_geo", json!([
+                // A statement, a value, the program's start and the two
+                // definitions that are no members, in a mouth.
+                {"id": "w2", "type": "control.break", "v": 1},
+                {"id": "w3", "type": "math.number", "v": 1, "fields": {"VALUE": "1"}},
+                {"id": "w4", "type": "program.main", "v": 1},
+                {"id": "w5", "type": "program.use_namespace", "v": 1},
+                {"id": "w6", "type": "program.use_header", "v": 1},
+            ])),
+            // A definition stacked below a top-level definition: never a
+            // loose stack, also of definitions.
+            {"id": "w7", "type": "func.define", "v": 1,
+             "fields": {"NAME": {"sym": "s_f", "name": "f"}}, "extra": {"params": []},
+             "stack": [{"id": "w8", "type": "type.enum", "v": 1,
+                        "fields": {"NAME": {"sym": "s_e", "name": "E"}}, "extra": {"values": []}}]},
+            // A namespace stacked below a top-level namespace.
+            {"id": "w9", "type": "program.namespace", "v": 1,
+             "fields": {"NAME": {"sym": "s_b", "name": "b"}},
+             "stack": [namespace("w10", "s_c", json!([]))]},
+        ]),
+    );
+    let (_, diagnostics) = common::resolve(&misplaced);
+    let found: Vec<(&str, &str)> = diagnostics
+        .iter()
+        .map(|d| (d.code.0.as_str(), d.primary.block.as_ref().unwrap().as_str()))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            ("B2C-E0604", "w1"),
+            ("B2C-E0604", "w2"),
+            ("B2C-E0604", "w3"),
+            ("B2C-E0604", "w4"),
+            ("B2C-E0604", "w5"),
+            ("B2C-E0604", "w6"),
+            ("B2C-E0604", "w7"),
+            ("B2C-E0604", "w8"),
+            ("B2C-E0604", "w9"),
+            ("B2C-E0604", "w10"),
+        ]
+    );
+    let text: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
+    assert_eq!(
+        text,
+        [
+            "A \"namespace\" block must sit directly on the canvas or inside a namespace, not inside another block.",
+            "A namespace holds only definitions: functions, structs, enums, global variables and other namespaces. Move this \"leave loop\" block into a function or into when program starts.",
+            "A namespace holds only definitions: functions, structs, enums, global variables and other namespaces. Move this block into a function or into when program starts.",
+            "A \"when program starts\" block must sit directly on the canvas, not inside a namespace.",
+            "A \"use namespace\" block must sit directly on the canvas, not inside a namespace.",
+            "A \"use header\" block must sit directly on the canvas, not inside a namespace.",
+            "1 block is stacked below this \"define\" block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it.",
+            "A \"enum\" block must sit directly on the canvas or inside a namespace, not inside another block.",
+            "1 block is stacked below this \"namespace\" block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it.",
+            "A \"namespace\" block must sit directly on the canvas or inside a namespace, not inside another block.",
+        ]
+    );
+}
+
+/// *use namespace*'s field (w3-modules.md §2.9) holds a standard namespace
+/// as `::` and its name, or a namespace's symbol ID: `::std` and a symbol ID
+/// `std` never meet. Anything else is `B2C-E0607`; which namespaces exist is
+/// the analyser's to check.
+#[test]
+fn a_namespace_field_holds_a_standard_name_or_a_symbol_id() {
+    let uses = |values: &[Value]| {
+        let blocks: Vec<Value> = values
+            .iter()
+            .enumerate()
+            .map(|(i, value)| {
+                json!({"id": format!("u{i}"), "type": "program.use_namespace", "v": 1,
+                       "fields": {"NS": value}})
+            })
+            .collect();
+        common::resolve(&project(json!([]), Value::Array(blocks))).1
+    };
+    let fine = [
+        json!("::std"),
+        json!("std"),
+        json!("::std::chrono"),
+        json!("sym_Ab12"),
+    ];
+    assert_eq!(uses(&fine), []);
+    let wrong = [
+        json!(""),
+        json!("::"),
+        json!("::std::"),
+        json!("::1x"),
+        json!("std::chrono"),
+        json!(":std"),
+        json!(true),
+        json!({"ref": "s_geo"}),
+    ];
+    let diagnostics = uses(&wrong);
+    assert_eq!(diagnostics.len(), wrong.len(), "{diagnostics:?}");
+    assert!(diagnostics.iter().all(|d| d.code.0 == "B2C-E0607"));
+    assert_eq!(
+        diagnostics[4].message,
+        "The field NS is \"std::chrono\", but it must name a namespace: \"::std\", or the symbol ID of a namespace block."
+    );
+    // An absent field takes the catalog's default.
+    let (document, diagnostics) = common::resolve(&project(
+        json!([]),
+        json!([{"id": "u1", "type": "program.use_namespace", "v": 1}]),
+    ));
+    assert_eq!(diagnostics, []);
+    assert_eq!(
+        document.modules[0].workspace.blocks[1].fields["NS"],
+        FieldValue::Text("::std".into())
+    );
+}
+
 /// Statements, reporters and predicates left on the canvas are parked
 /// (ADR-0012): the catalog reports nothing about their place, also for a
 /// stack, a disabled head and the blocks nested in them, while every other

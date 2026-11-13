@@ -63,7 +63,8 @@ fn exercise(document: &Document, what: &str) -> Analysis {
             );
             // A definition is an item of its own: it sees the module, not `main`'s
             // variables (a struct's or an enum's, w2.md §2.2; a global's, §2.7;
-            // *use header*'s, §1.6).
+            // *use header*'s, §1.6), and so are the namespace blocks
+            // (w3-modules.md §2.12).
             let item = matches!(
                 block.block_type.as_str(),
                 "program.main"
@@ -72,6 +73,8 @@ fn exercise(document: &Document, what: &str) -> Analysis {
                     | "type.enum"
                     | "var.global"
                     | "program.use_header"
+                    | "program.namespace"
+                    | "program.use_namespace"
             );
             assert!(
                 !*top || item || found == parked,

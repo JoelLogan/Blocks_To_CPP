@@ -13,6 +13,7 @@ mod errors;
 mod expr;
 mod files;
 mod globals;
+mod namespaces;
 mod resolve;
 mod stmt;
 mod text;
@@ -320,6 +321,9 @@ struct Lowerer<'d> {
     /// The struct fields whose row holds a default value (w2.md §1.9),
     /// known before any *new … with* is lowered.
     defaulted_fields: BTreeSet<SymbolId>,
+    /// The program's user namespaces and the namespace of each definition in
+    /// a mouth (w3-modules.md §2.12), declared before anything else.
+    namespaces: namespaces::Namespaces,
 }
 
 /// A field part.
@@ -353,11 +357,12 @@ fn holds_value(block: &Block, name: &str) -> bool {
     }
 }
 
-/// Top-level blocks of a module in a deterministic order (by block ID).
+/// The definitions of a module in a deterministic order (by block ID): its
+/// top-level blocks, and the definitions in its enabled namespaces' mouths
+/// (w3-modules.md §2.12), which are definitions of the module as top-level
+/// ones are.
 fn sorted_blocks(module: &b2c_model::Module) -> Vec<&Block> {
-    let mut blocks: Vec<&Block> = module.workspace.blocks.iter().collect();
-    blocks.sort_by(|a, b| a.id.cmp(&b.id));
-    blocks
+    namespaces::with_namespace_members(module.workspace.blocks.iter().collect())
 }
 
 /// Block types the analyser lowers as values (`Lowerer::value_block`): the
@@ -475,12 +480,15 @@ impl<'d> Lowerer<'d> {
             constants: BTreeMap::new(),
             in_defaults: false,
             defaulted_fields: BTreeSet::new(),
+            namespaces: namespaces::Namespaces::default(),
         }
     }
 
     /// Lowers every module.
     fn program(&mut self) -> Vec<Module> {
         let document = self.document;
+        // Namespaces first: every definition's namespace is then known.
+        self.declare_namespaces();
         // Structs and enums come first, so that any parameter, result or
         // field may name them (w2.md §2.2), and their flags are known before
         // any type that holds them is checked or any body is lowered
@@ -535,6 +543,10 @@ impl<'d> Lowerer<'d> {
                     "type.struct" | "type.enum" => (self.type_definition(block), true),
                     "var.global" => (self.global_items.remove(&block.id), true),
                     "program.use_header" => (self.use_header(block), true),
+                    // A namespace is declared with the others, and its
+                    // definitions are among the module's blocks; a
+                    // directive is package N2's.
+                    "program.namespace" | "program.use_namespace" => (None, false),
                     _ => {
                         self.report_parked(block);
                         (None, false)

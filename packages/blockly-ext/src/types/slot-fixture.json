@@ -112259,6 +112259,7 @@
           "friendly": "define %NAME with … returns %RETURNS share with other modules %SHARED"
         },
         "lowering": "builtin",
+        "namespaceMember": true,
         "order": [
           {
             "field": "RETURNS"
@@ -166261,6 +166262,7 @@
           "friendly": "struct %NAME has … comparable %COMPARABLE printable %PRINTABLE share with other modules %SHARED"
         },
         "lowering": "builtin",
+        "namespaceMember": true,
         "order": [
           {
             "input": "DEFAULT"
@@ -184061,6 +184063,7 @@
           "friendly": "global %KIND %TYPE %NAME = %VALUE share with other modules %SHARED"
         },
         "lowering": "builtin",
+        "namespaceMember": true,
         "order": [
           {
             "field": "TYPE"

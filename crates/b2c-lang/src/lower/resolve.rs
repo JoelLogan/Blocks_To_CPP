@@ -356,6 +356,10 @@ impl Lowerer<'_> {
                     ),
                 )
             }
+            (DeclStatus::Active, DeclKind::Namespace) => (
+                codes::WRONG_KIND,
+                format!("{name} is a namespace, not a variable: choose one of the definitions it holds."),
+            ),
         };
         let diagnostic =
             b2c_ir::Diagnostic::error(code, b2c_ir::DiagSource::Analyser, location.clone(), message)

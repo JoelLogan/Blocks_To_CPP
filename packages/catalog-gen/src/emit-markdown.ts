@@ -200,7 +200,7 @@ function fieldText(field: FieldDefJson, block: BlockDefJson): string {
 
 /** What a field holds, as a sentence about `name`. */
 function fieldKindText(field: FieldDefJson, block: BlockDefJson): (name: string) => string {
-  const kind = DECLARED_KIND[block.category] ?? 'variable';
+  const kind = DECLARED_KIND_OF_BLOCK[block.id] ?? DECLARED_KIND[block.category] ?? 'variable';
   switch (field.kind) {
     case 'dropdown': {
       // The label as shown, with the stored value when it differs.
@@ -226,8 +226,15 @@ function fieldKindText(field: FieldDefJson, block: BlockDefJson): (name: string)
       return (name) => `${name}: the ${kind} it uses.`;
     case 'header':
       return (name) => `${name}: a standard header${defaultText(field)}.`;
+    case 'namespace':
+      return (name) => `${name}: \`std\` or a namespace of the program${defaultText(field)}.`;
   }
 }
+
+/** What a declaration names, for a block that declares no variable in its category. */
+const DECLARED_KIND_OF_BLOCK: Readonly<Record<string, string>> = {
+  'program.namespace': 'namespace',
+};
 
 /** What a declaration or a reference names, by category (a variable elsewhere). */
 const DECLARED_KIND: Readonly<Partial<Record<BlockDefJson['category'], string>>> = {
@@ -284,7 +291,8 @@ function inputText(input: InputDefJson): string {
 
 function statementText(statement: StatementDefJson): string {
   const when = statement.when === null ? '' : `, while ${code(statement.when)} is on`;
-  return `${partNames(statement.name, statement.repeat)}: blocks${repeatText(statement.repeat)}${when}.`;
+  const what = statement.definitions === true ? 'definitions' : 'blocks';
+  return `${partNames(statement.name, statement.repeat)}: ${what}${repeatText(statement.repeat)}${when}.`;
 }
 
 function extraText(extra: ExtraDefJson): string {

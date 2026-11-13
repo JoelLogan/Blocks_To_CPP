@@ -39,6 +39,14 @@
 //! a value input, a reporter or predicate as a step, and blocks stacked below
 //! a block that is not a statement (reported once, on the head).
 //!
+//! A namespace's mouth (a statement list marked `definitions`,
+//! w3-modules.md §2.10 and §2.12) holds only the definitions that are
+//! namespace members: *define*, *struct*, *enum*, *global* and *namespace*.
+//! Anything else there is `B2C-E0604`, and so is a namespace member anywhere
+//! but the top level or a mouth. A definition's connection below it exists
+//! only inside a mouth, so a block stacked below a top-level definition stays
+//! an error, and a single-module project reads as it did before namespaces.
+//!
 //! Messages name a block by its short name ([`block_noun`]), never by its
 //! catalog ID, except for an unknown block type (`B2C-E0601`) and a broken
 //! catalog definition (`B2C-E0620`, a bug report).
@@ -69,6 +77,8 @@ enum Position {
     },
     /// In a statement list or a loose stack.
     Statement,
+    /// In a namespace's mouth (a statement list marked `definitions`).
+    Mouth,
     /// In a value input.
     Value,
 }
@@ -307,6 +317,18 @@ impl Resolver<'_> {
             (Position::TopLevel { .. }, _)
             | (Position::Statement, Shape::Statement)
             | (Position::Value, Shape::Reporter | Shape::Predicate) => return,
+            (Position::Mouth, Shape::Definition) if def.namespace_member => return,
+            (Position::Mouth, Shape::Hat | Shape::Definition) => {
+                format!("A {noun} must sit directly on the canvas, not inside a namespace.")
+            }
+            (Position::Mouth, Shape::Statement | Shape::Reporter | Shape::Predicate) => format!(
+                "A namespace holds only definitions: functions, structs, enums, global variables and other namespaces. Move this {noun} into a function or into when program starts."
+            ),
+            (Position::Statement | Position::Value, Shape::Definition) if def.namespace_member => {
+                format!(
+                    "A {noun} must sit directly on the canvas or inside a namespace, not inside another block."
+                )
+            }
             (Position::Statement | Position::Value, Shape::Hat | Shape::Definition) => {
                 format!("A {noun} must sit directly on the canvas, not inside another block.")
             }
@@ -596,6 +618,9 @@ impl Resolver<'_> {
             (FieldKind::Number, FieldValue::Text(text)) if !text.trim().is_empty() => return,
             (FieldKind::Type, _) if signature::field_type_fit(def, field, value) == TypeFit::Fits => return,
             (FieldKind::Header, FieldValue::Text(text)) if signature::header_fits(text) => return,
+            (FieldKind::Namespace, FieldValue::Text(text)) if definitions::namespace_value_fits(text) => {
+                return;
+            }
             (FieldKind::Checkbox, _) => format!(
                 "The field {name} should be true or false, but it is {}.",
                 describe_field(value)
@@ -620,6 +645,10 @@ impl Resolver<'_> {
             }
             (FieldKind::Header, _) => format!(
                 "The field {name} is {}, but it must be a standard header such as \"<vector>\".",
+                describe_field(value)
+            ),
+            (FieldKind::Namespace, _) => format!(
+                "The field {name} is {}, but it must name a namespace: \"::std\", or the symbol ID of a namespace block.",
                 describe_field(value)
             ),
             (FieldKind::SymbolDecl, _) => format!(
@@ -760,9 +789,15 @@ impl Resolver<'_> {
             self.diags
                 .error(codes::UNKNOWN_STATEMENT, input_location(location, name), message);
         }
-        for list in block.statements.values_mut() {
+        for (name, list) in &mut block.statements {
+            // A namespace's mouth holds definitions (w3-modules.md §2.12).
+            let position = if def.statement.iter().any(|s| s.definitions && s.name == *name) {
+                Position::Mouth
+            } else {
+                Position::Statement
+            };
             for child in list {
-                self.block(child, Position::Statement);
+                self.block(child, position);
             }
         }
     }

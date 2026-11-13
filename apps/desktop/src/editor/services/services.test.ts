@@ -277,8 +277,10 @@ describe('the blocks that declare names into lists', () => {
     for (const def of BLOCK_DEFS) {
       const declares = def.fields.some((field) => field.kind === 'symbol_decl');
       // A definition without a body (a struct, an enum, a global) declares its names into the
-      // module only; a function declares its parameters into its body.
-      const expected = declares && (def.shape !== 'definition' || def.statements.length > 0);
+      // module only; a function declares its parameters into its body. A namespace's mouth holds
+      // definitions, not a body (w3-modules.md §2.12).
+      const body = def.statements.some((statement) => statement.definitions !== true);
+      const expected = declares && (def.shape !== 'definition' || body);
       expect(isDeclaringBlock(stub(def.id)), def.id).toBe(expected);
     }
   });

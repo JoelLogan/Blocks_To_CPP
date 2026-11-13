@@ -140,9 +140,12 @@ export const BASIC_BLOCKS: ReadonlySet<string> = new Set([
   'math.number',
   'math.random_int',
   'math.random_real',
-  // Program.
+  // Program. W3's namespaces are basic (w4-editor-tools.md §11 row 8, w3-modules.md §7.1): the
+  // textbook's `using namespace std;` is a beginner's line.
   'program.exit',
   'program.main',
+  'program.namespace',
+  'program.use_namespace',
   // Text.
   'text.as_text',
   'text.case',

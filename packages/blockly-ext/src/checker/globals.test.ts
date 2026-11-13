@@ -138,8 +138,9 @@ function canDrop(child: Blockly.Block, parent: Blockly.Block, name: string): boo
 describe('a global', () => {
   it('is a definition with a kind, a type, a name, a value and the share tick', () => {
     const global = block('var.global');
-    expect(global.previousConnection).toBeNull();
-    expect(global.nextConnection).toBeNull();
+    // A namespace member: its two connections fit only a namespace's mouth (w3-modules.md §2.12).
+    expect(global.previousConnection).not.toBeNull();
+    expect(global.nextConnection).not.toBeNull();
     expect(global.outputConnection).toBeNull();
     const kind = global.getField('KIND');
     if (!(kind instanceof Blockly.FieldDropdown)) {

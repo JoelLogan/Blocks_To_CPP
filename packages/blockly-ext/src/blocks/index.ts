@@ -39,6 +39,16 @@ export {
   type MutatorName,
 } from './mutators';
 export {
+  MAX_NAMESPACE_DEPTH,
+  NAMESPACE_TYPE,
+  isInMouth,
+  isMouth,
+  isNamespaceMember,
+  namespaceDepthAt,
+  namespaceHeight,
+  registerB2cRenderer,
+} from './namespace';
+export {
   PLACEHOLDER_TYPE,
   isPlaceholder,
   missingPackOf,

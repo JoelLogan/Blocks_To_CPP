@@ -255,11 +255,34 @@ pub(crate) fn check_block(def: &BlockDef) -> Vec<String> {
             "reporter and predicate blocks cannot have statement inputs",
         ));
     }
+    check_namespace_parts(def, &mut problems);
     check_output(def, &mut problems);
     check_labels(def, &mut problems);
     check_friendly_label(def, &mut problems);
     problems.extend(signature::problems(def));
     problems
+}
+
+/// A namespace's parts (w3-modules.md §2.12): only a definition can be a
+/// namespace member, and only a member holds a mouth for others, shown once.
+fn check_namespace_parts(def: &BlockDef, problems: &mut Vec<String>) {
+    if def.namespace_member && def.shape != Shape::Definition {
+        problems.push(String::from("only a definition can be a namespace member"));
+    }
+    for statement in def.statement.iter().filter(|statement| statement.definitions) {
+        if !def.namespace_member {
+            problems.push(format!(
+                "statement {} holds definitions, so its block must be a namespace member",
+                statement.name
+            ));
+        }
+        if statement.repeat.is_some() || statement.when.is_some() {
+            problems.push(format!(
+                "statement {} holds definitions, so it is shown once",
+                statement.name
+            ));
+        }
+    }
 }
 
 /// Reporters and predicates declare the type of their value; other shapes
@@ -501,7 +524,27 @@ pub(crate) fn field_value_fits(field: &FieldDef, value: &FieldDefault) -> bool {
         (FieldKind::Number, FieldDefault::Text(text)) => !text.is_empty(),
         (FieldKind::Type, FieldDefault::Text(text)) => field.types.contains(text),
         (FieldKind::Header, FieldDefault::Text(text)) => signature::header_fits(text),
+        (FieldKind::Namespace, FieldDefault::Text(text)) => namespace_value_fits(text),
         _ => false,
+    }
+}
+
+/// Whether text is a value a `namespace` field can hold (w3-modules.md
+/// §2.9): a standard namespace as `::` and its qualified name (`::std`,
+/// `::std::chrono`), or a user namespace's symbol ID. A symbol ID never
+/// starts with `::`, so the two never meet; which namespaces exist is the
+/// analyser's to check.
+pub(crate) fn namespace_value_fits(text: &str) -> bool {
+    match text.strip_prefix("::") {
+        Some(name) => {
+            name.split("::").all(|part| {
+                let mut chars = part.chars();
+                chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                    && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    && part.len() <= b2c_model::limits::MAX_IDENT_LEN
+            }) && text.len() <= b2c_model::limits::MAX_QUALIFIED_NAME_LEN
+        }
+        None => b2c_ir::SymbolId::new(text).is_ok(),
     }
 }
 
@@ -678,6 +721,7 @@ mod tests {
                 name: "BODY".into(),
                 repeat: None,
                 when: Some("open".into()),
+                definitions: false,
             }],
             extra: vec![
                 ExtraDef {
@@ -699,6 +743,7 @@ mod tests {
                     type_class: None,
                 },
             ],
+            namespace_member: false,
         }
     }
 
@@ -910,6 +955,17 @@ mod tests {
             (FieldKind::Header, text("<vector>"), vec![], true),
             (FieldKind::Header, text("<math.h>"), vec![], false),
             (FieldKind::Header, None, vec!["int".into()], false),
+            (FieldKind::Namespace, text("::std"), vec![], true),
+            (FieldKind::Namespace, text("::std::chrono"), vec![], true),
+            (FieldKind::Namespace, text("sym_geo"), vec![], true),
+            (FieldKind::Namespace, text("std::chrono"), vec![], false),
+            (FieldKind::Namespace, text("::"), vec![], false),
+            (
+                FieldKind::Namespace,
+                Some(FieldDefault::Bool(true)),
+                vec![],
+                false,
+            ),
         ] {
             let problems = problems_after(|d| d.field[0] = field(kind, default, types));
             assert_eq!(problems.is_empty(), ok, "{kind:?}: {problems:?}");
@@ -981,6 +1037,42 @@ mod tests {
         assert!(!problems_after(|d| d.shape = Shape::Reporter).is_empty());
         assert!(!problems_after(|d| d.shape = Shape::Predicate).is_empty());
         assert!(problems_after(|d| d.shape = Shape::Definition).is_empty());
+    }
+
+    /// A namespace's mouth and its members (w3-modules.md §2.12).
+    #[test]
+    fn namespace_members_and_mouths() {
+        let mouth = |d: &mut BlockDef| {
+            d.statement[0].when = None;
+            d.statement[0].definitions = true;
+        };
+        assert_eq!(
+            problems_after(|d| {
+                d.shape = Shape::Definition;
+                d.namespace_member = true;
+                mouth(d);
+            }),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            problems_after(|d| d.namespace_member = true),
+            ["only a definition can be a namespace member"]
+        );
+        assert_eq!(
+            problems_after(|d| {
+                d.shape = Shape::Definition;
+                mouth(d);
+            }),
+            ["statement BODY holds definitions, so its block must be a namespace member"]
+        );
+        assert_eq!(
+            problems_after(|d| {
+                d.shape = Shape::Definition;
+                d.namespace_member = true;
+                d.statement[0].definitions = true;
+            }),
+            ["statement BODY holds definitions, so it is shown once"]
+        );
     }
 
     /// The test definition as a reporter (no statement inputs) with the

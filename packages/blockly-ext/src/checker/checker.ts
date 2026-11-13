@@ -3,10 +3,13 @@
  *
  * It keeps all of Blockly's own checks (safety: no self or cross-workspace connections, matching
  * connection kinds, shadows; drag: distance, insertion markers, occupied connections; and the
- * `check` arrays) and adds three kinds of rule:
+ * `check` arrays) and adds four kinds of rule:
  *
- * * **Structure**, always: a hat or definition never goes inside anything; a statement never goes
- *   into a value input; a reporter or predicate never goes into a statement list.
+ * * **Structure**, always: a hat or definition never goes inside anything, but for the
+ *   definitions that are namespace members, which go only into a namespace's mouth (w3-modules.md
+ *   §2.12); a mouth takes nothing else; a statement never goes into a value input; a reporter or
+ *   predicate never goes into a statement list.
+ * * **Depth**, while the user drags or moves a block: namespaces nest at most 14 deep.
  * * **Types**, while the user drags or moves a block: the parent is typed as if the value were in
  *   the input (typed slots, ADR-0018: `candidateFit`, ./slots.ts), and the value is refused only
  *   where the analyser would report an error: a conversion or class error between known types
@@ -26,6 +29,14 @@
  */
 import * as Blockly from 'blockly/core';
 
+import {
+  isInMouth,
+  isMouth,
+  isNamespaceMember,
+  MAX_NAMESPACE_DEPTH,
+  namespaceDepthAt,
+  namespaceHeight,
+} from '../blocks/namespace';
 import type { Shape } from '../generated/catalog';
 import type { TypeOracle } from '../services';
 import { blockDef } from './catalog';
@@ -46,11 +57,40 @@ function shapeOf(block: Blockly.Block): Shape | null {
 }
 
 /**
+ * Whether `connection` (a statement input or a next connection) holds definitions: it is a
+ * namespace's mouth, or the next connection of a block in one (w3-modules.md §2.12).
+ */
+function holdsDefinitions(connection: Blockly.Connection): boolean {
+  const block = connection.getSourceBlock();
+  if (block.nextConnection === connection) {
+    return isInMouth(block);
+  }
+  const input = connection.getParentInput();
+  return input !== null && isMouth(block.type, input.name);
+}
+
+/**
  * Whether the structural rules allow `child` (through its output or previous connection) to go
- * into `parent` (a value input, a statement input or a next connection).
+ * into `parent` (a value input, a statement input or a next connection). A namespace's mouth, and
+ * the next connection of a block in one, take only the definitions that are namespace members
+ * (and blocks outside the catalog, such as the placeholder of a statement a file put there); those
+ * definitions go nowhere else, so nothing ever stacks under a top-level definition.
  */
 function structureAllows(parent: Blockly.Connection, child: Blockly.Connection): boolean {
-  const shape = shapeOf(child.getSourceBlock());
+  const childBlock = child.getSourceBlock();
+  const shape = shapeOf(childBlock);
+  if (parent.type === NEXT_STATEMENT) {
+    const definitions = holdsDefinitions(parent);
+    if (shape === 'definition' && isNamespaceMember(childBlock.type)) {
+      return definitions;
+    }
+    const below = parent.getSourceBlock().nextConnection === parent;
+    if (definitions ? shape !== null : below && shapeOf(parent.getSourceBlock()) === 'definition') {
+      // A mouth holds only definitions (and the placeholders of what a file put there), and a
+      // top-level definition takes nothing below it.
+      return false;
+    }
+  }
   if (shape === 'hat' || shape === 'definition') {
     return false;
   }
@@ -61,6 +101,19 @@ function structureAllows(parent: Blockly.Connection, child: Blockly.Connection):
     return shape !== 'reporter' && shape !== 'predicate';
   }
   return true;
+}
+
+/**
+ * Whether a drag keeps namespaces within {@link MAX_NAMESPACE_DEPTH} levels: the namespaces
+ * around the place and those the dragged blocks bring (w3-modules.md §2.12). Only drags are
+ * refused; a hand-edited file loads as it is and the analyser reports it (`B2C-E0219`).
+ */
+function depthAllows(parent: Blockly.Connection, child: Blockly.Connection): boolean {
+  if (parent.type !== NEXT_STATEMENT) {
+    return true;
+  }
+  const height = namespaceHeight(child.getSourceBlock());
+  return height === 0 || namespaceDepthAt(parent) + height <= MAX_NAMESPACE_DEPTH;
 }
 
 /** Whether the type rule allows the value of `child` in the value input `parent`. */
@@ -134,6 +187,9 @@ export class B2cConnectionChecker extends Blockly.ConnectionChecker {
     }
     const [parent, child] = a.isSuperior() ? [a, b] : [b, a];
     if (!structureAllows(parent, child)) {
+      return Blockly.Connection.REASON_CHECKS_FAILED;
+    }
+    if (isDragging && !depthAllows(parent, child)) {
       return Blockly.Connection.REASON_CHECKS_FAILED;
     }
     if (isDragging && !typeAllows(parent, child, checkerTypeOracle())) {

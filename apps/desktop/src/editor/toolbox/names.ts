@@ -33,7 +33,8 @@ export type DefaultNameKind =
   | 'enum'
   | 'args'
   | 'field'
-  | 'enumValue';
+  | 'enumValue'
+  | 'namespace';
 
 /** The first candidates of each kind, in order. */
 const BASES: Readonly<Record<DefaultNameKind, readonly string[]>> = Object.freeze({
@@ -52,6 +53,7 @@ const BASES: Readonly<Record<DefaultNameKind, readonly string[]>> = Object.freez
   args: ['args'],
   field: ['field'],
   enumValue: ['Value'],
+  namespace: ['myNamespace'],
 });
 
 /**
@@ -84,6 +86,7 @@ export const NAME_SCOPES: Readonly<Record<DefaultNameKind, NameScope>> = Object.
   enum: 'module',
   field: 'row',
   enumValue: 'row',
+  namespace: 'module',
 });
 
 /**
@@ -107,6 +110,8 @@ export const DEFAULT_NAME_KINDS: Readonly<
   'type.enum': { NAME: 'enum' },
   'var.global': { NAME: 'global' },
   'program.main': { ARGV: 'args' },
+  // W3's package N1 (w3-modules.md §2.12).
+  'program.namespace': { NAME: 'namespace' },
 });
 
 /** The kind of default name of each row extra's rows (the rows mutator names new rows). */

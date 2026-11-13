@@ -57,15 +57,20 @@ use crate::scope::{NodeId, Trail};
 
 /// The top-level blocks that are definitions, which are never parked
 /// (ADR-0012): the lowering lowers them as items, or skips them as a whole.
-/// W2's are among them (w2.md §2.13); a test checks the list against the
-/// catalog.
-const DEFINITION_TYPES: [&str; 6] = [
+/// W2's are among them (w2.md §2.13), and W3's namespace blocks
+/// (w3-modules.md §2.12): a namespace, never lowered as an item, answers with
+/// the module's functions, as a skipped definition does, and so do the
+/// blocks in its mouth that the lowering did not reach. A test checks the
+/// list against the catalog.
+const DEFINITION_TYPES: [&str; 8] = [
     "program.main",
     "func.define",
     "type.struct",
     "type.enum",
     "var.global",
     "program.use_header",
+    "program.namespace",
+    "program.use_namespace",
 ];
 
 /// What was visible at a recorded position.
