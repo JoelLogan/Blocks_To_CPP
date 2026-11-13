@@ -48,8 +48,9 @@ examine_globs = [
   "crates/b2c-process/src/command.rs",
 ]
 
-# Generated keyword tables (tools/gen-reserved-names.py): data, not logic.
-exclude_globs = ["crates/b2c-ir/src/reserved_names.rs"]
+# Generated name tables (tools/gen-reserved-names.py, tools/gen-std-names.py):
+# data, not logic.
+exclude_globs = ["crates/b2c-ir/src/reserved_names.rs", "crates/b2c-ir/src/std_names.rs"]
 
 # A mutant is examined when its name (as `cargo mutants --list` prints it:
 # `<path>:<line>:<column>: <change>`) matches one of these. They select every
