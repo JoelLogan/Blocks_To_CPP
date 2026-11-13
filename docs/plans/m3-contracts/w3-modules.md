@@ -193,7 +193,10 @@ README's title (escaped by `markdown_text`), all as today. Package E.
 
 modules.md §5.3 as written: key, `obj/<stem>-<key12>.o` with a
 `.messages.json` beside it, reuse with replayed warnings, kept through a
-failed or cancelled build, pruned after a successful link. Package C.
+failed or cancelled build, pruned after a successful link. The compiler
+writes a unit's object to `tmp/<stem>.o`, and its messages go to
+`tmp/<stem>.messages.json`, before both are renamed into `obj/` (§7.1).
+Package C.
 
 ### 1.7 The generated files
 
@@ -1390,6 +1393,8 @@ corrected in place and the correction is recorded here with its reason.
 | The type picker lists other modules' shared structs and enums after the module's own, one group per module headed *Module: records*, as the toolbox heads shared functions: `symbols.ts`'s `userTypes` adds the shared types whose name no own type has (§2.1's precedence), and blockly-ext's `SymbolProvider` gains an optional `otherModuleName(moduleId)` (`null` for the module shown) that the type field passes on as `PickerUserType.moduleName` | the picker had the module's ID only, and E's provider listed the module's own types | §3.3 W4 type-field row (T) |
 | The static *Types* category's blocks are marked with the module count too, and the toolbox installs its definition again when the count crosses one and two (the plugin's mode key holds the count), so a kept flyout *struct* or *enum* never shows the layout of the other count | only dynamic categories were built again; *global* is in the dynamic *Variables* | "From the W4 and W5 merges" (T) |
 | The E2E flow `modules-types.e2e.ts` opens a copy of `gradebook` (its `records` shares `Student`, which `grade_of` takes) instead of building the program block by block | a *define* with an input of a struct needs the mutator's dialog; the example already has every part §5.2 asks for | §5.2 T (T) |
+| The object cache's temporaries are `tmp/<stem>.o` and `tmp/<stem>.messages.json` in the build folder's private `tmp/` (the compiler's `TMPDIR`), named `../tmp/<stem>.o` in the compile argv, not temporary names in `obj/`; they are renamed into `obj/` after the unit compiles | GCC 13 and 14 name a unit's SARIF file after its output's stem (`-o ../obj/main.tmp.o` gives `main.tmp.cpp.sarif`, not the `main.cpp.sarif` the build reads), so a temporary object must keep the source's stem, and `obj/<stem>.o` could be another module's `<stem>-<key12>.o` | §1.6, §2.7; modules.md §5.3 (C) |
+| Pruning `obj/` after a successful link is best effort: a cache file that cannot be deleted is logged and left, where a `gen/` file that cannot be deleted fails the build. The messages file is `{"format": 1, "output": <ParsedOutput>}`, read with unknown fields refused; another format is a miss. The key's toolchain fingerprint is the build manifest's (path, size, modification time, SHA-256, version, target) | a left-over object is never reused, since its key is in its name, and failing a build that has linked would throw away a good program; the format field lets a later release change the file without misreading an old one | §1.6 (C) |
 
 #### From the W4 and W5 merges
 
