@@ -1,6 +1,7 @@
 //! The catalog snapshot cases of `catalog/core/program.toml`, with package
-//! C2's arguments of `main` (w2.md §1.9) and package S's *use header* and
-//! *check at compile time* (§1.6).
+//! C2's arguments of `main` (w2.md §1.9), package S's *use header* and
+//! *check at compile time* (§1.6), and W3 package N1's *namespace* and *use
+//! namespace* (w3-modules.md §2.12).
 
 use serde_json::{Value, json};
 
@@ -14,9 +15,29 @@ fn use_header(b: &Blocks, header: &str) -> Value {
     )
 }
 
+/// *namespace* `geo` on the canvas, holding the function `f` (giving back
+/// nothing, with an empty body) in its mouth.
+fn namespace_geo(b: &Blocks) -> Value {
+    let mut member = b.function("void", &[]);
+    if let Some(parts) = member.as_object_mut() {
+        parts.remove("x");
+        parts.remove("y");
+    }
+    b.block(
+        "program.namespace",
+        &json!({
+            "x": 400, "y": 40,
+            "fields": { "NAME": declaration("s_geo", "geo") },
+            "statements": { "DEFINITIONS": [member] },
+        }),
+    )
+}
+
 /// `program.main` alone, `program.exit` in `main` and in a function; *use
 /// header* beside an empty `main`, and naming a header a block of the program
-/// includes already; *check at compile time* of `true`, and of a constant.
+/// includes already; *check at compile time* of `true`, and of a constant;
+/// *namespace* holding a function, and *use namespace* as the toolbox gives
+/// it, each beside an empty `main`.
 pub(super) fn cases(b: &Blocks) -> Vec<Case> {
     vec![
         Case::new("program.main", "alone", vec![b.main(&[])]),
@@ -83,6 +104,19 @@ pub(super) fn cases(b: &Blocks) -> Vec<Case> {
                     }),
                 ),
             ])],
+        ),
+        Case::new(
+            "program.namespace",
+            "geo, holding the void function f with an empty body, next to an empty main",
+            vec![b.main(&[]), namespace_geo(b)],
+        ),
+        Case::new(
+            "program.use_namespace",
+            "next to an empty main, as the toolbox gives it (::std)",
+            vec![
+                b.main(&[]),
+                b.block("program.use_namespace", &json!({ "x": 400, "y": 40 })),
+            ],
         ),
     ]
 }
