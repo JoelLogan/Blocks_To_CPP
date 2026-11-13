@@ -658,6 +658,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   path needs an option none of them sets, and only `minimatch` 11 fixes it.
   The `block-buffer` exception (GHSA-qwgh-2vcv-g2f7) is gone, as OSV-Scanner
   no longer reports the advisory for `block-buffer` 0.10.4.
+- Dependencies on 2026-11-13: `rustix` 1.1.6 (2026-10-27), in `Cargo.lock` and
+  `fuzz/Cargo.lock`, for RUSTSEC-2026-0486 (its extended-attribute functions mark
+  bytes as written that a zero-length size query never wrote). Blocks2Cpp never
+  calls those functions; the update keeps `cargo deny` and OSV-Scanner clean.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
