@@ -520,14 +520,17 @@ fn gen_holds_exactly_the_generated_files() {
 const DECOY_BUILD_DIR: &str = "B2C_TEST_DECOY_BUILD_DIR";
 
 /// Objects are named relative to the compiler's folder in its argv
-/// (`../out/main.o`), but a failed multi-module build deletes them by their
-/// absolute paths: run in a process whose working folder has a decoy
-/// `../out/<stem>.o` of each, it removes the build's objects and leaves every
-/// decoy. The build runs in a helper (this test, in a new process started in
-/// that working folder), since a test cannot change its own process's
-/// working folder without disturbing the tests running beside it.
+/// (`../tmp/main.o`, `../obj/main-<key12>.o`), but a failed multi-module
+/// build deletes its temporaries by their absolute paths and keeps the
+/// objects it cached (w3-modules.md §1.6): run in a process whose working
+/// folder has a decoy `../tmp/<stem>.o` and `../tmp/<stem>.messages.json` of
+/// each unit, it leaves no temporary in its own `tmp/`, keeps the objects of
+/// the units that compiled, and leaves every decoy. The build runs in a helper (this
+/// test, in a new process started in that working folder), since a test
+/// cannot change its own process's working folder without disturbing the
+/// tests running beside it.
 #[test]
-fn a_failed_build_removes_its_objects_and_no_decoy() {
+fn a_failed_build_removes_its_temporaries_and_no_decoy() {
     if let Some(dir) = std::env::var_os(DECOY_BUILD_DIR) {
         // The helper: build, and leave the checks to the test that started it.
         let dir = PathBuf::from(dir);
@@ -569,11 +572,14 @@ fn a_failed_build_removes_its_objects_and_no_decoy() {
     .unwrap();
     std::fs::write(dir.path().join("project.b2c"), bytes(&document)).unwrap();
     let work = dir.path().join("work");
-    let decoys = dir.path().join("out");
+    let decoys = dir.path().join("tmp");
     std::fs::create_dir(&work).unwrap();
     std::fs::create_dir(&decoys).unwrap();
-    let objects = ["main.o", "util.o", "b2c_ide_init.o"];
-    for name in objects {
+    let temporaries: Vec<String> = ["main", "util", "b2c_ide_init"]
+        .iter()
+        .flat_map(|stem| [format!("{stem}.o"), format!("{stem}.messages.json")])
+        .collect();
+    for name in &temporaries {
         std::fs::write(decoys.join(name), "decoy").unwrap();
     }
     // Production code spawns processes only through b2c-process; this test
@@ -581,7 +587,7 @@ fn a_failed_build_removes_its_objects_and_no_decoy() {
     #[allow(clippy::disallowed_methods)]
     let output = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
-            "a_failed_build_removes_its_objects_and_no_decoy",
+            "a_failed_build_removes_its_temporaries_and_no_decoy",
             "--exact",
             "--nocapture",
             "--test-threads=1",
@@ -607,7 +613,7 @@ fn a_failed_build_removes_its_objects_and_no_decoy() {
         found.iter().any(|d| d.code == "C:-Wunused-variable"),
         "{found:#?}"
     );
-    // The build compiled the other units (so it had objects to delete) ...
+    // The build compiled the other units ...
     assert_eq!(
         progress(&events)
             .iter()
@@ -616,22 +622,375 @@ fn a_failed_build_removes_its_objects_and_no_decoy() {
             .max(),
         Some(3)
     );
-    // ... and deleted them, but not the decoys in its working folder's `..`.
+    // ... kept their objects, left no temporary and no program, and never
+    // touched the decoys in its working folder's `..`.
     let build = PathBuf::from(std::fs::read_to_string(dir.path().join("build-dir.txt")).unwrap());
-    let left: Vec<String> = listing(&build.join("out"));
-    assert!(
-        !left.iter().any(|name| Path::new(name)
-            .extension()
-            .is_some_and(|extension| extension == "o")),
-        "{left:?}"
-    );
-    for name in objects {
+    let left = listing(&build.join("obj"));
+    assert_eq!(cached_stems(&left), ["b2c_ide_init", "util"], "{left:?}");
+    assert_eq!(left.len(), 4, "{left:?}");
+    assert_no_temporaries(&build);
+    assert!(listing(&build.join("out")).is_empty());
+    for name in &temporaries {
         assert_eq!(
             std::fs::read_to_string(decoys.join(name)).unwrap(),
             "decoy",
             "{name}"
         );
     }
+}
+
+/// The stems of the cached units among `names`: each `<stem>-<key12>.o`
+/// with its `<stem>-<key12>.messages.json`, sorted.
+fn cached_stems(names: &[String]) -> Vec<String> {
+    let mut stems: Vec<String> = names
+        .iter()
+        .filter_map(|name| {
+            let unit = name.strip_suffix(".o")?;
+            let (stem, key) = unit.rsplit_once('-')?;
+            (key.len() == 12 && names.contains(&format!("{unit}.messages.json"))).then(|| stem.to_owned())
+        })
+        .collect();
+    stems.sort();
+    stems
+}
+
+/// Fails if the build folder's `tmp/` holds a unit's temporary object or
+/// messages.
+fn assert_no_temporaries(build: &Path) {
+    let left = listing(&build.join("tmp"));
+    assert!(
+        !left
+            .iter()
+            .any(|name| is_object(name) || name.ends_with(".messages.json")),
+        "{left:?}"
+    );
+}
+
+/// Whether `name` is an object's file name (`.o`, as the build names
+/// them).
+fn is_object(name: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .is_some_and(|extension| extension == "o")
+}
+
+/// Whether `path` is a regular file, not a link.
+fn is_plain_file(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
+}
+
+/// The modification time given to every object before a build, so that the
+/// objects the build did not compile can be told apart.
+const AGED: Duration = Duration::from_secs(1_000_000_000);
+
+/// Sets every cached object's modification time to [`AGED`].
+fn age_objects(build: &Path) {
+    let time = std::time::UNIX_EPOCH + AGED;
+    for name in listing(&build.join("obj")) {
+        if is_object(&name) && is_plain_file(&build.join("obj").join(&name)) {
+            let file = std::fs::File::options()
+                .write(true)
+                .open(build.join("obj").join(&name))
+                .unwrap();
+            file.set_modified(time).unwrap();
+        }
+    }
+}
+
+/// The stems of the units the last build compiled, after [`age_objects`]:
+/// the cached objects not modified at [`AGED`], sorted.
+fn compiled_stems(build: &Path) -> Vec<String> {
+    let names = listing(&build.join("obj"));
+    let fresh: Vec<String> = names
+        .iter()
+        .filter(|name| {
+            let path = build.join("obj").join(name);
+            is_object(name)
+                && is_plain_file(&path)
+                && std::fs::metadata(&path).unwrap().modified().unwrap() != std::time::UNIX_EPOCH + AGED
+        })
+        .cloned()
+        .collect();
+    let mut stems: Vec<String> = cached_stems(&names)
+        .into_iter()
+        .filter(|stem| {
+            fresh.iter().any(|name| {
+                name.strip_suffix(".o")
+                    .and_then(|unit| unit.rsplit_once('-'))
+                    .is_some_and(|(s, _)| s == stem)
+            })
+        })
+        .collect();
+    stems.sort();
+    stems
+}
+
+/// Sets the value of block `id`'s first number in `document` to `value`.
+fn set_number(document: &mut serde_json::Value, id: &str, value: &str) {
+    fn visit(node: &mut serde_json::Value, id: &str, value: &str) -> bool {
+        if node.get("id").and_then(serde_json::Value::as_str) == Some(id) {
+            let text = node.to_string();
+            let start = text.find(r#"{"num":""#).unwrap() + r#"{"num":""#.len();
+            let end = start + text[start..].find('"').unwrap();
+            let changed = format!("{}{value}{}", &text[..start], &text[end..]);
+            *node = serde_json::from_str(&changed).unwrap();
+            return true;
+        }
+        match node {
+            serde_json::Value::Array(items) => items.iter_mut().any(|item| visit(item, id, value)),
+            serde_json::Value::Object(fields) => fields.values_mut().any(|item| visit(item, id, value)),
+            _ => false,
+        }
+    }
+    assert!(visit(document, id, value), "no block {id}");
+}
+
+/// `unit_converter` with an unused variable in `main` (a warning, or with
+/// warnings as errors an error, in `main.cpp` only).
+fn unit_converter_with_unused_variable() -> serde_json::Value {
+    let mut document = example_json("unit_converter");
+    document["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "id": "b900",
+            "type": "var.declare",
+            "v": 1,
+            "fields": {"CONST": false, "NAME": {"sym": "s_unused", "name": "unused"}, "TYPE": "int"},
+            "inputs": {"VALUE": {"expr": [{"num": "7"}]}}
+        }));
+    document
+}
+
+/// The object cache (w3-modules.md §1.6, §5.2 C): after an edit inside one
+/// function exactly one unit compiles and a reused unit's warning is still
+/// reported; an unreadable messages file is a miss; a change to a shared
+/// definition (a header) recompiles every unit; after each successful build
+/// `obj/` holds only that build's objects and messages, never deleting
+/// another file or going through a link.
+#[test]
+fn the_object_cache_compiles_only_the_changed_units() {
+    let Some(toolchain) = real_toolchain() else {
+        return;
+    };
+    let cache = tempfile::tempdir().unwrap();
+    let sessions = BuildSessions::new(cache.path().to_path_buf());
+    let mut document = unit_converter_with_unused_variable();
+    let build = |document: &serde_json::Value| {
+        let (id, events) = run(
+            &sessions,
+            job("ph_objects", bytes(document), ready(toolchain.clone())),
+        );
+        assert_eq!(
+            outcome(&events).0,
+            BuildOutcome::Built,
+            "{:#?}",
+            diagnostics(&events)
+        );
+        let warned = diagnostics(&events)
+            .iter()
+            .filter(|d| d.code == "C:-Wunused-variable")
+            .count();
+        assert_eq!(warned, 1, "{:#?}", diagnostics(&events));
+        sessions.record(&id).unwrap().verify_executable().unwrap();
+        build_dir(&sessions, &id)
+    };
+    let dir = build(&document);
+    let obj = dir.join("obj");
+    let all = ["b2c_ide_init", "convert", "main", "table"];
+    assert_eq!(cached_stems(&listing(&obj)), all);
+    assert_eq!(listing(&obj).len(), 8);
+
+    // An old object, a file of someone else's and a link.
+    std::fs::write(obj.join("old-0123456789ab.o"), "old").unwrap();
+    std::fs::write(obj.join("old-0123456789ab.messages.json"), "{}").unwrap();
+    std::fs::write(obj.join("notes.txt"), "keep me").unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let victim = outside.path().join("victim.o");
+    std::fs::write(&victim, "keep me").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&victim, obj.join("linked-0123456789ab.o")).unwrap();
+
+    // An edit inside one function of `convert`: only `convert.cpp` changes.
+    set_number(&mut document, "b101", "33");
+    age_objects(&dir);
+    let before = listing(&obj);
+    assert_eq!(build(&document), dir);
+    assert_eq!(compiled_stems(&dir), ["convert"]);
+    let after = listing(&obj);
+    let mut expected: Vec<String> = before
+        .iter()
+        .filter(|name| !name.starts_with("convert-") && !name.starts_with("old-"))
+        .cloned()
+        .collect();
+    expected.extend(after.iter().filter(|name| name.starts_with("convert-")).cloned());
+    expected.sort();
+    assert_eq!(after, expected);
+    assert_eq!(cached_stems(&after), all);
+    assert!(
+        !before
+            .iter()
+            .any(|name| name.starts_with("convert-") && after.contains(name))
+    );
+    assert_eq!(std::fs::read_to_string(obj.join("notes.txt")).unwrap(), "keep me");
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
+
+    // An unreadable messages file is a miss: that unit compiles too.
+    let table_messages = after
+        .iter()
+        .find(|name| name.starts_with("table-") && name.ends_with(".messages.json"))
+        .unwrap();
+    std::fs::write(obj.join(table_messages), "{").unwrap();
+    set_number(&mut document, "b101", "34");
+    age_objects(&dir);
+    build(&document);
+    assert_eq!(compiled_stems(&dir), ["convert", "table"]);
+
+    // A change to a shared function's declaration (its default value, in
+    // `convert.hpp`) recompiles every unit.
+    set_number(&mut document, "b109", "2");
+    age_objects(&dir);
+    build(&document);
+    assert_eq!(compiled_stems(&dir), all);
+    assert_eq!(cached_stems(&listing(&obj)), all);
+}
+
+/// After an error in one unit, the units that compiled are kept, and fixing
+/// the error recompiles only that unit (w3-modules.md §1.6).
+#[test]
+fn a_fixed_error_recompiles_only_its_unit() {
+    let Some(toolchain) = real_toolchain() else {
+        return;
+    };
+    let cache = tempfile::tempdir().unwrap();
+    let sessions = BuildSessions::new(cache.path().to_path_buf());
+    let mut document = unit_converter_with_unused_variable();
+    document["project"]["build"]["configurations"]["debug"]["warningsAsErrors"] = serde_json::json!(true);
+    let (id, events) = run(
+        &sessions,
+        job("ph_fixed", bytes(&document), ready(toolchain.clone())),
+    );
+    assert_eq!(outcome(&events).0, BuildOutcome::ProjectErrors);
+    let dir = build_dir(&sessions, &id);
+    let left = listing(&dir.join("obj"));
+    assert_eq!(cached_stems(&left), ["b2c_ide_init", "convert", "table"]);
+    assert_eq!(left.len(), 6, "{left:?}");
+    assert_no_temporaries(&dir);
+
+    document["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"]
+        .as_array_mut()
+        .unwrap()
+        .pop();
+    age_objects(&dir);
+    let (id, events) = run(&sessions, job("ph_fixed", bytes(&document), ready(toolchain)));
+    assert_eq!(
+        outcome(&events).0,
+        BuildOutcome::Built,
+        "{:#?}",
+        diagnostics(&events)
+    );
+    assert_eq!(build_dir(&sessions, &id), dir);
+    assert_eq!(compiled_stems(&dir), ["main"]);
+    sessions.record(&id).unwrap().verify_executable().unwrap();
+}
+
+/// A cancelled build keeps the objects in the cache and removes its
+/// temporaries by their absolute paths; the next build compiles only the
+/// unit that was cancelled (w3-modules.md §1.6). The compiler is a script
+/// that, once a flag file exists, writes a partial object for `main.cpp`
+/// (through the relative `-o` path) and then waits to be cancelled.
+#[cfg(unix)]
+#[test]
+fn a_cancelled_build_keeps_the_cached_objects() {
+    let Some(real) = real_toolchain() else {
+        return;
+    };
+    let scripts = tempfile::tempdir().unwrap();
+    let flag = scripts.path().join("slow");
+    let started = scripts.path().join("started");
+    let script = common::write_script(
+        scripts.path(),
+        "g++",
+        &format!(
+            r#"out=; previous=
+for arg in "$@"; do
+  if [ "$previous" = -o ]; then out=$arg; fi
+  previous=$arg
+done
+case "$*" in
+  */main.cpp*)
+    if [ -f '{flag}' ]; then
+      echo partial > "$out"
+      : > '{started}'
+      exec sleep 60
+    fi;;
+esac
+exec '{real}' "$@""#,
+            flag = flag.display(),
+            started = started.display(),
+            real = real.path().display(),
+        ),
+    );
+    let fake = common::fake_toolchain(&real, &script);
+    let cache = tempfile::tempdir().unwrap();
+    let sessions = BuildSessions::new(cache.path().to_path_buf());
+    let (id, events) = run(
+        &sessions,
+        job(
+            "ph_cancel",
+            bytes(&with_modules(&[("mod_util", "util")])),
+            ready(fake.clone()),
+        ),
+    );
+    assert_eq!(
+        outcome(&events).0,
+        BuildOutcome::Built,
+        "{:#?}",
+        diagnostics(&events)
+    );
+    let dir = build_dir(&sessions, &id);
+    let obj = dir.join("obj");
+    let first = listing(&obj);
+    assert_eq!(cached_stems(&first), ["b2c_ide_init", "main", "util"]);
+
+    // `main.cpp` changes; its compiler is cancelled.
+    let mut edited = with_modules(&[("mod_util", "util")]);
+    edited["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"][0]["inputs"]["ITEM0"]["expr"][0]["str"] =
+        serde_json::json!("Hello again!");
+    age_objects(&dir);
+    std::fs::write(&flag, "").unwrap();
+    let events = sink();
+    let id = sessions
+        .start(
+            job("ph_cancel", bytes(&edited), ready(fake.clone())),
+            events.clone(),
+        )
+        .unwrap();
+    let waited = std::time::Instant::now();
+    while !started.exists() {
+        assert!(waited.elapsed() < BUILD_TIMEOUT, "the compiler never started");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(dir.join("tmp").join("main.o").is_file());
+    sessions.cancel(&id).unwrap();
+    let all = wait_finished(&events, BUILD_TIMEOUT);
+    assert!(sessions.wait_idle(Duration::from_secs(30)));
+    assert_eq!(outcome(&all).0, BuildOutcome::Cancelled);
+    // Every cached object is still there, untouched; the temporary is gone.
+    assert_eq!(listing(&obj), first);
+    assert!(compiled_stems(&dir).is_empty());
+    assert_no_temporaries(&dir);
+
+    std::fs::remove_file(&flag).unwrap();
+    let (id, events) = run(&sessions, job("ph_cancel", bytes(&edited), ready(fake)));
+    assert_eq!(
+        outcome(&events).0,
+        BuildOutcome::Built,
+        "{:#?}",
+        diagnostics(&events)
+    );
+    assert_eq!(compiled_stems(&dir), ["main"]);
+    sessions.record(&id).unwrap().verify_executable().unwrap();
 }
 
 /// Starting a second build of the same project cancels the first.

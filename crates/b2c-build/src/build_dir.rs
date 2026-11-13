@@ -7,8 +7,12 @@
 //! │           one does not generate (a renamed module's) deleted
 //! ├── ide/    the IDE-only init unit (never exported)
 //! ├── diag/   compiler working directory (SARIF files land here)
+//! ├── obj/    the object cache of builds with several translation units:
+//! │           `<stem>-<key12>.o` and `.messages.json`, the last successful
+//! │           build's (crate::objects)
 //! ├── out/    the final executable
-//! ├── tmp/    private TMPDIR/TEMP for the compiler
+//! ├── tmp/    private TMPDIR/TEMP for the compiler; a unit's object and
+//! │           messages until they are renamed into obj/
 //! ├── build-manifest.json   what the executable was built from (crate::manifest)
 //! └── lock    held by the build that is using the folder; its modification
 //!             time is the folder's last use (cache eviction, crate::cache)
@@ -41,8 +45,14 @@ use sha2::{Digest as _, Sha256};
 /// The lock file's name inside a build folder (also used by `crate::cache`).
 const LOCK_FILE: &str = "lock";
 
-/// The executable's (and the objects') folder inside a build folder.
+/// The executable's folder inside a build folder.
 const OUT_DIR: &str = "out";
+
+/// The object cache's folder inside a build folder.
+const OBJ_DIR: &str = "obj";
+
+/// The compiler's temporary folder inside a build folder.
+const TMP_DIR: &str = "tmp";
 
 /// How long [`BuildDir::try_lock_until`] waits between attempts.
 const LOCK_POLL: Duration = Duration::from_millis(20);
@@ -151,6 +161,7 @@ impl BuildDir {
             dir.gen_dir(),
             dir.ide_dir(),
             dir.diag_dir(),
+            dir.obj_dir(),
             dir.out_dir(),
             dir.tmp_dir(),
         ] {
@@ -180,24 +191,38 @@ impl BuildDir {
         self.root.join("diag")
     }
 
-    /// The final executable's folder, which also holds the objects of a
-    /// build with several translation units.
+    /// The final executable's folder.
     pub fn out_dir(&self) -> PathBuf {
         self.root.join(OUT_DIR)
     }
 
-    /// [`Self::out_dir`] as the compiler reaches it from its working
-    /// directory, [`Self::diag_dir`]: `../out`. Objects are named this way in
-    /// a compiler's argv, so the link line of 257 objects stays short however
-    /// deep the cache folder is (`docs/plans/m3-contracts/w3-modules.md`
-    /// §2.7); whatever opens or deletes a file uses its absolute path.
-    pub fn out_dir_from_diag(&self) -> PathBuf {
-        Path::new("..").join(OUT_DIR)
+    /// The object cache: each translation unit's object and compiler
+    /// messages of a build with several units (`crate::objects`).
+    pub fn obj_dir(&self) -> PathBuf {
+        self.root.join(OBJ_DIR)
     }
 
-    /// A private temporary folder for the compiler.
+    /// [`Self::obj_dir`] as the compiler reaches it from its working
+    /// directory, [`Self::diag_dir`]: `../obj`. Objects are named this way in
+    /// a compiler's argv, so the link line of 257 objects stays short however
+    /// deep the cache folder is (`docs/plans/m3-contracts/w3-modules.md`
+    /// §2.7); whatever opens, renames or deletes a file uses its absolute
+    /// path.
+    pub fn obj_dir_from_diag(&self) -> PathBuf {
+        Path::new("..").join(OBJ_DIR)
+    }
+
+    /// A private temporary folder for the compiler, which also holds a
+    /// translation unit's object and messages until they are stored in the
+    /// object cache (`crate::objects`).
     pub fn tmp_dir(&self) -> PathBuf {
-        self.root.join("tmp")
+        self.root.join(TMP_DIR)
+    }
+
+    /// [`Self::tmp_dir`] as the compiler reaches it from its working
+    /// directory: `../tmp` (see [`Self::obj_dir_from_diag`]).
+    pub fn tmp_dir_from_diag(&self) -> PathBuf {
+        Path::new("..").join(TMP_DIR)
     }
 
     /// Takes the folder's lock, waiting while another build (in this or
@@ -622,12 +647,16 @@ mod tests {
             (dir.gen_dir(), "gen"),
             (dir.ide_dir(), "ide"),
             (dir.diag_dir(), "diag"),
+            (dir.obj_dir(), "obj"),
             (dir.out_dir(), "out"),
             (dir.tmp_dir(), "tmp"),
         ] {
             assert!(sub.is_dir(), "{}", sub.display());
             assert_eq!(sub, dir.root().join(name));
         }
+        assert_eq!(dir.obj_dir_from_diag(), Path::new("..").join("obj"));
+        assert!(dir.diag_dir().join(dir.obj_dir_from_diag()).is_dir());
+        assert_eq!(dir.tmp_dir_from_diag(), Path::new("..").join("tmp"));
         let sources = dir
             .write_generated(&generated("main.cpp", "int main() {}\n"))
             .unwrap();

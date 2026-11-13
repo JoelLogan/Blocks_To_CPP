@@ -46,7 +46,7 @@ use std::time::Instant;
 
 use b2c_ipc::dto::{BuildConfig, BuildStage};
 use b2c_ir::diag::Related;
-use b2c_ir::source_map::{GeneratedProject, Position, SourceMap};
+use b2c_ir::source_map::{FileKind, GeneratedProject, Position, SourceMap};
 use b2c_ir::text::is_device_name;
 use b2c_ir::{DiagSource, Diagnostic, Location, Severity};
 use b2c_model::{BuildConfiguration, Document};
@@ -66,6 +66,7 @@ use crate::build_dir::{
 use crate::frontend::{FrontendOptions, run_frontend_cancellable};
 use crate::ide;
 use crate::manifest::{self, ManifestInputs, ManifestStep, ManifestToolchain, StepKind};
+use crate::objects::{self, CachedUnit, KeyBase};
 use crate::session::{RecordOutcome, ToolchainForBuild};
 use crate::toolchains::{Selected, ToolchainChoice, select};
 
@@ -609,12 +610,23 @@ struct Project<'a> {
 struct Step {
     kind: StepKind,
     command: CompilerCommand,
-    /// The absolute path of what the step writes (an object or the
-    /// executable). Its argv may name it relative to the compiler's working
-    /// directory (`../out/main.o`); whatever opens or deletes the output uses
-    /// this path, never the argv's text, which would be read relative to
-    /// this process's working folder (w3-modules.md §2.7).
+    /// The absolute path of what the step writes (a unit's temporary
+    /// object, or the executable). Its argv may name it relative to the
+    /// compiler's working directory (`../tmp/main.o`); whatever opens,
+    /// renames or deletes the output uses this path, never the argv's text,
+    /// which would be read relative to this process's working folder
+    /// (w3-modules.md §2.7).
     output: PathBuf,
+    /// For a translation unit of a build with several: its files in the
+    /// object cache (all absolute paths), into which `output` is renamed
+    /// once it compiled.
+    cached: Option<CachedUnit>,
+}
+
+/// A translation unit to compile: its source file and that file's text.
+struct Unit<'a> {
+    source: PathBuf,
+    text: &'a [u8],
 }
 
 /// Prepares the build folder, decides whether the program is up to date,
@@ -739,12 +751,31 @@ fn prepare(
     if main_count == 0 {
         return Err(BuildError::Internal("the generated project has no source file"));
     }
-    let mut sources = written.sources;
+    // `written.sources` are the generated sources, in the order of their
+    // files.
+    let mut units: Vec<Unit<'_>> = written
+        .sources
+        .into_iter()
+        .zip(
+            project
+                .generated
+                .files
+                .iter()
+                .filter(|file| file.kind == FileKind::Source),
+        )
+        .map(|(source, file)| Unit {
+            source,
+            text: file.contents.as_bytes(),
+        })
+        .collect();
     let mut changed = pending || written.changed || pruned;
     if input.ide {
         let (path, ide_changed) = ide::write_init_unit(dir)?;
         changed |= ide_changed;
-        sources.push(path);
+        units.push(Unit {
+            source: path,
+            text: ide::INIT_UNIT_SOURCE.as_bytes(),
+        });
     }
 
     let executable = dir.out_dir().join(format!(
@@ -752,7 +783,8 @@ fn prepare(
         program_name(project.document),
         project.toolchain.platform().exe_suffix()
     ));
-    let steps = plan_steps(plan, &sources, main_count, dir, &executable);
+    let key_base = KeyBase::new(project.toolchain, project.generated);
+    let steps = plan_steps(plan, &units, main_count, dir, &executable, &key_base);
     let manifest_inputs = ManifestInputs {
         project_hash,
         toolchain: ManifestToolchain::new(project.toolchain),
@@ -821,7 +853,15 @@ fn compile_and_record(
         Ok(StepResult::Failed) => Ok(RecordOutcome::ProjectErrors),
         Err(error) => Err(error),
     };
-    if !matches!(recorded, Ok(RecordOutcome::Built)) {
+    if matches!(recorded, Ok(RecordOutcome::Built)) {
+        // `obj/` keeps only this build's objects and messages (w3-modules.md
+        // §1.6).
+        let pruned = objects::prune(
+            &dir.obj_dir(),
+            prepared.steps.iter().filter_map(|step| step.cached.as_ref()),
+        );
+        tracing::debug!(pruned, "old objects deleted");
+    } else {
         remove_outputs(&prepared.steps);
     }
     recorded
@@ -848,12 +888,17 @@ fn files_differ(dir: &BuildDir, generated: &GeneratedProject, ide: bool) -> bool
             ))
 }
 
-/// Deletes what the steps write (objects and the executable), by their
-/// absolute paths, best effort: a running program on Windows cannot be
-/// deleted, and its manifest is already gone.
+/// Deletes what the steps write (the units' temporaries and the
+/// executable), by their absolute paths, best effort: a running program on
+/// Windows cannot be deleted, and its manifest is already gone. The objects
+/// in the cache stay, so after an error in one unit is fixed only that unit
+/// compiles (w3-modules.md §1.6).
 fn remove_outputs(steps: &[Step]) {
     for step in steps {
         let _ = std::fs::remove_file(&step.output);
+        if let Some(cached) = &step.cached {
+            cached.remove_temporaries();
+        }
     }
 }
 
@@ -905,56 +950,69 @@ pub(crate) fn program_name(document: &Document) -> String {
         .map_or_else(|| String::from("program"), str::to_owned)
 }
 
-/// The compiler steps. `sources` are the generated sources (the first
+/// The compiler steps. `units` are the generated sources (the first
 /// `main_count`) followed by the IDE init unit, if any. One generated source
 /// is compiled and linked with the init unit in one invocation; several are
-/// compiled one by one (the init unit too) and then linked.
+/// compiled one by one (the init unit too), each into the object cache
+/// under its key ([`KeyBase::unit_key`]), and then linked.
 ///
 /// The objects are named relative to the compiler's working directory
-/// (`../out/<stem>.o`, [`BuildDir::out_dir_from_diag`]), so the link line of
-/// 257 units stays well under Windows' 32,767 characters however deep the
-/// cache folder is (w3-modules.md §2.7); each step also keeps its output's
-/// absolute path, for [`remove_outputs`].
+/// (`../tmp/<stem>.o` when compiled, `../obj/<stem>-<key12>.o` when linked,
+/// [`BuildDir::obj_dir_from_diag`]), so the link line of 257 units
+/// stays well under Windows' 32,767 characters however deep the cache
+/// folder is (w3-modules.md §2.7); each step also keeps its output's
+/// absolute path, and its cache files', for [`remove_outputs`] and
+/// [`CachedUnit::store`].
 fn plan_steps(
     plan: &CommandPlan,
-    sources: &[PathBuf],
+    units: &[Unit<'_>],
     main_count: usize,
     dir: &BuildDir,
     executable: &Path,
+    key_base: &KeyBase,
 ) -> Vec<Step> {
     if main_count == 1 {
+        let sources: Vec<PathBuf> = units.iter().map(|unit| unit.source.clone()).collect();
         return vec![Step {
             kind: StepKind::CompileAndLink,
-            command: plan.compile_and_link_many(sources, executable),
+            command: plan.compile_and_link_many(&sources, executable),
             output: executable.to_path_buf(),
+            cached: None,
         }];
     }
-    let names: Vec<String> = sources
+    let from_diag = dir.obj_dir_from_diag();
+    let mut steps: Vec<Step> = units
         .iter()
-        .map(|source| {
-            let stem = source
+        .map(|unit| {
+            let stem = unit
+                .source
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            format!("{stem}.o")
+            let command = plan.compile(
+                &unit.source,
+                &dir.tmp_dir_from_diag().join(objects::temp_object_name(&stem)),
+            );
+            let key = key_base.unit_key(&command, unit.text);
+            let cached = CachedUnit::new(&dir.obj_dir(), &dir.tmp_dir(), &stem, &key);
+            Step {
+                kind: StepKind::Compile,
+                command,
+                output: cached.temp_object.clone(),
+                cached: Some(cached),
+            }
         })
         .collect();
-    let from_diag = dir.out_dir_from_diag();
-    let objects: Vec<PathBuf> = names.iter().map(|name| from_diag.join(name)).collect();
-    let mut steps: Vec<Step> = sources
+    let objects: Vec<PathBuf> = steps
         .iter()
-        .zip(&objects)
-        .zip(&names)
-        .map(|((source, object), name)| Step {
-            kind: StepKind::Compile,
-            command: plan.compile(source, object),
-            output: dir.out_dir().join(name),
-        })
+        .filter_map(|step| step.cached.as_ref())
+        .map(|cached| from_diag.join(cached.object_name()))
         .collect();
     steps.push(Step {
         kind: StepKind::Link,
         command: plan.link(&objects, executable),
         output: executable.to_path_buf(),
+        cached: None,
     });
     steps
 }
@@ -1059,10 +1117,7 @@ fn run_parallel(
                         break;
                     };
                     let report = if context.cancel.is_cancelled() {
-                        Ok(StepReport {
-                            result: StepResult::Cancelled,
-                            diagnostics: Vec::new(),
-                        })
+                        Ok(StepReport::cancelled())
                     } else {
                         run_step(context, step)
                     };
@@ -1108,6 +1163,30 @@ fn run_parallel(
 struct StepReport {
     result: StepResult,
     diagnostics: Vec<Mapped>,
+    /// The compiler's messages as parsed, when the step succeeded (what
+    /// the object cache keeps beside the object).
+    messages: Option<ParsedOutput>,
+}
+
+impl StepReport {
+    /// A step that did not run or did not finish because the build was
+    /// cancelled.
+    fn cancelled() -> Self {
+        Self {
+            result: StepResult::Cancelled,
+            diagnostics: Vec::new(),
+            messages: None,
+        }
+    }
+
+    /// A step that ended with `result`.
+    fn ended(result: StepResult, diagnostics: Vec<Mapped>) -> Self {
+        Self {
+            result,
+            diagnostics,
+            messages: None,
+        }
+    }
 }
 
 /// A diagnostic made from a compiler message, with the place the message
@@ -1190,10 +1269,29 @@ fn absorb(earlier: &mut Diagnostic, later: Diagnostic) {
     }
 }
 
-/// Runs one compiler step and maps its messages.
+/// Runs one compiler step and maps its messages. A unit whose object and
+/// messages are in the cache is not compiled: its messages are mapped again
+/// with the current source map, so its warnings are still reported. A unit
+/// that compiles is stored in the cache.
 fn run_step(context: &StepContext<'_>, step: &Step) -> Result<StepReport, BuildError> {
     let started = Instant::now();
+    if let Some(parsed) = step.cached.as_ref().and_then(CachedUnit::lookup) {
+        let diagnostics = map_placed(&parsed, context.source_map, &map_dirs(context.dir));
+        tracing::info!(
+            step = step_name(step.kind),
+            duration_ms = elapsed_ms(started),
+            result = "reused",
+            diagnostics = diagnostics.len(),
+            "compiler step finished"
+        );
+        return Ok(StepReport::ended(StepResult::Succeeded, diagnostics));
+    }
     let report = run_step_inner(context, &step.command)?;
+    if report.result == StepResult::Succeeded
+        && let Some(cached) = &step.cached
+    {
+        cached.store(report.messages.as_ref().unwrap_or(&ParsedOutput::default()))?;
+    }
     tracing::info!(
         step = step_name(step.kind),
         duration_ms = elapsed_ms(started),
@@ -1223,10 +1321,7 @@ fn step_result_name(result: StepResult) -> &'static str {
 
 fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<StepReport, BuildError> {
     let Some(mut run) = run_once(context, step)? else {
-        return Ok(StepReport {
-            result: StepResult::Cancelled,
-            diagnostics: Vec::new(),
-        });
+        return Ok(StepReport::cancelled());
     };
     if run.crashed() {
         // Some GCC releases crash only while writing SARIF or JSON
@@ -1234,12 +1329,7 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
         if let Some(plain) = step.with_plain_diagnostics() {
             match run_once(context, &plain)? {
                 Some(again) => run = again,
-                None => {
-                    return Ok(StepReport {
-                        result: StepResult::Cancelled,
-                        diagnostics: Vec::new(),
-                    });
-                }
+                None => return Ok(StepReport::cancelled()),
             }
         }
     }
@@ -1247,12 +1337,13 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
     let explained = run.explained();
     let limited = run.hit_limit();
     let refused_memory = run.refused_memory();
-    let StepRun { captured, mut mapped } = run;
+    let StepRun {
+        captured,
+        mut mapped,
+        parsed,
+    } = run;
     if captured.cancelled {
-        return Ok(StepReport {
-            result: StepResult::Cancelled,
-            diagnostics: Vec::new(),
-        });
+        return Ok(StepReport::cancelled());
     }
     if limited {
         let mut diagnostic = Diagnostic::error(
@@ -1266,22 +1357,17 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
             diagnostic.raw = Some(cap_raw(String::from_utf8_lossy(&captured.stderr).into_owned()));
         }
         mapped.push(Mapped::unplaced(diagnostic));
-        return Ok(StepReport {
-            result: StepResult::Failed,
-            diagnostics: mapped,
-        });
+        return Ok(StepReport::ended(StepResult::Failed, mapped));
     }
     if captured.status.success() {
         return Ok(StepReport {
             result: StepResult::Succeeded,
             diagnostics: mapped,
+            messages: Some(parsed),
         });
     }
     if explained {
-        return Ok(StepReport {
-            result: StepResult::Failed,
-            diagnostics: mapped,
-        });
+        return Ok(StepReport::ended(StepResult::Failed, mapped));
     }
     let mut diagnostic = if crashed {
         Diagnostic::error(
@@ -1303,14 +1389,14 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
     };
     diagnostic.raw = Some(cap_raw(String::from_utf8_lossy(&captured.stderr).into_owned()));
     mapped.push(Mapped::unplaced(diagnostic));
-    Ok(StepReport {
-        result: if crashed {
+    Ok(StepReport::ended(
+        if crashed {
             StepResult::Crashed
         } else {
             StepResult::Failed
         },
-        diagnostics: mapped,
-    })
+        mapped,
+    ))
 }
 
 /// One run of a compiler step: its output and its messages, mapped to
@@ -1318,6 +1404,8 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
 struct StepRun {
     captured: b2c_process::Captured,
     mapped: Vec<Mapped>,
+    /// The messages as parsed, before they were mapped.
+    parsed: ParsedOutput,
 }
 
 impl StepRun {
@@ -1400,18 +1488,26 @@ fn run_once(context: &StepContext<'_>, step: &CompilerCommand) -> Result<Option<
         Err(error) => return Err(error.into()),
     };
     let parsed = step.read_diagnostics(&context.dir.diag_dir(), &captured.stderr);
-    let dirs = MapDirs {
-        gen_dir: context.dir.gen_dir(),
-        ide_dir: context.dir.ide_dir(),
-    };
-    let mapped = map_placed(&parsed, context.source_map, &dirs);
-    Ok(Some(StepRun { captured, mapped }))
+    let mapped = map_placed(&parsed, context.source_map, &map_dirs(context.dir));
+    Ok(Some(StepRun {
+        captured,
+        mapped,
+        parsed,
+    }))
 }
 
 /// The folders whose files compiler messages can point into.
 struct MapDirs {
     gen_dir: PathBuf,
     ide_dir: PathBuf,
+}
+
+/// The folders of `dir` whose files compiler messages can point into.
+fn map_dirs(dir: &BuildDir) -> MapDirs {
+    MapDirs {
+        gen_dir: dir.gen_dir(),
+        ide_dir: dir.ide_dir(),
+    }
 }
 
 /// Turns g++ and linker messages into diagnostics on the blocks that
@@ -1702,6 +1798,7 @@ mod tests {
                 out_of_memory: false,
             },
             mapped: Vec::new(),
+            parsed: ParsedOutput::default(),
         }
     }
 
@@ -2376,12 +2473,30 @@ mod tests {
             &extra,
         );
         let plan = CommandPlan::new(&inputs).unwrap();
-        let mut sources: Vec<PathBuf> = stems
+        let mut units: Vec<Unit<'_>> = stems
             .iter()
-            .map(|stem| dir.gen_dir().join(format!("{stem}.cpp")))
+            .map(|stem| Unit {
+                source: dir.gen_dir().join(format!("{stem}.cpp")),
+                text: b"int x;\n",
+            })
             .collect();
-        sources.push(dir.ide_dir().join(ide::INIT_UNIT_FILE));
-        plan_steps(&plan, &sources, stems.len(), dir, &dir.out_dir().join("main.exe"))
+        units.push(Unit {
+            source: dir.ide_dir().join(ide::INIT_UNIT_FILE),
+            text: ide::INIT_UNIT_SOURCE.as_bytes(),
+        });
+        let generated = GeneratedProject {
+            files: Vec::new(),
+            source_map: SourceMap::default(),
+        };
+        let key_base = KeyBase::new(toolchain, &generated);
+        plan_steps(
+            &plan,
+            &units,
+            stems.len(),
+            dir,
+            &dir.out_dir().join("main.exe"),
+            &key_base,
+        )
     }
 
     /// The `-o` argument of a step.
@@ -2410,8 +2525,10 @@ mod tests {
     }
 
     /// In the compiler's argv, objects are named from its working folder
-    /// (`../out/main.o`); each step keeps the absolute path of its output,
-    /// and a failed build deletes the outputs by those paths only.
+    /// (`../tmp/main.o` when compiled, `../obj/main-<key12>.o` when
+    /// linked); each step keeps the absolute paths of its output and cache
+    /// files, and a failed build deletes the temporaries and the executable
+    /// by those paths only, keeping the cached objects.
     #[test]
     fn objects_are_named_from_the_compiler_folder_and_deleted_by_absolute_path() {
         let cache = tempfile::tempdir().unwrap();
@@ -2432,31 +2549,60 @@ mod tests {
                 StepKind::Link
             ]
         );
-        for (step, name) in steps.iter().zip(["main.o", "utils.o", "b2c_ide_init.o"]) {
-            assert_eq!(step.output, dir.out_dir().join(name));
-            assert_eq!(Path::new(dash_o(step)), Path::new("..").join("out").join(name));
+        let from_diag = Path::new("..").join("obj");
+        for (step, stem) in steps.iter().zip(["main", "utils", "b2c_ide_init"]) {
+            let cached = step.cached.as_ref().unwrap();
+            let temp = format!("{stem}.o");
+            assert_eq!(step.output, dir.tmp_dir().join(&temp));
+            assert_eq!(cached.temp_object, step.output);
+            assert_eq!(
+                cached.temp_messages,
+                dir.tmp_dir().join(format!("{stem}.messages.json"))
+            );
+            assert_eq!(Path::new(dash_o(step)), Path::new("..").join("tmp").join(&temp));
             assert!(step.command.args.iter().any(|arg| arg == "-c"));
+            let name = cached.object_name().to_string_lossy().into_owned();
+            assert!(
+                name.starts_with(&format!("{stem}-")) && name.len() == stem.len() + 15,
+                "{name}"
+            );
+            assert_eq!(cached.object, dir.obj_dir().join(&name));
         }
         let link = &steps[3];
+        assert!(link.cached.is_none());
         let executable = dir.out_dir().join("main.exe");
         assert_eq!(link.output, executable);
         assert_eq!(Path::new(dash_o(link)), executable);
-        for name in ["main.o", "utils.o", "b2c_ide_init.o"] {
-            let relative = Path::new("..").join("out").join(name);
+        for step in &steps[..3] {
+            let relative = from_diag.join(step.cached.as_ref().unwrap().object_name());
             assert!(
                 link.command.args.iter().any(|arg| Path::new(arg) == relative),
                 "{:?}",
                 link.command.args
             );
         }
-        // The relative names reach the outputs from the compiler's folder.
+        // The relative names reach the files from the compiler's folder.
         for step in &steps {
             std::fs::write(&step.output, "built").unwrap();
             assert!(dir.diag_dir().join(dash_o(step)).is_file());
+            if let Some(cached) = &step.cached {
+                std::fs::write(&cached.temp_messages, "{}").unwrap();
+                std::fs::write(&cached.object, "cached").unwrap();
+                assert!(
+                    dir.diag_dir()
+                        .join(&from_diag)
+                        .join(cached.object_name())
+                        .is_file()
+                );
+            }
         }
         remove_outputs(&steps);
         for step in &steps {
             assert!(!step.output.exists(), "{}", step.output.display());
+            if let Some(cached) = &step.cached {
+                assert!(!cached.temp_messages.exists());
+                assert!(cached.object.is_file(), "{}", cached.object.display());
+            }
         }
 
         // One translation unit: one step, writing the executable.
@@ -2464,6 +2610,74 @@ mod tests {
         assert_eq!(single.len(), 1);
         assert_eq!(single[0].kind, StepKind::CompileAndLink);
         assert_eq!(single[0].output, executable);
+        assert!(single[0].cached.is_none());
+    }
+
+    /// A unit's key changes with the compiler, any flag (the standard among
+    /// them) and any header, so the cache never reuses an object across a
+    /// toolchain, flag or standard change, or a header edit.
+    #[test]
+    fn unit_keys_follow_the_toolchain_the_flags_and_the_headers() {
+        let cache = tempfile::tempdir().unwrap();
+        let project = b2c_ir::ids::ProjectId::new("prj_keys").unwrap();
+        let dir = BuildDir::create(cache.path(), &project, "debug-0123abcd").unwrap();
+        let stems = [String::from("main"), String::from("utils")];
+        let names = |steps: &[Step]| -> Vec<String> {
+            steps
+                .iter()
+                .filter_map(|step| step.cached.as_ref())
+                .map(|cached| cached.object_name().to_string_lossy().into_owned())
+                .collect()
+        };
+        let first = names(&steps_for(&fake_toolchain(), &dir, &stems));
+        assert_eq!(first, names(&steps_for(&fake_toolchain(), &dir, &stems)));
+        let mut other = fake_toolchain();
+        other.fingerprint.sha256 = "1".repeat(64);
+        let changed = names(&steps_for(&other, &dir, &stems));
+        assert!(first.iter().zip(&changed).all(|(a, b)| a != b), "{changed:?}");
+        // The Windows toolchain's flags differ.
+        let windows = names(&steps_for(&windows_toolchain(), &dir, &stems));
+        assert!(first.iter().zip(&windows).all(|(a, b)| a != b), "{windows:?}");
+
+        let document = document();
+        let extra = ExtraFlags::none();
+        let toolchain = fake_toolchain();
+        let unit = [Unit {
+            source: dir.gen_dir().join("main.cpp"),
+            text: b"int x;\n",
+        }];
+        let key = |language: b2c_model::Language, generated: &GeneratedProject| {
+            let inputs = BuildInputs::new(
+                &toolchain,
+                Configuration::Debug.settings(&document),
+                language,
+                dir.gen_dir(),
+                &extra,
+            );
+            let plan = CommandPlan::new(&inputs).unwrap();
+            let base = KeyBase::new(&toolchain, generated);
+            let planned = plan_steps(&plan, &unit, 2, &dir, &dir.out_dir().join("main"), &base);
+            names(&planned)
+        };
+        let header = |contents: &str| GeneratedProject {
+            files: vec![b2c_ir::source_map::GeneratedFile {
+                path: String::from("utils.hpp"),
+                kind: FileKind::Header,
+                module: None,
+                contents: contents.to_owned(),
+            }],
+            source_map: SourceMap::default(),
+        };
+        let language = document.project.language;
+        let base = key(language, &header("#pragma once\n"));
+        assert_eq!(base, key(language, &header("#pragma once\n")));
+        assert_ne!(base, key(language, &header("#pragma once\nint f();\n")));
+        let mut newer = language;
+        newer.standard = match language.standard {
+            b2c_ir::sast::CppStandard::Cpp17 => b2c_ir::sast::CppStandard::Cpp20,
+            _ => b2c_ir::sast::CppStandard::Cpp17,
+        };
+        assert_ne!(base, key(newer, &header("#pragma once\n")));
     }
 
     /// g++'s link argv for 256 modules with 64-character stems (and the
@@ -2487,12 +2701,17 @@ mod tests {
             assert_eq!(planned.len(), 258);
             let link = planned.last().unwrap();
             assert_eq!(link.kind, StepKind::Link);
+            assert!(link.command.args.iter().any(|arg| {
+                let arg = arg.to_string_lossy();
+                arg.starts_with("../obj/m") && arg.len() == "../obj/".len() + 64 + 15
+            }));
             let length = command_line_length(&link.command);
             assert!(length < 26_000, "{length}");
             // Absolute objects would not fit: the bound is the relative names'.
-            let absolute: usize = modules
+            let absolute: usize = planned
                 .iter()
-                .map(|stem| dir.out_dir().join(format!("{stem}.o")).as_os_str().len() + 1)
+                .filter_map(|step| step.cached.as_ref())
+                .map(|cached| cached.object.as_os_str().len() + 1)
                 .sum();
             assert!(absolute > 32_767, "{absolute}");
         }

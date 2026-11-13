@@ -45,6 +45,7 @@ pub mod export;
 pub mod frontend;
 pub mod ide;
 mod manifest;
+mod objects;
 mod run;
 pub mod session;
 pub mod toolchains;
