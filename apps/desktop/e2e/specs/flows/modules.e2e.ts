@@ -41,7 +41,7 @@ import { newEmptyProject } from './lib/project';
 import {
   answerDialog,
   BUILD_TIMEOUT_MS,
-  DIALOG,
+  nameInDialog,
   UI_TIMEOUT_MS,
   waitForDialog,
   waitForToolchain,
@@ -118,30 +118,6 @@ async function showModule(driver: WebDriver, file: string, files: string[]): Pro
   await clickMiddle(driver, await moduleButton(driver, file));
   await waitForStrip(driver, files, file);
   await waitForDelivery(driver);
-}
-
-/** Replaces the text of the open dialog's field with `text` and presses `button`. */
-async function nameInDialog(
-  driver: WebDriver,
-  title: RegExp,
-  text: string,
-  button: string,
-): Promise<void> {
-  await waitForDialog(driver, title);
-  const field = await driver.findElement(By.css(`${DIALOG} input`));
-  await clickMiddle(driver, field);
-  await driver
-    .actions({ async: true })
-    .keyDown(Key.CONTROL)
-    .sendKeys('a')
-    .keyUp(Key.CONTROL)
-    .sendKeys(text)
-    .perform();
-  await waitFor(async () => (await field.getAttribute('value')) === text, {
-    timeout: UI_TIMEOUT_MS,
-    message: `the dialog's field to hold "${text}"`,
-  });
-  await answerDialog(driver, button);
 }
 
 /** Waits until the C++ panel's shown file holds `text` (spaces ignored), and returns it. */

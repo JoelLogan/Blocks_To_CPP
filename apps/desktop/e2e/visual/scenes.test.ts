@@ -19,6 +19,8 @@ import {
   GTK_THEMES,
   PROGRAM_LINES,
   sceneRunsOn,
+  STRIP_MODULES,
+  STRIP_SCENES,
   themesOf,
   TOOLBOX_CATEGORIES,
   TOOLCHAIN_MASK,
@@ -58,7 +60,27 @@ describe('the scenes', () => {
       ...TOOLBOX_CATEGORIES.map(toolboxSceneId),
       'console-scrolled',
       'console-two-runs',
+      'modules-two',
+      'modules-five',
     ]);
+  });
+
+  it('show the module strip with two and five modules, the strip only', () => {
+    expect(STRIP_SCENES).toEqual([
+      { id: 'modules-two', modules: 2 },
+      { id: 'modules-five', modules: 5 },
+    ]);
+    expect(STRIP_MODULES[0]).toBe('main');
+    expect(new Set(STRIP_MODULES).size).toBe(STRIP_MODULES.length);
+    expect(Math.max(...STRIP_SCENES.map((strip) => strip.modules))).toBe(STRIP_MODULES.length);
+    for (const strip of STRIP_SCENES) {
+      const scene = chromeScene(strip.id);
+      expect(scene.area, strip.id).toEqual(['[data-testid="module-strip"]']);
+      expect(scene.masks, strip.id).toEqual([]);
+      expect(sceneRunsOn(scene, 'windows'), strip.id).toBe(true);
+    }
+    expect(chromeShotNames('linux')).toContain('chrome-modules-five-dark');
+    expect(chromeShotNames('windows')).toContain('chrome-modules-two');
   });
 
   it('take a toolbox scene for each category of the catalog, in toolbox order', () => {

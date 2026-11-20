@@ -168,6 +168,28 @@ export function consoleScrollProblem(view: ConsoleView, lines: number): string |
   return null;
 }
 
+/** The module strip's area: the strip above the canvas (src/editor/modules/ModuleSwitcher.tsx). */
+const MODULE_STRIP = ['[data-testid="module-strip"]'];
+
+/**
+ * The modules of the strip scenes, in the order the strip shows them: the template's `main`, then
+ * the ones added with ⊕ *Add module*, each shown as it is added. The one-module strip is in every
+ * whole-window scene.
+ */
+export const STRIP_MODULES: readonly string[] = ['main', 'utils', 'shapes', 'scores', 'menu'];
+
+/** A scene of the module strip: how many modules of {@link STRIP_MODULES} it holds. */
+export interface StripScene {
+  readonly id: string;
+  readonly modules: number;
+}
+
+/** The module strip's scenes (docs/plans/m3-contracts/w3-modules.md §5.3 item 5), in order. */
+export const STRIP_SCENES: readonly StripScene[] = [
+  { id: 'modules-two', modules: 2 },
+  { id: 'modules-five', modules: 5 },
+];
+
 /** The scene of a toolbox category. */
 export function toolboxSceneId(category: ToolboxCategory): string {
   return `toolbox-${category.id}`;
@@ -219,6 +241,12 @@ export const CHROME_SCENES: readonly ChromeScene[] = [
     area: BOTTOM_DOCK,
     masks: [ELAPSED_MASK],
   },
+  ...STRIP_SCENES.map((strip): ChromeScene => ({
+    id: strip.id,
+    shows: `the module strip with ${String(strip.modules)} modules (${STRIP_MODULES.slice(0, strip.modules).join(', ')}), the last one added shown`,
+    area: MODULE_STRIP,
+    masks: [],
+  })),
 ];
 
 /** The scene `id`. @throws Error when there is none. */

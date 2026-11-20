@@ -25,7 +25,9 @@ and takes a WebDriver screenshot of the workspace element (the toolbox, its flyo
 [`chrome.visual.e2e.ts`](chrome.visual.e2e.ts) takes the scenes of [`scenes.ts`](scenes.ts) in
 one launch of the app per theme, in the smallest window the app allows (800×560, through the
 window-size seam), with a new project from the Empty template whose program prints three lines.
-Each scene is cut out of a screenshot of the whole window:
+Each scene is cut out of a screenshot of the whole window. The module strip with one module (the
+template's `main`) is in every whole-window scene; the strip's own scenes come last, after the
+modules are added:
 
 | Scene                         | Area                       | Shows                                                                                                                                                                     |
 | ----------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -36,6 +38,8 @@ Each scene is cut out of a screenshot of the whole window:
 | `chrome-toolbox-<category>`   | the toolbox and its flyout | one per category (`program`, `variables`, `math`, `logic`, `text`, `control`, `loops`, `io`, `functions`, `collections`, `types`, `files`, `errors`), after a click on it |
 | `chrome-console-scrolled`     | the bottom panel           | after two runs, scrolled up 4 lines from the end (the end of the first run and _New run_), at the panel's first height                                                    |
 | `chrome-console-two-runs`     | the bottom panel           | after two runs, the panel at its tallest: the first run, _New run_, the second run                                                                                        |
+| `chrome-modules-two`          | the module strip           | after ⊕ _Add module_ named `utils`: `main.cpp` and `utils.cpp`, the new one shown                                                                                         |
+| `chrome-modules-five`         | the module strip           | after three more (`shapes`, `scores`, `menu`): five modules, the last one shown                                                                                           |
 
 The themes: light on both systems, and on Linux dark too, as separate scenes with their own
 baselines (`…-dark`): the app is started with `GTK_THEME=Adwaita:dark`, which WebKitGTK reports

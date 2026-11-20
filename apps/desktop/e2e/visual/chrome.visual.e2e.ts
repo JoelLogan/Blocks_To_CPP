@@ -8,7 +8,8 @@
  * Program category chosen in the toolbox; the whole window; the toolbar with its Debug/Release
  * drop-down, then with the pointer on it; the ≡ main menu open over the editor; the toolbox after a
  * click on each category; two runs of the program, the console scrolled up a fixed number of lines,
- * and the console with the bottom panel at its tallest. Before each screenshot the pointer is
+ * and the console with the bottom panel at its tallest; then the module strip with two and with
+ * five modules, each added with ⊕ *Add module*. Before each screenshot the pointer is
  * parked (or rests on what the scene hovers), nothing has the focus, no caret shows, the page has
  * its fonts and has come to rest (settle.ts), and two screenshots in a row are the same
  * (capture.ts). The status bar's toolchain, the console's elapsed time and the C++ panel's first
@@ -25,12 +26,17 @@ import { describe, expect, it } from 'vitest';
 import { codeHas } from '../bench/project';
 import { NodeIds, print } from '../support/bdm';
 import { waitForConsoleState } from '../support/console';
-import { clickTestId, openCategory } from '../support/ui';
+import { clickTestId, openCategory, textContent } from '../support/ui';
 import { waitFor } from '../support/wait';
 import { waitForTranscript } from '../specs/flows/lib/console';
 import { type FlowApp, startFlow } from '../specs/flows/lib/launch';
 import { newEmptyProject } from '../specs/flows/lib/project';
-import { BUILD_TIMEOUT_MS, UI_TIMEOUT_MS, waitForToolchain } from '../specs/flows/lib/ui';
+import {
+  BUILD_TIMEOUT_MS,
+  nameInDialog,
+  UI_TIMEOUT_MS,
+  waitForToolchain,
+} from '../specs/flows/lib/ui';
 import { visualSettings, type VisualSettings } from './baselines';
 import { captureScene, fixMaskWidths } from './capture';
 import { SceneRun } from './scene-run';
@@ -41,6 +47,8 @@ import {
   CONSOLE_SCROLL_LINES,
   GTK_THEMES,
   PROGRAM_LINES,
+  STRIP_MODULES,
+  STRIP_SCENES,
   type Theme,
   themesOf,
   TOOLBOX_CATEGORIES,
@@ -197,6 +205,43 @@ async function tallestBottomDock(app: FlowApp): Promise<void> {
   );
 }
 
+/** The strip's module buttons: each one's file label and whether it is pressed (shown). */
+async function stripButtons(driver: WebDriver): Promise<{ file: string; pressed: boolean }[]> {
+  const buttons = await driver.findElements(By.css('[data-testid="module-switch"]'));
+  return Promise.all(
+    buttons.map(async (button) => ({
+      file: (await textContent(driver, button)).trim(),
+      pressed: (await button.getAttribute('aria-pressed')) === 'true',
+    })),
+  );
+}
+
+/**
+ * Adds the modules of {@link STRIP_MODULES} with ⊕ *Add module* until the strip holds `count`,
+ * each named in the app's dialog, and waits until the strip shows them all, the last one shown.
+ */
+async function addModulesUntil(driver: WebDriver, count: number): Promise<void> {
+  const files = STRIP_MODULES.slice(0, count).map((name) => `${name}.cpp`);
+  for (let at = (await stripButtons(driver)).length; at < count; at += 1) {
+    await clickTestId(driver, 'module-add');
+    await nameInDialog(driver, /Add module/, STRIP_MODULES[at] ?? '', 'Add');
+  }
+  await waitFor(
+    async () => {
+      const now = await stripButtons(driver);
+      return JSON.stringify(now.map((button) => button.file)) === JSON.stringify(files) &&
+        now.find((button) => button.pressed)?.file === files.at(-1)
+        ? true
+        : null;
+    },
+    {
+      timeout: UI_TIMEOUT_MS,
+      message: async () =>
+        `the strip to show ${files.join(', ')} (it shows ${JSON.stringify(await stripButtons(driver))})`,
+    },
+  );
+}
+
 /** Launches the app for `theme`, in the scenes' window, and checks the page's theme. */
 async function launch(
   context: Parameters<typeof startFlow>[0],
@@ -261,6 +306,11 @@ describe('visual diff: the chrome', () => {
           await scenes.take('console-scrolled');
           await tallestBottomDock(started);
           await scenes.take('console-two-runs');
+
+          for (const strip of STRIP_SCENES) {
+            await addModulesUntil(driver, strip.modules);
+            await scenes.take(strip.id);
+          }
         } catch (error: unknown) {
           scenes.notReached(error);
           throw error;

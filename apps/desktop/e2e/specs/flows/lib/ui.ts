@@ -7,7 +7,7 @@
 import { By, Key, type WebDriver, type WebElement } from 'selenium-webdriver';
 
 import type { App } from '../../../support/app';
-import { byTestId, clickTestId, testIdText, textContent } from '../../../support/ui';
+import { byTestId, clickMiddle, clickTestId, testIdText, textContent } from '../../../support/ui';
 import { waitFor } from '../../../support/wait';
 
 /** How long background toolchain discovery may take on a fresh profile. */
@@ -99,6 +99,30 @@ export async function answerDialog(driver: WebDriver, label: string): Promise<vo
     timeout: UI_TIMEOUT_MS,
     message: `the dialog to close after "${label}"`,
   });
+}
+
+/** Replaces the text of the open dialog's field with `text` and presses `button`. */
+export async function nameInDialog(
+  driver: WebDriver,
+  title: RegExp,
+  text: string,
+  button: string,
+): Promise<void> {
+  await waitForDialog(driver, title);
+  const field = await driver.findElement(By.css(`${DIALOG} input`));
+  await clickMiddle(driver, field);
+  await driver
+    .actions({ async: true })
+    .keyDown(Key.CONTROL)
+    .sendKeys('a')
+    .keyUp(Key.CONTROL)
+    .sendKeys(text)
+    .perform();
+  await waitFor(async () => (await field.getAttribute('value')) === text, {
+    timeout: UI_TIMEOUT_MS,
+    message: `the dialog's field to hold "${text}"`,
+  });
+  await answerDialog(driver, button);
 }
 
 /** Chooses `label` in the toolbar's main menu `≡` (app/layout/MainMenu.tsx). */
