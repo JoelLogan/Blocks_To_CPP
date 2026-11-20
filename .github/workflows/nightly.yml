@@ -5,6 +5,9 @@
 #   The weekly workflow (weekly.yml, job fuzz-cmin) minimises the kept corpora.
 # - links: the external links in all Markdown (lychee); ci.yml checks them only on pull requests
 #   that touch Markdown.
+# - modules-256: a generated project of 256 modules with 64-character names, built by the app's
+#   build and exported and built with `make` (on Windows in MSYS2's shell), on Linux and Windows
+#   (docs/plans/m3-contracts/w3-modules.md §5.3 item 8); the test is #[ignore]d in other runs.
 # - e2e-app: the desktop app under test (a debug build with the e2e-hooks feature and the e2e
 #   frontend, as desktop.yml's e2e job builds it), built once per system for the three jobs below;
 # - e2e: every end-to-end flow and the visual diff of the block canvas and the chrome (light, and
@@ -36,7 +39,7 @@ on:
       jobs:
         description: Which jobs to run
         type: choice
-        options: [all, e2e, fuzz, links]
+        options: [all, e2e, fuzz, links, modules]
         default: all
 
 permissions: {}
@@ -310,6 +313,57 @@ jobs:
           token: ""
           fail: true
           jobSummary: true
+
+  # The most modules a project may have, with the longest names: the app's build compiles 256
+  # units and links them (an argv of about 26,000 characters, under Windows' 32,767), and the
+  # export's one recipe line is longer than cmd.exe takes, so on Windows `make` runs in MSYS2's
+  # login shell (B2C_MSYS2 names the installation; w3-modules.md §2.7, §2.8, §5.3 item 8).
+  modules-256:
+    name: 256 modules (${{ matrix.os }})
+    if: github.event_name == 'schedule' || inputs.jobs == 'all' || inputs.jobs == 'modules'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # UCRT64's g++ for the app's build, and MSYS2's own make for the export, run from its shell.
+      - name: Install g++ and make (MSYS2 UCRT64)
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc make
+
+      - name: Put g++ on PATH and name MSYS2's folder for the test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $env:MSYS2_LOCATION 'ucrt64\bin')
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_MSYS2=$env:MSYS2_LOCATION"
+
+      - name: Show g++ version
+        run: g++ --version
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Build and export 256 modules
+        run: cargo test --locked -p b2c-build --test modules_256 -- --ignored
+        env:
+          B2C_REQUIRE_GXX: "1" # fail, rather than skip, without g++
 
   # The app under test of the e2e, e2e-security and bench jobs, built once per system: a debug
   # build with the e2e-hooks feature and the e2e frontend embedded, so the CSP, the isolation hook
