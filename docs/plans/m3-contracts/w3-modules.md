@@ -1425,6 +1425,11 @@ corrected in place and the correction is recorded here with its reason.
 | The every-block project's `main` prints `shapes::half(9)`, so its output gains `half 4`; its C++ now writes `using namespace std;` after the helpers and the standard names short after it, which the test checks | the namespace's function is called from outside it, so its qualification is compiled and run | §5.2 N1 (N2) |
 | The `namespaces` E2E flow opens a fixture holding *when program starts* and a *namespace geo* with a *define* `area` and a struct `Box` in its mouth; it inserts the call of `area` into `main` through the test hook, drops *use namespace* from the toolbox, and renames `Box` to `list` by typing into its name field | the test hook inserts as the clipboard pastes, which puts no definition into a namespace's mouth, and inserts into a block's input, never at the top level | §5.2 N2 (N2) |
 | `shapes` asks for the side of its last shape, so that its `main` uses a helper and the example has the `b2c_support.hpp` of §4.1; `report`'s `print_shapes` is at global scope, outside `geo`, where *use namespace geo* lets it write `Shape`, `area` and `kMaxShapes` plainly | §4.1 lists `b2c_support.hpp`; a function in `geo` would need no directive | §4.1 (N2) |
+| A paste payload records a definition in a namespace with its namespaces and no leading `::` (`geo::area`, `geo::shapes::area`, a member `geo::Shape::width`) and one at global scope as before (`::area`); a recorded `area` or `::geo::area` reads as `::area` or `geo::area`. Namespaces are matched by name, so one namespace opened in several modules is one. Precedence picks, among the visible symbols of the recorded name and kind, the only one of the target module, else the only one; a global (`var.global`) is still recorded by its plain name as a variable, and a namespace by nothing (*use namespace* keeps its symbol ID) | M2's payloads wrote `::area` for every function, which the clipboard format version 2 keeps reading; the format has no kind for a global or a namespace | §2.1 (integration step) |
+| W3M-D12 (b) keeps the ID of every symbol the pasted blocks declare that the document does not use, locals included, not only definitions (`b2c_model::remap_ids_keeping_free`); block IDs are always fresh | one rule for every declaration; a free ID collides with nothing, and the references the document still holds to it are the ones the student cut. 05 §5.12's "fresh IDs for the symbols they declare" changes with it (the docs step) | §2.1, §6 W3M-D12 (integration step) |
+| `HelperPlacement` and `helper_placement` are gone from `CodegenOptions` and `FrontendOptions`; codegen's `header_placement_is_ignored` test went with the option, and the `frontend` fuzz target generates with and without the banner instead of with both placements | an option that no longer exists cannot be tested as ignored; the module count places the helpers (§1.2) | §3.3 W5 rows, §5.3 (integration step) |
+| The native benchmark's 8-module case is `pipeline/preview-modules` (`generate_modules` in `benches/pipeline/document.rs`: `main` calling a shared `work_<k>()` of each of seven other modules, the plain units round the eight bodies, 1,000 blocks), reported and not gated until it has its baselines | the gate needs five baselines, as W2's documents did | §5.3 (integration step) |
+| The scope query hides another module's shared definition behind a definition of the module with the same name, whatever their namespaces (an own `::count` hides a shared `geo::count`); the paste binds only what it lists. Left as it is, noted for the coordinator | a change of `ScopeIndex::visible` and of both lookups (Rust and TypeScript), outside the clipboard | §2.1 (integration step) |
 
 #### The W3M-D2 spike (N1)
 
@@ -1510,9 +1515,22 @@ package that takes each:
 * **The integration step** (§5.3):
   * W5 §10.1, lowering parked stacks (M3-4): W5's exact proposal for
     `lower/mod.rs`, `scope.rs` and `query.rs`, after N2, the last
-    package to edit those functions.
+    package to edit those functions. *Not done by the integration step:*
+    it is well defined but not small (a new `ItemCtx` and its exhaustive
+    matches, `Scopes::seed`, a side symbol table that five queries and
+    `symbol_infos` read, the sandbox's statements for `block_types`, and
+    four tests, one of them an E2E check); it stays M3-4, for a change of
+    its own.
   * W5 §10.2, the clipboard arguments of worker.md §5: only if the
     `copy-1000`, `paste-1000` or `duplicate-1000` benchmarks are over
     100 ms with the worker on; with the `clipboard.rs` row of §3.3.
+    *Not triggered:* those benchmarks were never added (w5-performance.md
+    §14), so no number is over 100 ms; the arguments wait for them.
   * W5 §10.5: `pnpm test:tools` (`node --test "tools/*.test.mjs"`) in a CI frontend
-    job, B's `ci.yml` having merged in R0.
+    job, B's `ci.yml` having merged in R0. *Done by the integration step:*
+    `desktop.yml`'s `frontend` job runs it after the package layering
+    rules, and the workflow's path filters gain `tools/*.mjs`.
+  * The `clipboard.rs` row of §3.3 and the rest of §5.3 item 4: *Done by
+    the integration step* (the §7.1 rows marked so); the worker's index is
+    checked by `the_index_holds_other_modules_shared_definitions`
+    (`crates/b2c-core-wasm/tests/scope_index.rs`).
