@@ -40,12 +40,15 @@ Codes by area:
   it too, for a pasted block that refers to a variable or function with no
   match where it was pasted; the message then names the original. A type
   setting or a function input's type that names a struct or enum that was
-  deleted gets it too, at that setting.
+  deleted gets it too, at that setting, and a `use namespace` block whose
+  namespace was deleted.
 * **Example:** the `create [int] [score]` block was deleted, but
   `print (score)` still refers to it.
 * **Message:** "This refers to a variable or function that doesn't exist (any
   more). Choose another one, or create it again." / "This type refers to a
-  struct or enum that doesn't exist (any more). Choose another type."
+  struct or enum that doesn't exist (any more). Choose another type." / "This
+  block uses a namespace that no longer exists. Choose another one, or remove
+  the block."
 * **How to fix:** pick another variable in the block's dropdown, or create the
   variable again with a `create variable` block; for a type, choose another
   type.
@@ -80,7 +83,9 @@ Codes by area:
   variable of `when program starts` is used in a function, a function's input
   is used outside the function (also in a default value of an input), or a
   `for` counter is used outside its loop (including in the loop's own start,
-  end or step).
+  end or step). Also a `use namespace` block naming a namespace that only
+  other modules have, none of which shares anything in it, so this module's
+  file cannot see it.
 * **Example:**
 
   ```text
@@ -93,7 +98,10 @@ Codes by area:
   creates it to the end of that group of blocks (including the blocks nested
   inside them)." / in a default value: "`first` is an input of the function
   `make`, and a default value can't use the inputs: C++ works it out before
-  the function runs. Use a value, or a constant, instead."
+  the function runs. Use a value, or a constant, instead." / for a `use
+  namespace` block: "`geo` can't be used in this module: its definitions are
+  in other modules, which share none of them. Share one of them, or use
+  `geo` in a module that has it."
 * **How to fix:** create the variable earlier, outside the inner group of
   blocks, and only *set* it inside. To share a value with a function, pass it
   as an input.
@@ -172,7 +180,10 @@ Codes by area:
 * **Message:** "`area` is a function, not a value. To run it and use its
   result, call it: use its call block or write area() in an expression." /
   "`geo` is a namespace, not a variable: choose one of the definitions it
-  holds."
+  holds." / for a `use namespace` block: "`inner` is inside the namespace
+  `geo`, and only a namespace that is not inside another one can be used in
+  a file. Use `geo` instead." / "`total` is not a namespace. Choose a
+  namespace to use."
 * **How to fix:** call the function (`area(3, 4) * 2`), or pick a variable
   instead.
 
@@ -318,8 +329,20 @@ Codes by area:
   enum or namespace of the program has a name that a used namespace also
   declares as a type or a namespace (`list`, `pair`, `chrono`), so C++ would
   find the standard one where the program means its own. Only the names of
-  the project's C++ standard count.
+  the project's C++ standard count. A type counts in each module that uses
+  it (its own module among them); a namespace in each module that names it
+  (opens it, uses one of its definitions from outside it, or names it in a
+  `use namespace` block). With *Textbook style* every file counts as using
+  `std`. A user namespace in use can clash the same way.
 * **Example:** a struct `list` with *Textbook style* on.
+* **Message:** "`list` is also the name of a type in the standard library
+  (`std`), which 'use namespace' or Textbook style makes visible where this
+  struct is used, so C++ would not know which one `list` means. Rename the
+  struct, for example to `List`." / for a namespace: "`chrono` is also the
+  name of a namespace or type in the standard library (`std`), which 'use
+  namespace' or Textbook style makes visible where this namespace is named,
+  so C++ would not know which one it means. Rename the namespace, for example
+  to `Chrono`."
 * **How to fix:** rename it, for example with a capital letter (`List`).
 
 ## B2C-E0219 Namespaces nested too deeply
@@ -1295,5 +1318,11 @@ Codes by area:
 
 * **Severity:** info
 * **Meaning:** a `use namespace` block names a namespace that is already in
-  use at that place, through another such block or *Textbook style*.
+  use at that place, through another such block or *Textbook style*. Of two
+  blocks for one namespace in a module, the one with the larger block ID
+  gets it; *Textbook style* counts in every file.
+* **Message:** "`std` is already in use in every file: Textbook style is on
+  in the project settings. This block changes nothing." / "`geo` is already
+  in use in this file through another 'use namespace' block. This block
+  changes nothing."
 * **How to fix:** remove the block, or leave it: it changes nothing.
