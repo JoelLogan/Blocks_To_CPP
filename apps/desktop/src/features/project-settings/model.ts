@@ -330,6 +330,28 @@ export function settingsFrom(draft: Draft, project: BdmProject): ProjectSettings
   return { language, options: draft.options, build, run };
 }
 
+/**
+ * The note under the Textbook style switch (docs/plans/m3-contracts/w3-modules.md §2.12, §6
+ * W3M-D13): it applies with the other settings, as one edit, without a preview.
+ */
+export const TEXTBOOK_STYLE_NOTE =
+  'The code then says cout instead of std::cout wherever C++ allows it. A struct, enum or ' +
+  'namespace named like a part of std (such as list) then shows a problem until it is renamed; ' +
+  'turning this off again removes those problems.';
+
+/**
+ * `options` with *Textbook style* (`usingNamespaceStd`) turned `on` or off; the key is written only
+ * when it is on, as the file writes it (05 §5.3, format 2).
+ */
+export function withTextbookStyle(
+  options: BdmProject['options'],
+  on: boolean,
+): BdmProject['options'] {
+  const rest = { ...options };
+  delete rest.usingNamespaceStd;
+  return on ? { ...rest, usingNamespaceStd: true } : rest;
+}
+
 /** `value` as JSON with the keys of every object sorted, for comparing settings. */
 export function canonicalJson(value: unknown): string {
   return JSON.stringify(value, (_key, inner: unknown) =>

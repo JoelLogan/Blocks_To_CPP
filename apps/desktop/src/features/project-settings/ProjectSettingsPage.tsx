@@ -25,12 +25,16 @@ import {
   settingsChanged,
   settingsFrom,
   STANDARDS,
+  TEXTBOOK_STYLE_NOTE,
+  withTextbookStyle,
 } from './model';
 import './projectSettings.css';
 
 /**
  * The project settings page (docs/spec/04-user-interface.md §4.1; ≡ → *Project settings…*): the
- * project's name, its C++ standard, its Debug and Release configurations, its defines and how its
+ * project's name, its C++ standard and *Textbook style* (docs/plans/m3-contracts/w3-modules.md §1.4:
+ * `using namespace std;`, applied with the rest, its problems shown in Problems as for any edit,
+ * with no preview in M3, §6 W3M-D13), its Debug and Release configurations, its defines and how its
  * program runs (arguments and working folder), and the two run options kept on this computer (the
  * input file and the separate terminal window), which apply at once.
  *
@@ -202,6 +206,19 @@ function ProjectSettingsForm({
           }}
           testId="project-settings-gnu"
         />
+        <CheckField
+          label={
+            <>
+              Textbook style: write <code>using namespace std;</code>
+            </>
+          }
+          checked={draft.options.usingNamespaceStd === true}
+          onChange={(on) => {
+            update({ options: withTextbookStyle(draft.options, on) });
+          }}
+          description={TEXTBOOK_STYLE_NOTE}
+          testId="project-settings-textbook"
+        />
       </PageSection>
 
       <PageSection title="Build" testId="project-settings-build">
@@ -338,7 +355,7 @@ function CheckField({
   description,
   disabled = false,
 }: {
-  label: string;
+  label: ReactNode;
   checked: boolean;
   onChange: (checked: boolean) => void;
   testId: string;
