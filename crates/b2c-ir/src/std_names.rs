@@ -3,6 +3,7 @@
 // - GCC 11.5.0 (x86_64-linux-gnu)
 // - GCC 13.3.0 (x86_64-linux-gnu)
 // - GCC 14.2.0 (x86_64-linux-gnu)
+// - GCC 15.3.0 (x86_64-linux-gnu)
 
 //! The standard-name table (06 §6.14.8, w3-modules.md §2.12): every name the
 //! namespace `std` declares in the GCC versions it was made from
@@ -16,10 +17,11 @@ pub const STD_NAMES_GCC: &[&str] = &[
     "GCC 11.5.0 (x86_64-linux-gnu)",
     "GCC 13.3.0 (x86_64-linux-gnu)",
     "GCC 14.2.0 (x86_64-linux-gnu)",
+    "GCC 15.3.0 (x86_64-linux-gnu)",
 ];
 
 /// The newest major version of GCC the table was made from.
-pub const NEWEST_GCC_MAJOR: u32 = 14;
+pub const NEWEST_GCC_MAJOR: u32 = 15;
 
 /// What a standard name is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -614,6 +616,10 @@ pub const STD_NAMES: &[StdName] = &[
     n("find_if_not", StdNameKind::Function, 17),
     n("fisher_f_distribution", StdNameKind::ClassTemplate, 17),
     n("fixed", StdNameKind::Function, 17),
+    n("flat_map", StdNameKind::ClassTemplate, 23),
+    n("flat_multimap", StdNameKind::ClassTemplate, 23),
+    n("flat_multiset", StdNameKind::ClassTemplate, 23),
+    n("flat_set", StdNameKind::ClassTemplate, 23),
     n("float128_t", StdNameKind::Type, 23),
     n("float16_t", StdNameKind::Type, 23),
     n("float32_t", StdNameKind::Type, 23),
@@ -646,6 +652,7 @@ pub const STD_NAMES: &[StdName] = &[
     n("format_args", StdNameKind::Type, 20),
     n("format_context", StdNameKind::Type, 20),
     n("format_error", StdNameKind::Type, 20),
+    n("format_kind", StdNameKind::Function, 23),
     n("format_parse_context", StdNameKind::Type, 20),
     n("format_string", StdNameKind::ClassTemplate, 20),
     n("format_to", StdNameKind::Function, 20),
@@ -1000,6 +1007,8 @@ pub const STD_NAMES: &[StdName] = &[
     n("is_union_v", StdNameKind::Function, 17),
     n("is_unsigned", StdNameKind::ClassTemplate, 17),
     n("is_unsigned_v", StdNameKind::Function, 17),
+    n("is_virtual_base_of", StdNameKind::ClassTemplate, 26),
+    n("is_virtual_base_of_v", StdNameKind::Function, 26),
     n("is_void", StdNameKind::ClassTemplate, 17),
     n("is_void_v", StdNameKind::Function, 17),
     n("is_volatile", StdNameKind::ClassTemplate, 17),
@@ -1351,6 +1360,7 @@ pub const STD_NAMES: &[StdName] = &[
     n("priority_queue", StdNameKind::ClassTemplate, 17),
     n("proj", StdNameKind::Function, 17),
     n("projected", StdNameKind::ClassTemplate, 20),
+    n("projected_value_t", StdNameKind::ClassTemplate, 26),
     n("promise", StdNameKind::ClassTemplate, 17),
     n("ptr_fun", StdNameKind::Function, 17),
     n("ptrdiff_t", StdNameKind::Type, 17),
@@ -1373,6 +1383,8 @@ pub const STD_NAMES: &[StdName] = &[
     n("random_device", StdNameKind::Type, 17),
     n("random_shuffle", StdNameKind::Function, 17),
     n("range_error", StdNameKind::Type, 17),
+    n("range_format", StdNameKind::Type, 23),
+    n("range_formatter", StdNameKind::ClassTemplate, 23),
     n("ranges", StdNameKind::Namespace, 20),
     n("rank", StdNameKind::ClassTemplate, 17),
     n("rank_v", StdNameKind::Function, 17),
@@ -1556,6 +1568,10 @@ pub const STD_NAMES: &[StdName] = &[
     n("sort", StdNameKind::Function, 17),
     n("sort_heap", StdNameKind::Function, 17),
     n("sortable", StdNameKind::Function, 20),
+    n("sorted_equivalent", StdNameKind::Object, 23),
+    n("sorted_equivalent_t", StdNameKind::Type, 23),
+    n("sorted_unique", StdNameKind::Object, 23),
+    n("sorted_unique_t", StdNameKind::Type, 23),
     n("source_location", StdNameKind::Type, 20),
     n("span", StdNameKind::ClassTemplate, 20),
     n("spanbuf", StdNameKind::Type, 23),
