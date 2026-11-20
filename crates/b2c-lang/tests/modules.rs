@@ -295,3 +295,46 @@ fn the_layout_is_computed_in_about_linear_time() {
     }
     assert!(took < std::time::Duration::from_secs(10), "{took:?}");
 }
+
+/// The generated files of a file of the malicious-project suite
+/// (`tests/security/projects/`), which must analyse cleanly, by path.
+fn security_suite_files(name: &str) -> Vec<String> {
+    let path = common::repo_root().join("tests/security/projects").join(name);
+    let document = common::resolved(&std::fs::read(path).unwrap(), name);
+    let analysis = analyze(&document);
+    assert_clean(&analysis);
+    let project = b2c_codegen::generate(&analysis.program, &b2c_codegen::CodegenOptions::default());
+    project.files.into_iter().map(|file| file.path).collect()
+}
+
+/// The malicious-project suite's project of 256 modules, the most a project
+/// may have (w3-modules.md §5.3 item 7): each module but the first gets its
+/// `.cpp` and a header.
+#[test]
+fn the_security_suites_256_modules_give_a_file_each() {
+    let paths = security_suite_files("most-modules.b2c");
+    let mut expected = vec![String::from("main.cpp")];
+    for k in 1..256 {
+        expected.extend([format!("m{k}.cpp"), format!("m{k}.hpp")]);
+    }
+    let mut sorted = paths.clone();
+    sorted.sort();
+    expected.sort();
+    assert_eq!(sorted, expected);
+}
+
+/// The malicious-project suite's module names at the limits (w3-modules.md
+/// §5.3 item 7): one letter, 64 characters, a hyphen and a device-like
+/// `com0x` are file stems as they are.
+#[test]
+fn the_security_suites_module_names_at_the_limits_are_their_stems() {
+    let long = format!("a{}c", "b".repeat(62));
+    let mut expected = vec![String::from("main.cpp")];
+    for stem in ["a", long.as_str(), "module-2", "com0x"] {
+        expected.extend([format!("{stem}.cpp"), format!("{stem}.hpp")]);
+    }
+    let mut paths = security_suite_files("module-names-at-limits.b2c");
+    paths.sort();
+    expected.sort();
+    assert_eq!(paths, expected);
+}

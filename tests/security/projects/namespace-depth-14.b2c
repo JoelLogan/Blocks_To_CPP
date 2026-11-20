@@ -1,0 +1,303 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_security",
+    "name": "Security test",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_print",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_n1",
+            "type": "program.namespace",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "fields": {
+              "NAME": {
+                "sym": "sym_n1",
+                "name": "n1"
+              }
+            },
+            "statements": {
+              "DEFINITIONS": [
+                {
+                  "id": "b_n2",
+                  "type": "program.namespace",
+                  "v": 1,
+                  "fields": {
+                    "NAME": {
+                      "sym": "sym_n2",
+                      "name": "n2"
+                    }
+                  },
+                  "statements": {
+                    "DEFINITIONS": [
+                      {
+                        "id": "b_n3",
+                        "type": "program.namespace",
+                        "v": 1,
+                        "fields": {
+                          "NAME": {
+                            "sym": "sym_n3",
+                            "name": "n3"
+                          }
+                        },
+                        "statements": {
+                          "DEFINITIONS": [
+                            {
+                              "id": "b_n4",
+                              "type": "program.namespace",
+                              "v": 1,
+                              "fields": {
+                                "NAME": {
+                                  "sym": "sym_n4",
+                                  "name": "n4"
+                                }
+                              },
+                              "statements": {
+                                "DEFINITIONS": [
+                                  {
+                                    "id": "b_n5",
+                                    "type": "program.namespace",
+                                    "v": 1,
+                                    "fields": {
+                                      "NAME": {
+                                        "sym": "sym_n5",
+                                        "name": "n5"
+                                      }
+                                    },
+                                    "statements": {
+                                      "DEFINITIONS": [
+                                        {
+                                          "id": "b_n6",
+                                          "type": "program.namespace",
+                                          "v": 1,
+                                          "fields": {
+                                            "NAME": {
+                                              "sym": "sym_n6",
+                                              "name": "n6"
+                                            }
+                                          },
+                                          "statements": {
+                                            "DEFINITIONS": [
+                                              {
+                                                "id": "b_n7",
+                                                "type": "program.namespace",
+                                                "v": 1,
+                                                "fields": {
+                                                  "NAME": {
+                                                    "sym": "sym_n7",
+                                                    "name": "n7"
+                                                  }
+                                                },
+                                                "statements": {
+                                                  "DEFINITIONS": [
+                                                    {
+                                                      "id": "b_n8",
+                                                      "type": "program.namespace",
+                                                      "v": 1,
+                                                      "fields": {
+                                                        "NAME": {
+                                                          "sym": "sym_n8",
+                                                          "name": "n8"
+                                                        }
+                                                      },
+                                                      "statements": {
+                                                        "DEFINITIONS": [
+                                                          {
+                                                            "id": "b_n9",
+                                                            "type": "program.namespace",
+                                                            "v": 1,
+                                                            "fields": {
+                                                              "NAME": {
+                                                                "sym": "sym_n9",
+                                                                "name": "n9"
+                                                              }
+                                                            },
+                                                            "statements": {
+                                                              "DEFINITIONS": [
+                                                                {
+                                                                  "id": "b_n10",
+                                                                  "type": "program.namespace",
+                                                                  "v": 1,
+                                                                  "fields": {
+                                                                    "NAME": {
+                                                                      "sym": "sym_n10",
+                                                                      "name": "n10"
+                                                                    }
+                                                                  },
+                                                                  "statements": {
+                                                                    "DEFINITIONS": [
+                                                                      {
+                                                                        "id": "b_n11",
+                                                                        "type": "program.namespace",
+                                                                        "v": 1,
+                                                                        "fields": {
+                                                                          "NAME": {
+                                                                            "sym": "sym_n11",
+                                                                            "name": "n11"
+                                                                          }
+                                                                        },
+                                                                        "statements": {
+                                                                          "DEFINITIONS": [
+                                                                            {
+                                                                              "id": "b_n12",
+                                                                              "type": "program.namespace",
+                                                                              "v": 1,
+                                                                              "fields": {
+                                                                                "NAME": {
+                                                                                  "sym": "sym_n12",
+                                                                                  "name": "n12"
+                                                                                }
+                                                                              },
+                                                                              "statements": {
+                                                                                "DEFINITIONS": [
+                                                                                  {
+                                                                                    "id": "b_n13",
+                                                                                    "type": "program.namespace",
+                                                                                    "v": 1,
+                                                                                    "fields": {
+                                                                                      "NAME": {
+                                                                                        "sym": "sym_n13",
+                                                                                        "name": "n13"
+                                                                                      }
+                                                                                    },
+                                                                                    "statements": {
+                                                                                      "DEFINITIONS": [
+                                                                                        {
+                                                                                          "id": "b_n14",
+                                                                                          "type": "program.namespace",
+                                                                                          "v": 1,
+                                                                                          "fields": {
+                                                                                            "NAME": {
+                                                                                              "sym": "sym_n14",
+                                                                                              "name": "n14"
+                                                                                            }
+                                                                                          },
+                                                                                          "statements": {
+                                                                                            "DEFINITIONS": [
+                                                                                              {
+                                                                                                "id": "b_deep",
+                                                                                                "type": "func.define",
+                                                                                                "v": 1,
+                                                                                                "fields": {
+                                                                                                  "NAME": {
+                                                                                                    "sym": "sym_deep",
+                                                                                                    "name": "deep"
+                                                                                                  },
+                                                                                                  "RETURNS": "int"
+                                                                                                },
+                                                                                                "extra": {
+                                                                                                  "params": []
+                                                                                                },
+                                                                                                "statements": {
+                                                                                                  "BODY": [
+                                                                                                    {
+                                                                                                      "id": "b_deep_ret",
+                                                                                                      "type": "func.return",
+                                                                                                      "v": 1,
+                                                                                                      "inputs": {
+                                                                                                        "VALUE": {
+                                                                                                          "expr": [
+                                                                                                            {
+                                                                                                              "num": "1"
+                                                                                                            }
+                                                                                                          ]
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  ]
+                                                                                                }
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        }
+                                                                                      ]
+                                                                                    }
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            }
+                                                                          ]
+                                                                        }
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                }
+                                                              ]
+                                                            }
+                                                          }
+                                                        ]
+                                                      }
+                                                    }
+                                                  ]
+                                                }
+                                              }
+                                            ]
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

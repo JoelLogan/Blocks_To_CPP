@@ -171,6 +171,22 @@ fn e0219_past_fourteen_levels() {
     );
 }
 
+/// The malicious-project suite's namespaces 14 and 15 deep (w3-modules.md
+/// §5.3 item 7): the resolve stage accepts both, and the analyser refuses
+/// only the 15th level (`B2C-E0219`).
+#[test]
+fn the_security_suites_namespace_depths() {
+    let file = |name: &str| {
+        let path = common::repo_root().join("tests/security/projects").join(name);
+        analyse(&common::resolved(&std::fs::read(path).unwrap(), name))
+    };
+    assert_clean(&file("namespace-depth-14.b2c"));
+    let too_deep = file("namespace-depth-15.b2c");
+    assert_codes(&too_deep, &["B2C-E0219"]);
+    let error = only(&too_deep, "B2C-E0219");
+    assert_eq!(error.primary.block.as_ref().unwrap().as_str(), "b_n15");
+}
+
 /// A namespace may not have the name of a definition of any module in the
 /// same enclosing namespace, shared or not (w3-modules.md §2.1, K10).
 #[test]
@@ -277,6 +293,34 @@ fn the_value_std_is_never_a_symbol_id() {
     assert_eq!(symbol.name.as_str(), "tools");
     // Neither directive is an item yet.
     assert_eq!(a.program.modules[0].items.len(), 1);
+}
+
+/// The malicious-project suite's *use namespace* `std` beside a namespace
+/// whose symbol ID is `std` (w3-modules.md §5.3 item 7): the value names that
+/// namespace, `tools`, so the C++ uses `tools` and never the standard
+/// library's namespace.
+#[test]
+fn the_security_suites_use_namespace_std_names_the_symbol() {
+    let name = "use-namespace-std-symbol-id.b2c";
+    let path = common::repo_root().join("tests/security/projects").join(name);
+    let a = analyse(&common::resolved(&std::fs::read(path).unwrap(), name));
+    assert_clean(&a);
+    let symbol = a.program.symbols.get(&SymbolId::new("std").unwrap()).unwrap();
+    assert_eq!(symbol.name.as_str(), "tools");
+    let project = b2c_codegen::generate(&a.program, &b2c_codegen::CodegenOptions::default());
+    let [file] = project.files.as_slice() else {
+        panic!("{:?}", project.files);
+    };
+    assert!(
+        file.contents.contains("using namespace tools;"),
+        "{}",
+        file.contents
+    );
+    assert!(
+        !file.contents.contains("using namespace std"),
+        "{}",
+        file.contents
+    );
 }
 
 /// A namespace is no value: a reference to one, as a hand-edited file can

@@ -57,6 +57,7 @@ rest of the project valid, so that the file tests one thing.
 | `define-name-injection.b2c` | T2 | A compiler flag disguised as a `-D` define name | `B2C-E0132` | — |  |
 | `define-unsafe-integer.b2c` | T2 | A define value of 2⁵³ + 1, which the editor's JavaScript numbers would silently change (and with it the program and the security hash) | `B2C-E0112` | — |  |
 | `define-value-injection.b2c` | T3 | A define value that tries to end its string | accepted | clean | The backend passes it as one escaped string argument |
+| `definition-stacked-below-namespace.b2c` | T1 | A *define* stacked below a top-level *namespace*: a definition's connection below it exists only inside a namespace's mouth (w3-modules.md §2.10) | accepted | `B2C-E0604` | A placement the editor cannot produce stays an error |
 | `diagnostic-flood.b2c` | T5 | 1,500 unknown keys, to flood the problem list | `B2C-E0110`, `B2C-E0199` | — | At most 1,000 problems are listed, then one summary |
 | `duplicate-block-ids.b2c` | T1 | Two blocks with the same ID (diagnostics and edits would hit the wrong one) | `B2C-E0114` | — |  |
 | `duplicate-key-escaped.b2c` | T5 | `format` repeated with an escaped spelling (`form\u0061t`) | `B2C-E0105` | — |  |
@@ -96,6 +97,11 @@ rest of the project valid, so that the file tests one thing.
 | `module-name-device-upper.b2c` | T9 | The Windows device name `NUL` in capitals | `B2C-E0118` | — |  |
 | `module-name-device.b2c` | T9 | The Windows device name `con` as a module name | `B2C-E0118` | — |  |
 | `module-name-traversal.b2c` | T9 | A module name that walks out of the output folder | `B2C-E0117` | — |  |
+| `module-names-at-limits.b2c` | T9 | Module names at the limits of a file stem: `a`, 64 characters, `module-2` and `com0x`, which starts like the device `COM0` but is none | accepted | clean | Each name is its files' stem as it is (`a.cpp`, `module-2.hpp`, …; `crates/b2c-lang/tests/modules.rs`) |
+| `most-modules.b2c` | T5 | 256 modules, the most a project may have, each but the first sharing a function that calls the one of the module before it | accepted | clean | 511 generated files, a `.cpp` and a header each (`crates/b2c-lang/tests/modules.rs`); the nightly job builds a generated 256-module project and its export (`crates/b2c-build/tests/modules_256.rs`) |
+| `namespace-depth-14.b2c` | T5 | Namespaces nested 14 deep, the most allowed (`MAX_NAMESPACE_DEPTH`) | accepted | clean | The analyser accepts it (`crates/b2c-lang/tests/namespaces.rs`) |
+| `namespace-depth-15.b2c` | T5 | Namespaces nested 15 deep, one more than allowed | accepted | clean | The analyser refuses the 15th (`B2C-E0219`, `crates/b2c-lang/tests/namespaces.rs`) |
+| `namespace-in-function.b2c` | T1 | A *namespace* inside `when program starts` (only the top level or a namespace's mouth may hold one) | accepted | `B2C-E0604` | A placement the editor cannot produce stays an error |
 | `nan-number.b2c` | T5 | `NaN` (not JSON) | `B2C-E0103` | — |  |
 | `nested-block-position.b2c` | T1 | A canvas position on a block inside another block | `B2C-E0128` | — |  |
 | `newer-app-compiler-flags.b2c` | T2 | Compiler flags and include paths in `build` of a file that claims a far newer Blocks2Cpp (`generator.app` beyond 64 bits): refused as made with a newer version, never loaded | `B2C-E0108` | — | The message names no version from the file ([ADR-0013](../../../docs/adr/0013-additive-format-keys.md)) |
@@ -117,6 +123,7 @@ rest of the project valid, so that the file tests one thing.
 | `prototype-key-in-extra.b2c` | T6 | A `prototype` key in a block's `extra` | `B2C-E0127` | — |  |
 | `raw-cpp-block.b2c` | T2 | A Raw C++ block (not available in this version) | accepted | `B2C-E0601` |  |
 | `run-args-shell.b2c` | T2 | Shell syntax in program arguments | accepted | clean | Arguments are an argv list, never a shell command (07 §7.6) |
+| `statement-in-namespace.b2c` | T1 | A *print* in a namespace's mouth, which holds only definitions | accepted | `B2C-E0604` | A placement the editor cannot produce stays an error |
 | `statement-in-value-input.b2c` | T1 | A statement block plugged into a value input | accepted | `B2C-E0604` | A placement the editor cannot produce stays an error; only blocks left on the canvas are parked ([ADR-0012](../../../docs/adr/0012-parked-blocks.md)) |
 | `tag-characters-in-block-type.b2c` | T4/T7 | Invisible Unicode tag characters (U+E0001–U+E007F, "ASCII smuggling") hiding `rm -rf` in a block type | accepted | `B2C-E0601` | The message shows them as `\u{E00XX}` escapes |
 | `tag-characters-in-module-name.b2c` | T4/T7/T9 | The same hidden text in a module name | `B2C-E0117` | — |  |
@@ -135,6 +142,9 @@ rest of the project valid, so that the file tests one thing.
 | `type-term-row-too-deep.b2c` | T5 | The same 100 levels in the `type` of a parameter row | `B2C-E0140` | — |  |
 | `type-term-too-deep.b2c` | T5 | A type field with 100 nested `std::vector` templates (within the JSON depth limit) | `B2C-E0140` | — | Counted before the term is read, so a type walk is never deeper than 8 levels |
 | `type-term-too-wide.b2c` | T5 | A template with 40 arguments (41 names) | `B2C-E0140` | — |  |
+| `use-namespace-in-function.b2c` | T1 | A *use namespace* inside `when program starts` (only the top level may hold one) | accepted | `B2C-E0604` | A placement the editor cannot produce stays an error |
+| `use-namespace-in-namespace.b2c` | T1 | A *use namespace* in a namespace's mouth | accepted | `B2C-E0604` | A placement the editor cannot produce stays an error |
+| `use-namespace-std-symbol-id.b2c` | T3 | A *use namespace* whose value is `std`, beside a namespace (`tools`) whose symbol ID is `std` | accepted | clean | The value names the namespace `tools`, never the standard one (`::std` does): the C++ says `using namespace tools;` (`crates/b2c-lang/tests/namespaces.rs`) |
 | `utf16.b2c` | T5 | The project saved as UTF-16 | `B2C-E0102` | — |  |
 | `utf8-bom.b2c` | T5 | A UTF-8 byte order mark | `B2C-E0102` | — |  |
 | `working-directory-path.b2c` | T9 | A path instead of a working-directory choice | `B2C-E0112` | — |  |

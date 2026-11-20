@@ -1,0 +1,124 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_security",
+    "name": "Security test",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_print",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "ref": "sym_tool"
+                        },
+                        {
+                          "op": "("
+                        },
+                        {
+                          "op": ")"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_ns",
+            "type": "program.namespace",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "fields": {
+              "NAME": {
+                "sym": "std",
+                "name": "tools"
+              }
+            },
+            "statements": {
+              "DEFINITIONS": [
+                {
+                  "id": "b_tool",
+                  "type": "func.define",
+                  "v": 1,
+                  "fields": {
+                    "NAME": {
+                      "sym": "sym_tool",
+                      "name": "tool"
+                    },
+                    "RETURNS": "int"
+                  },
+                  "extra": {
+                    "params": []
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b_tool_ret",
+                        "type": "func.return",
+                        "v": 1,
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "num": "7"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_use",
+            "type": "program.use_namespace",
+            "v": 1,
+            "x": 40,
+            "y": 400,
+            "fields": {
+              "NS": "std"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

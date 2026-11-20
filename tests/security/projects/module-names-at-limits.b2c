@@ -1,0 +1,276 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_security",
+    "name": "Security test",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_print",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "ref": "sym_one"
+                        },
+                        {
+                          "op": "("
+                        },
+                        {
+                          "op": ")"
+                        },
+                        {
+                          "op": "+"
+                        },
+                        {
+                          "ref": "sym_two"
+                        },
+                        {
+                          "op": "("
+                        },
+                        {
+                          "op": ")"
+                        },
+                        {
+                          "op": "+"
+                        },
+                        {
+                          "ref": "sym_three"
+                        },
+                        {
+                          "op": "("
+                        },
+                        {
+                          "op": ")"
+                        },
+                        {
+                          "op": "+"
+                        },
+                        {
+                          "ref": "sym_four"
+                        },
+                        {
+                          "op": "("
+                        },
+                        {
+                          "op": ")"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "mod_a",
+      "name": "a",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_one",
+            "type": "func.define",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "fields": {
+              "NAME": {
+                "sym": "sym_one",
+                "name": "one"
+              },
+              "RETURNS": "int",
+              "SHARED": true
+            },
+            "extra": {
+              "params": []
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_one_ret",
+                  "type": "func.return",
+                  "v": 1,
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "mod_long",
+      "name": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbc",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_two",
+            "type": "func.define",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "fields": {
+              "NAME": {
+                "sym": "sym_two",
+                "name": "two"
+              },
+              "RETURNS": "int",
+              "SHARED": true
+            },
+            "extra": {
+              "params": []
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_two_ret",
+                  "type": "func.return",
+                  "v": 1,
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "2"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "mod_hyphen",
+      "name": "module-2",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_three",
+            "type": "func.define",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "fields": {
+              "NAME": {
+                "sym": "sym_three",
+                "name": "three"
+              },
+              "RETURNS": "int",
+              "SHARED": true
+            },
+            "extra": {
+              "params": []
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_three_ret",
+                  "type": "func.return",
+                  "v": 1,
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "3"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "mod_com",
+      "name": "com0x",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_four",
+            "type": "func.define",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "fields": {
+              "NAME": {
+                "sym": "sym_four",
+                "name": "four"
+              },
+              "RETURNS": "int",
+              "SHARED": true
+            },
+            "extra": {
+              "params": []
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_four_ret",
+                  "type": "func.return",
+                  "v": 1,
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "4"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
