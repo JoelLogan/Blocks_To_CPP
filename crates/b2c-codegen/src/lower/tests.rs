@@ -1068,9 +1068,11 @@ fn the_forms_program_compiles_clean_and_runs_on_every_gxx() {
 /// *do … then repeat*), files, functions with default values and overloads,
 /// globals and constants, *add to the end*, *flip* and the bitwise changes,
 /// *with arguments*, *use header* and *check at compile time*, and W3's
-/// *namespace* (a function in its mouth) and *use namespace* (w3-modules.md
-/// §2.12; printed from package N2 on). It is a C++20 project; the C++17
-/// program is the same project with its standard changed.
+/// *namespace* (the function `shapes::half` in its mouth, which `main`
+/// calls) and *use namespace* `std` (w3-modules.md §2.12), so the program
+/// writes `using namespace std;` after its helpers and the standard names
+/// short after it. It is a C++20 project; the C++17 program is the same
+/// project with its standard changed.
 const EVERY_BLOCK_PROJECT: &str = "tests/fixtures/every_block.b2c";
 
 /// What the every-block program prints, given [`EVERY_BLOCK_INPUT`].
@@ -1109,6 +1111,7 @@ outer bad
 exists true
 log: added
 read: first 1
+half 4
 ";
 
 /// What the every-block program reads: an age, then a name.
@@ -1199,6 +1202,15 @@ fn every_block_program_compiles_clean_and_runs(compilers: &[PathBuf], dir: &Path
         (CppStandard::Cpp20, "-std=c++20"),
     ] {
         let source = every_block_program(standard);
+        // The *use namespace* block's directive after the helpers, the
+        // namespace and the call from outside it (w3-modules.md §2.12).
+        for needle in [
+            "// ---- End of Blocks2Cpp support helpers -----------------------------------\n\nusing namespace std;\n",
+            "namespace shapes {\n\nint half(int n) {",
+            "cout << \"half\" << \" \" << shapes::half(9) << '\\n';",
+        ] {
+            assert!(source.contains(needle), "{needle} not in\n{source}");
+        }
         let path = dir.join(format!("every_block{}.cpp", &flag[5..]));
         std::fs::write(&path, &source).unwrap();
         for (index, gxx) in compilers.iter().enumerate() {

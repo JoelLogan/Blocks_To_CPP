@@ -3858,6 +3858,44 @@
                   }
                 },
                 {
+                  "id": "b198",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "space",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "half"
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_half"
+                        },
+                        {
+                          "op": "("
+                        },
+                        {
+                          "num": "9"
+                        },
+                        {
+                          "op": ")"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
                   "id": "b193",
                   "type": "program.exit",
                   "v": 1,
