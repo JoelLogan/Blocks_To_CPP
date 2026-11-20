@@ -25,7 +25,7 @@
 
 use std::collections::BTreeMap;
 
-use b2c_codegen::{CodegenOptions, HelperPlacement};
+use b2c_codegen::CodegenOptions;
 use b2c_ir::source_map::{GeneratedFile, SourceMap};
 use b2c_ir::{BlockId, DiagSource, Diagnostic, Location, SymbolInfo, Type, has_errors};
 use b2c_lang::Analysis;
@@ -298,7 +298,6 @@ pub(crate) fn codegen_options(project_name: &str, options: PreviewOptions) -> Co
         app_version: String::from(APP_VERSION),
         do_not_edit_banner: true,
         indent_width: options.indent_width.spaces(),
-        helper_placement: HelperPlacement::Inline,
     }
 }
 

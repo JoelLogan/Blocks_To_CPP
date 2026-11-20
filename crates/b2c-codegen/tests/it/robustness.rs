@@ -184,7 +184,6 @@ fn odd_options_and_names_are_handled() {
         app_version: String::new(),
         do_not_edit_banner: true,
         indent_width: 0,
-        helper_placement: b2c_codegen::HelperPlacement::Header,
     };
     let project = generate_checked(&program, &options);
     assert_eq!(project.files[0].path, "module1.cpp");

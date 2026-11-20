@@ -83,21 +83,6 @@ use b2c_ir::text::{FileStem, Ident};
 /// The source-map format version this crate writes.
 const SOURCE_MAP_VERSION: u32 = 1;
 
-/// Where support helpers (`b2c::random_int`, `b2c::ask`, …) are emitted.
-///
-/// Ignored since milestone M3's third wave: the module count decides
-/// (inline with one module, `b2c_support.hpp` from two on, for the build
-/// and the preview alike; w3-modules.md §1.2). The field stays until the
-/// callers that set it drop it (w3-modules.md §3.3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum HelperPlacement {
-    /// In a delimited section at the top of the file that uses them.
-    #[default]
-    Inline,
-    /// In a shared `b2c_support.hpp` header.
-    Header,
-}
-
 /// Options for code generation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodegenOptions {
@@ -109,8 +94,6 @@ pub struct CodegenOptions {
     pub do_not_edit_banner: bool,
     /// Spaces per indentation level.
     pub indent_width: u8,
-    /// Where support helpers go: ignored, see [`HelperPlacement`].
-    pub helper_placement: HelperPlacement,
 }
 
 impl Default for CodegenOptions {
@@ -120,7 +103,6 @@ impl Default for CodegenOptions {
             app_version: String::from(env!("CARGO_PKG_VERSION")),
             do_not_edit_banner: true,
             indent_width: 4,
-            helper_placement: HelperPlacement::Inline,
         }
     }
 }

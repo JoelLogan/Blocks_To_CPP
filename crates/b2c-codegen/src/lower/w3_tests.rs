@@ -249,9 +249,8 @@ fn a_second_module_moves_the_code_of_the_first() {
     );
     insta::assert_snapshot!("w3_second_empty_module", render(&two));
     // The build's options and the preview's give the same files: the module
-    // count places the helpers, not `helper_placement`.
+    // count places the helpers.
     let header = CodegenOptions {
-        helper_placement: crate::HelperPlacement::Header,
         project_name: String::from("Colours"),
         app_version: String::from("1.0.0"),
         ..CodegenOptions::default()

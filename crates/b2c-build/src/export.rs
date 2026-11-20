@@ -308,7 +308,6 @@ pub fn prepare(bytes: &[u8], indent_width: u8, app_version: &str) -> Result<Expo
     let options = FrontendOptions {
         do_not_edit_banner: false,
         indent_width,
-        ..FrontendOptions::default()
     };
     let frontend = run_frontend(bytes, &options);
     let (Some(document), Some(generated), false) = (

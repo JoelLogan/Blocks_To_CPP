@@ -38,7 +38,7 @@ use std::hint::black_box;
 use std::io::Write as _;
 use std::process::ExitCode;
 
-use b2c_codegen::{CodegenOptions, HelperPlacement};
+use b2c_codegen::CodegenOptions;
 use b2c_core_wasm::{APP_VERSION, PreviewOptions, Session, preview_document};
 use criterion::{Criterion, SamplingMode};
 
@@ -100,7 +100,6 @@ fn codegen_options(project_name: &str) -> CodegenOptions {
         app_version: String::from(APP_VERSION),
         do_not_edit_banner: true,
         indent_width: 4,
-        helper_placement: HelperPlacement::Inline,
     }
 }
 

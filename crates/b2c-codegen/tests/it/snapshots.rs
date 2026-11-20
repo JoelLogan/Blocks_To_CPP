@@ -3,7 +3,7 @@
 //! (`-Wall -Wextra -Wpedantic -Werror` and more), so a snapshot can never
 //! accept code that does not build.
 
-use b2c_codegen::{CodegenOptions, HelperPlacement};
+use b2c_codegen::CodegenOptions;
 use b2c_ir::ids::ModuleId;
 use b2c_ir::sast::{
     AskMode, BinaryOp, CompoundOp, Module, OutputStream, PassMode, PrintSeparator, Program, RangeDirection,
@@ -931,21 +931,6 @@ fn helpers_compile_under_every_supported_standard() {
     }
 }
 
-/// The helpers' placement follows the module count, not the option
-/// (w3-modules.md §1.2): a single-module program keeps them inline.
-#[test]
-fn header_placement_is_ignored() {
-    let header = CodegenOptions {
-        helper_placement: HelperPlacement::Header,
-        ..options("Guessing Game")
-    };
-    let program = examples::guessing_game();
-    assert_eq!(
-        generate_checked(&program, &header),
-        generate_checked(&program, &options("Guessing Game"))
-    );
-}
-
 #[test]
 fn style_options() {
     let options = CodegenOptions {
@@ -956,8 +941,7 @@ fn style_options() {
     check_with("style_options", &examples::guessing_game(), &options);
 }
 
-/// From two modules on, the helpers are in `b2c_support.hpp` whatever
-/// `helper_placement` says, and each module's code that is not shared is in
+/// From two modules on, the helpers are in `b2c_support.hpp`, and each module's code that is not shared is in
 /// its anonymous namespace (w3-modules.md §1.7).
 #[test]
 fn two_modules_share_the_support_header() {
@@ -976,9 +960,5 @@ fn two_modules_share_the_support_header() {
         name: String::from("dice"),
         items: vec![roll_def],
     });
-    let options = CodegenOptions {
-        helper_placement: HelperPlacement::Header,
-        ..options("Dice")
-    };
-    check_with("two_modules_header", &program, &options);
+    check_with("two_modules_header", &program, &options("Dice"));
 }

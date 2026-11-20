@@ -12,7 +12,7 @@
 
 use std::convert::Infallible;
 
-use b2c_codegen::{CodegenOptions, HelperPlacement};
+use b2c_codegen::CodegenOptions;
 use b2c_ir::sast::Program;
 use b2c_ir::source_map::GeneratedProject;
 use b2c_ir::{DiagSource, Diagnostic, Location};
@@ -50,8 +50,6 @@ pub enum Stage {
 pub struct FrontendOptions {
     /// Add the "Edit the blocks, not this file" banner (off for export).
     pub do_not_edit_banner: bool,
-    /// Where support helpers go.
-    pub helper_placement: HelperPlacement,
     /// Spaces per indentation level: 2 or 4 ([`INDENT_WIDTHS`]; the app's
     /// code style setting). Any other value is treated as
     /// [`DEFAULT_INDENT_WIDTH`]; see [`FrontendOptions::indent`].
@@ -74,7 +72,6 @@ impl Default for FrontendOptions {
     fn default() -> Self {
         Self {
             do_not_edit_banner: true,
-            helper_placement: HelperPlacement::Inline,
             indent_width: DEFAULT_INDENT_WIDTH,
         }
     }
@@ -196,7 +193,6 @@ fn run_stages<E>(
         app_version: String::from(env!("CARGO_PKG_VERSION")),
         do_not_edit_banner: options.do_not_edit_banner,
         indent_width: options.indent(),
-        helper_placement: options.helper_placement,
     };
     let generation = b2c_codegen::generate_with_report(&analysis.program, &codegen_options);
     // Code with placeholders compiles but does not do what the blocks say, so

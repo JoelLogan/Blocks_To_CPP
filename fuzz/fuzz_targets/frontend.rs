@@ -34,7 +34,7 @@
 
 use std::collections::BTreeSet;
 
-use b2c_codegen::{CodegenOptions, Generation, HelperPlacement};
+use b2c_codegen::{CodegenOptions, Generation};
 use b2c_ir::Type;
 use b2c_ir::source_map::{FileKind, GeneratedProject};
 use b2c_ir::text::is_invisible;
@@ -61,26 +61,24 @@ fuzz_target!(|data: &[u8]| {
     let accepted = resolved && !b2c_ir::has_errors(&analysis.diagnostics);
     check_queries(&analysis);
 
-    let inline = CodegenOptions {
+    let preview = CodegenOptions {
         project_name: document.project.name.clone(),
         app_version: String::from("0.0.0-fuzz"),
         do_not_edit_banner: true,
         indent_width: 4,
-        helper_placement: HelperPlacement::Inline,
     };
-    let header = CodegenOptions {
+    let export = CodegenOptions {
         do_not_edit_banner: false,
-        helper_placement: HelperPlacement::Header,
-        ..inline.clone()
+        ..preview.clone()
     };
-    for options in [inline, header] {
+    for options in [preview, export] {
         let generation = b2c_codegen::generate_with_report(&analysis.program, &options);
         assert!(
             b2c_codegen::generate_with_report(&analysis.program, &options) == generation,
-            "generating the same program twice gave different output ({:?})",
-            options.helper_placement
+            "generating the same program twice gave different output (banner: {})",
+            options.do_not_edit_banner
         );
-        check_generation(&generation, accepted, options.helper_placement);
+        check_generation(&generation, accepted, options.do_not_edit_banner);
     }
 });
 
@@ -111,11 +109,11 @@ fn check_queries(analysis: &b2c_lang::Analysis) {
     }
 }
 
-fn check_generation(generation: &Generation, accepted: bool, placement: HelperPlacement) {
+fn check_generation(generation: &Generation, accepted: bool, banner: bool) {
     if accepted {
         assert_eq!(
             generation.placeholders, 0,
-            "a program without analysis errors needed error placeholders ({placement:?})"
+            "a program without analysis errors needed error placeholders (banner: {banner})"
         );
     }
     check_project(&generation.project);

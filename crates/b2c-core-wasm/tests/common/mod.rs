@@ -152,7 +152,6 @@ pub(crate) fn native_generation(text: &str, indent_width: u8) -> b2c_codegen::Ge
         app_version: String::from(env!("CARGO_PKG_VERSION")),
         do_not_edit_banner: true,
         indent_width,
-        helper_placement: b2c_codegen::HelperPlacement::Inline,
     };
     b2c_codegen::generate_with_report(&analysis.program, &options)
 }
