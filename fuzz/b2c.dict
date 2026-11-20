@@ -313,3 +313,23 @@
 "\"constant\""
 "\"<cmath>\""
 "\"<numeric>\""
+# W3's modules and namespaces (docs/plans/m3-contracts/w3-modules.md §1.4, §2.9, §2.10, §5.3):
+# the block types and the names of their field and statement list, the values of a namespace
+# field, module names at the limits of a file stem, and a second module to splice into a
+# project's `modules` (libFuzzer takes entries of at most 64 bytes). The multi-module seeds
+# are the examples of several modules and the security suite's module-names-at-limits.b2c and
+# most-modules.b2c (fuzz/README.md).
+"\"program.namespace\""
+"\"program.use_namespace\""
+"\"DEFINITIONS\""
+"\"NS\""
+"\"::std\""
+"\"::std::chrono\""
+"\"std\""
+"\"b2c\""
+"\"a\""
+"\"module-2\""
+"\"com0x\""
+"\"com0\""
+"\"mod_main\""
+",{\"id\":\"mod_b\",\"name\":\"b\",\"workspace\":{\"blocks\":[]}}"
