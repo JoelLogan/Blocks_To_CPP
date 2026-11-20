@@ -160,6 +160,8 @@ export function ModuleSwitcher() {
   /** Counts the deletions chosen from a strip menu that have ended; see the effect below. */
   const [deletions, setDeletions] = useState(0);
   const deletionsSeen = useRef(0);
+  /** The module *Undo delete* put back from its button, whose own button then gets the focus. */
+  const [restored, setRestored] = useState<string | null>(null);
   const [overflowing, setOverflowing] = useState(false);
   const overflowSeen = useRef(false);
   const strip = useRef<HTMLDivElement>(null);
@@ -227,6 +229,19 @@ export function ModuleSwitcher() {
       button.focus();
     }
   }, [deletions, active]);
+
+  // *Undo delete* takes its own button away with the deletion it undoes: the module it put back
+  // gets the focus.
+  useEffect(() => {
+    if (restored === null) {
+      return;
+    }
+    setRestored(null);
+    const button = buttons.current.get(restored);
+    if (button !== undefined && focusIsLost()) {
+      button.focus();
+    }
+  }, [restored]);
 
   const closeMenu = useCallback((returnFocus: boolean) => {
     setMenu(null);
@@ -501,6 +516,7 @@ export function ModuleSwitcher() {
             data-testid="module-undo-delete"
             onClick={() => {
               edits.undoDelete();
+              setRestored(kept.kept.module.id);
             }}
           >
             Undo delete
