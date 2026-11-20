@@ -245,7 +245,8 @@ settings**, never in projects:
 ├── gen/                     generated sources (rewritten only when content changes)
 │   ├── main.cpp  main.hpp  player.cpp  player.hpp  b2c_support.hpp
 ├── ide/                     IDE-only init unit and trace header (never exported)
-├── obj/<tu>-<keyHash12>.o   content-addressed objects (M3)
+├── obj/<tu>-<keyHash12>.o   content-addressed objects, with <tu>-<keyHash12>.messages.json beside each (M3)
+├── tmp/                     private temporary folder (the compiler's TMP/TMPDIR); a unit's object and messages while it compiles
 ├── diag/<tu>.sarif          per-TU diagnostics
 ├── out/<slug>[.exe]         final executable (mode 0700 on Linux)
 ├── sourcemap.json
@@ -303,6 +304,32 @@ settings**, never in projects:
   The object cache matters only for multi-module projects and arrives with
   them in M3; until then a project's translation units are compiled straight
   into `out/`.
+* **In M3** (wave W3) `gen/` holds exactly the generated files: after
+  writing, the build deletes every regular file of `gen/` (found with
+  `symlink_metadata`, never through a link) whose name passes the
+  generated-name rule and is not among this build's generated files, so a
+  renamed or deleted module leaves no stale file; a deletion counts as a
+  change, and a `gen/` file that cannot be deleted fails the build. `b2c
+  generate`, which writes into a folder the user chose, never deletes.
+* **The object cache** (M3, wave W3) applies to builds of several units.
+  The key above uses the build manifest's toolchain fingerprint (path, size,
+  modification time, SHA-256, version, target), the compile argv without its
+  source and output paths, the unit's text and every generated header in
+  path order with `b2c_support.hpp`. A unit is compiled to `tmp/<stem>.o`,
+  its parsed messages written to `tmp/<stem>.messages.json`, and both are
+  renamed into `obj/<stem>-<key12>.o` and `obj/<stem>-<key12>.messages.json`
+  once it has compiled. The temporaries keep the source's stem because GCC
+  13 and 14 name a unit's SARIF file after the output's stem. A unit whose
+  two files exist is not compiled again: its messages file
+  (`{"format": 1, "output": …}`, at most 4 MiB, a regular file, read with
+  unknown fields refused) is replayed and mapped with the current source
+  map, so a reused unit's warnings are still reported; anything wrong with
+  it is a miss. A failed or cancelled build removes only its temporaries
+  and the executable, so after fixing an error in one unit only that unit
+  compiles. After a successful link, `obj/` keeps only that build's files;
+  this pruning is best effort (a file that cannot be deleted is logged and
+  left, since its key is in its name and it is never reused by mistake).
+  Progress counts reused units as compiled at once.
 * LRU eviction when the cache exceeds 2 GiB (`buildCache.maxBytes`, an
   option of the Settings page from M5). Entries untouched for 30 days are
   pruned at startup and after each build. *Clear build cache* is on the
@@ -354,6 +381,14 @@ settings**, never in projects:
 * **Parallelism:** TUs compile concurrently, up to `min(cores, 8)`. Linking
   starts when all TUs have succeeded. A single-TU project is compiled and
   linked in one invocation.
+* **Object paths** (M3, wave W3). In the compiler's argv the objects are
+  relative to its working directory: `../obj/<stem>-<key12>.o` for a cached
+  unit, `../tmp/<stem>.o` while it compiles, and `../out/<stem>.o` without
+  the cache; the executable and the sources stay absolute. So 257 objects
+  with 64-character stems keep the link argv under 26,000 characters, below
+  Windows' 32,767 with room for what collect2 and ld add (the nightly
+  256-module Windows build checks it). Everything that opens or deletes an
+  output uses the step's absolute path, never the argv's text.
 * **Limits:**
   * Timeout per TU: 120 s (a setting from M5).
   * Memory: 4 GiB per invocation. On Windows, a Job Object
@@ -441,7 +476,14 @@ settings**, never in projects:
      has no body. Check its **define** block or library setup."*
    * Errors inside Raw C++ → shown on the raw block, with the line underlined
      in its editor.
-4. **Generator bug detection.** Code generated from non-raw blocks should
+4. **Several units** (M3, wave W3). Every unit that includes a header
+   reports that header's messages: a message several units report at one
+   place, with the same code, severity and text, is kept once, with the
+   later copies' related places and raw text merged into it. An unmapped
+   place goes to its file's module, and one in `b2c_support.hpp` to the
+   project. A reused unit's messages are replayed from the object cache
+   (§7.5.1). The build output keeps every unit's raw text.
+5. **Generator bug detection.** Code generated from non-raw blocks should
    never fail to compile when the analyser reported no errors. If it does,
    the diagnostic is labelled *"This looks like a bug in Blocks2Cpp"* and
    offers *Copy bug report* (a sanitised report with the minimal block
@@ -590,7 +632,9 @@ the console header says *"Running with IDE helpers"*. Its static initialiser:
 * Opens the event channel if `B2C_EVENTS` is set and is otherwise a no-op.
 
 Keeping this in a separate TU keeps `<windows.h>` and IDE plumbing out of the
-user's code.
+user's code. Its stem cannot clash with a module's: a module name that
+starts with `b2c` does not build (`B2C-E0221`,
+[05 §5.6](05-project-format.md#56-validation-limits)).
 
 **In M2** the unit does only the first item. It is written to
 `<build>/ide/b2c_ide_init.cpp` for IDE builds, compiled in the same g++

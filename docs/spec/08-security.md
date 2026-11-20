@@ -235,7 +235,13 @@ An identifier is accepted only if **all** of these hold:
    `std`, `b2c`, the `B2C_` prefix, or generator temporaries.
 6. Module names are additionally unique **case-insensitively** and are not
    Windows device names (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`,
-   `LPT0`–`LPT9`), because they become file names.
+   `LPT0`–`LPT9`), because they become file names. A module name that starts
+   with `b2c`, in any case, does not build (`B2C-E0221`): the prefix is kept
+   for the files Blocks2Cpp writes itself (`b2c_support.hpp`, the IDE init
+   unit), so a module can never replace one of them. The file stem of every
+   module comes from one function of the layout (`FileStem`), which writes
+   `module<N>` for a name that is refused, taken or kept, so no two
+   generated files share a name.
 
 ### 8.4.2 String and character literals
 
@@ -348,6 +354,13 @@ so is a constant calculation or *convert* to `int` whose result does not fit
   ([02 §2.5](02-architecture.md#25-ipc-surface)).
 * **Generated file names** derive only from validated module names. They are
   never built from free text.
+* **Pruning and deletion** (M3, wave W3): a build deletes only regular files
+  of `gen/` whose names pass the generated-name rule and that it did not
+  generate, and of `obj/` only the cache's own files that the build did not
+  use, found with `symlink_metadata` and never through a link. Every output
+  is deleted by its absolute path, never by the text of a compiler argument.
+  `b2c generate` never deletes in a folder the user chose
+  ([07 §7.5.1](07-toolchain-build-run.md#751-build-directory)).
 * **Containment:** every write target is canonicalised (its parent directory)
   and verified to lie inside the intended root (build dir, export dir, recovery
   dir) before writing.
@@ -358,7 +371,14 @@ so is a constant calculation or *convert* to `int` whose result does not fit
   alternate data streams (`:`), case-insensitive collisions, and long paths
   (the app manifest declares `longPathAware`).
 * **Atomic writes** for projects and settings ([05 §5.10](05-project-format.md#510-saving-and-recovery)).
-  Exports never overwrite files they did not create (manifest-based).
+  Exports never overwrite files they did not create (manifest-based), nor a
+  file changed since: *Replace* deletes or overwrites a listed file only
+  while its SHA-256 matches the manifest (format 3), and keeps and names any
+  other ([06 §6.11](06-compiler-pipeline.md#611-export)). The manifest is
+  read as a regular file of at most 256 KiB with at most 1,024 entries, and
+  no path may be listed twice, even ignoring case. The export's scripts
+  hold no user text but the folder and program names, which come from
+  validated names.
 * **Project file permissions** (Linux): a new project file gets mode
   `0666 & ~umask`, what any new file of the user gets (decision Q13 of
   [10 §10.3](10-roadmap.md#103-product-decisions)); its temporary file is

@@ -68,6 +68,17 @@ Connection compatibility is enforced by a custom Blockly `ConnectionChecker`
 backed by the type system ([§3.5](#35-types)). Shapes stop structurally
 invalid programs, and types stop most semantic errors.
 
+**Definitions in a namespace** ([§3.7.13](#3713-organisation)). *define*,
+*struct*, *enum*, *global* and *namespace* also have a `definition`
+connection, a rule of the connection checker that only a namespace's mouth
+and the definitions inside it accept (the catalog marks these blocks
+`namespace_member`, and the mouth `definitions`). At the top level they keep
+the hat look; in a mouth they show a statement's notches. Nothing else goes
+into a mouth, nothing stacks below a top-level definition, and a drag that
+would nest namespaces more than 14 deep is refused. A file is not refused
+for its depth: a namespace past 14 levels is `B2C-E0219`, and a block in a
+place it does not fit is `B2C-E0604`, kept as a placeholder.
+
 **Typed slots** ([ADR-0018](../adr/0018-slot-typing.md)). For a value
 dragged or moved with the keyboard towards an input, the checker types the
 parent block as if the value were already there, with the block's catalog
@@ -488,6 +499,13 @@ the Time & Random and Organisation categories come with their other
 blocks. Classes, lambdas and the advanced categories are M4's
 ([10 §10.1](10-roadmap.md#101-milestones)).
 
+**In M3** (wave W3) *namespace* and *use namespace … in this file* join the
+Program category after *use header*, so the catalog has 88 blocks; *use
+namespace … here*, the standard sub-namespaces in its menu and *use header
+of module* moved to M4 ([§3.7.13](#3713-organisation)). *share with other
+modules* is shown on *define*, *struct*, *enum* and *global* in a project
+with several modules ([§3.8](#38-organisation-features-editor)).
+
 ### 3.7.1 Program
 
 | Block | Generates |
@@ -496,7 +514,8 @@ blocks. Classes, lambdas and the advanced categories are M4's
 | `when program starts ☑ with arguments [args] { … }` | `int main(int argc, char* argv[]) { const std::vector<std::string> args(argv, argv + argc); … }` |
 | `stop program with exit code (0)` | `return 0;` inside `main`, otherwise `std::exit(0);` |
 
-A project has exactly one `main`; a second one is an analyser error.
+A project has exactly one `main`, in any of its modules; a second one, in
+the same module or another, is an analyser error.
 
 *with arguments* is a checkbox on the one block (§3.1), whose short name
 stays *when program starts*. Ticked, it shows the name of a read-only list
@@ -506,8 +525,8 @@ function's parameters do: changing it is `B2C-E0308`, a ticked box without
 a name `B2C-E0430`, and a variable of its name created at the top of the
 body `B2C-E0210` (inside a nested block it hides the list, `B2C-W0501`).
 `argc` and `argv` take other names when the body uses those. The Program
-category also holds *use header* and *check at compile time*
-([§3.7.13](#3713-organisation)).
+category also holds *use header*, *check at compile time*, *namespace* and
+*use namespace* ([§3.7.13](#3713-organisation)).
 
 ### 3.7.2 Variables
 
@@ -549,7 +568,16 @@ hides it (`B2C-W0501`). A global set from a function, or from a struct's
 default values, comes after every global that function or default reads,
 whatever the order on the canvas; a global whose value needs itself,
 directly or through functions and other globals, is `B2C-E0421`. Its *share
-with other modules* checkbox is hidden until wave W3.
+with other modules* checkbox is shown in a project with several modules
+([§3.8](#38-organisation-features-editor)): a shared variable is declared
+`extern` in its module's header and defined in its `.cpp`, and a shared
+constant is `inline constexpr` in the header, or `extern const` when its
+value names something its module does not share. An `extern const` constant
+is not fixed for other modules when the program is built, so there it is no
+`case` label (`B2C-E0424`). A global whose value uses a global of another
+module, directly or through functions, is `B2C-E0423`, unless that one is a
+constant fixed when the program is built: C++ does not say in which order
+it sets the globals of different modules.
 
 ### 3.7.3 Math and Logic
 
@@ -722,8 +750,9 @@ as `std::string("…")` and a *list of* with its type
 other functions print their arguments as before. *Your functions* labels
 each function that shares its name with its parameter types (*area (int,
 int)*), and so do a call's function menu and the call block itself.
-Functions of different modules still need different names until
-wave W3, since every module is compiled on its own
+Overloads of a shared function must be in one module: two modules that
+share functions of one name are `B2C-E0211`. Functions of different modules
+that are not shared may have one name
 ([§3.8](#38-organisation-features-editor)).
 
 **In M3** (wave W2) default values, overloads and results of any type are
@@ -851,7 +880,10 @@ struct, printable or not (`B2C-E0314`: join its fields instead), and an enum
 joined or turned into text uses `b2c::to_text`, an inline function in
 `namespace b2c` right after the enum, so a user function `to_string(Color)`
 compiles beside it. A struct's and an enum's *share with other modules*
-checkbox is hidden until wave W3.
+checkbox is shown in a project with several modules
+([§3.8](#38-organisation-features-editor)); a shared enum's `operator<<`
+and `b2c::to_text` are declared in its header right after it and defined
+once in its module's `.cpp`, not `inline`.
 
 **Safety defaults:** a class with any `virtual` method automatically gets
 `virtual ~Class() = default;` unless it declares its own destructor (shown in
@@ -952,8 +984,10 @@ user exception classes come with classes in M4.
 | Block comment (Blockly comment bubble) | `// comment` lines above the statement (sanitised, [08 §8.4.3](08-security.md#843-comments)) |
 
 **In M3** (wave W2) *use header* and *check at compile time* are built, in
-the Program category after *stop program*; *namespace* and *use namespace*
-come with modules in wave W3, with the textbook-style setting. *use header*
+the Program category after *stop program*; wave W3 adds *namespace* and
+*use namespace … in this file* after them, with the *Textbook style*
+setting. *use namespace … here*, the standard sub-namespaces in its menu
+(with `B2C-E0703`) and *use header of module* moved to M4. *use header*
 offers the standard headers of the header table (another header is
 `B2C-E0607`). *check at compile time* checks its condition as *if* does (a
 number there warns `B2C-W0519`); a condition that is not fixed when the
@@ -961,6 +995,22 @@ program is built, because it reads a variable or calls a function, is
 `B2C-E0424`, and one that is always false `B2C-E0428`. Its message must be
 one a string literal can hold (`B2C-E0312` otherwise: a NUL character, or
 over 64 KiB).
+
+*namespace* (new ones are named `myNamespace`) holds *define*, *struct*,
+*enum*, *global* and other *namespace* blocks in its mouth, at most 14 deep
+(`B2C-E0219`; [§3.3](#33-block-shapes)). One namespace may be opened in
+several blocks and in several modules, and is one C++ namespace: each
+member is shared or not on its own, and a namespace has no *share*
+checkbox. Other blocks name its definitions `geo::area` in C++ mode. A name
+is unique in its namespace (`B2C-E0210`), and a namespace may not be named
+like any definition (`B2C-E0210`) or used as a variable (`B2C-E0207`). The
+menu of *use namespace … in this file* offers `std`, the module's top-level
+namespaces and the other modules' top-level namespaces that hold a shared
+definition; a namespace that is gone or not top-level is `B2C-E0201` or
+`B2C-E0207`, one already in use `B2C-I0523`. With a directive, a struct,
+enum or namespace named like a part of `std` is `B2C-E0215`. Both blocks
+are basic blocks, found in the toolbox search by *namespace*, *group* and
+*scope*, and *using*, *namespace* and *std*.
 
 ## 3.8 Organisation features (editor)
 
@@ -972,13 +1022,29 @@ Clear organisation is a core requirement, not polish:
    *Your functions* offers a call block for each function you define, kept
    up to date (grouped under a module heading only when the project has more
    than one module).
-   **In M2** every module is compiled on its own: functions cannot be called
-   across modules (`E0206`), their names are unique in the program
-   (`E0211`), and helpers are inline in each file. Since wave W2 of M3, two
-   functions of one module may share a name as overloads
-   ([§3.7.7](#377-functions)); functions of different modules still may not
-   until wave W3. Nor may a type name another module's struct or enum
-   (`E0206`), and the type menus list only the module's own.
+   **In M3** (wave W3) a module uses its own definitions and the ones other
+   modules share. *share with other modules* on *define*, *struct*, *enum*
+   and *global* is shown only in a project with several modules (a value
+   is kept while it is hidden); a shared definition is declared in its
+   module's header, and a module's `.cpp` includes the header of each
+   module whose shared definitions it uses. Using another module's
+   definition that it does not share is `B2C-E0206`, which says to tick
+   *share*. Two modules may not share definitions of one name
+   (`B2C-E0211` for functions, whose overloads live in one module;
+   `B2C-E0210` otherwise), and a definition that is not shared may not have
+   the name of any module's shared definition in its namespace
+   (`B2C-E0213`, program-wide), but definitions of different modules that
+   are not shared may share a name. What a header shows of a shared
+   definition may not name one the module does not share (`B2C-E0214`),
+   and headers may not need each other in a circle (`B2C-E0422`). *Your
+   functions* lists the shown module's functions, then each other module's
+   shared functions under a heading with its name (*Module: utils*), and
+   the type picker lists other modules' shared types the same way after the
+   module's own; a module's
+   own definition hides another module's shared one of that name. A
+   definition moves to another module by cut and paste, which keeps its
+   symbol ID, so calls from other modules stay bound
+   ([05 §5.12](05-project-format.md#512-clipboard-format)).
 2. **Order-independent definitions.** Top-level definition blocks can sit
    anywhere on the canvas. The generator sorts them by dependency and adds
    forward declarations.
@@ -1029,11 +1095,10 @@ and `Stopwatch` comes with the stopwatch in M4.
   emitted **only if used**.
 * **Placement.** Single-module projects get the helpers inline in a clearly
   delimited section at the top of `main.cpp`, so a student can submit one
-  file. Multi-module projects get them in `b2c_support.hpp`. **In M2** every
-  module is compiled on its own: functions cannot be called across modules
-  (`E0206`), their names are unique in the program (`E0211`; since wave W2
-  of M3, overloads of one module excepted), and helpers are inline in each
-  file.
+  file. Projects with several modules get them in `b2c_support.hpp`, which
+  each `.cpp` that uses a helper includes, in the preview as in the build.
+  The module count alone decides, so when a project gains its second module
+  the helpers of `main.cpp` move there.
 * A project setting, **Prefer plain standard C++**, swaps helpers for inline
   standard code wherever a reasonable inline form exists (e.g. `std::cin >>
   x;` for `ask`).
@@ -1236,8 +1301,9 @@ type  = "T"                            # converts to T
   (`func.call`, `func.call_stmt`, and `type.new`, whose parts its struct's
   fields name) and *rows* (`func.define`'s parameters, `type.struct`'s
   fields, `type.enum`'s values); their text still comes from the catalog
-  label. The editor hides a field named `SHARED`, and the label's words
-  before it, until wave W3 shows it in projects with several modules.
+  label. The editor shows a field named `SHARED`, and the label's words
+  before it, only in a project with several modules, and lays the blocks
+  out again when the module count crosses one and two.
 * **Messages.** Catalog messages use a block's short name: its friendly
   label up to the first field or input (*print*, *repeat*, *when program
   starts*). A message about a block whose label starts with a field or input
@@ -1361,6 +1427,11 @@ and wider type fields (every catalog change up to the M3 release ships as
 1.3.0). A file that leaves
 the new key out loads with the default, and the editor keeps leaving it out
 while the block keeps that default; blocks a newer editor creates write it.
+A field marked `omit_default` (`omitDefault` in `catalog.json`; only a field
+shown once with a default may have it, and every `SHARED` does) is written
+into a new block too only when it differs from its default, and a value a
+file holds is written back as it was. So a *define* that M3 creates and
+does not share still loads in M2, and a shared one is `B2C-E0602` there.
 When a document or clipboard payload names a `generator.catalog` newer than
 this app's, a block with an unknown field, input, `extra` key or option, or
 a type or header this app does not know or does not allow there, is

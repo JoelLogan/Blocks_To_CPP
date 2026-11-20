@@ -248,6 +248,16 @@ the getting-started guide describe the polished editor.
 > benchmark of W2's blocks; `webview.drag-typed-1000.frame-p95-all` is
 > still reported, so W3's integration gates it. What remains is listed in
 > [next steps §3.4](../plans/next-steps.md#34-waves).
+>
+> **W3 (2026-11-20).** Wave W3 is done: multi-module projects with headers
+> (functions, structs, enums, globals and constants across modules), the
+> module strip, the project name on the project settings page, the
+> *namespace* and *use namespace … in this file* blocks with Textbook style
+> and the M3 subset of the lookup model, and the per-unit object cache
+> ([W3 contract](../plans/m3-contracts/w3-modules.md)). The if-time sweep
+> (*use namespace … here*, the standard sub-namespaces, *use header of
+> module*) moved to M4. Its record is in
+> [next steps §3.9](../plans/next-steps.md#39-w3-done-and-what-remains).
 
 * Expression slots and Quick Insert. Type picker. Collections, strings,
   structs, enums, files, errors, random and time (the collection, text,
@@ -256,14 +266,18 @@ the getting-started guide describe the polished editor.
   the file blocks that do not open a file, a random seed, the clock and the
   stopwatch moved to M4).
 * Multi-module projects with headers. Export to CMake/Make. Friendly
-  message catalog for g++ errors. Support helpers.
+  message catalog for g++ errors. Support helpers. (Multi-module projects,
+  the header split, `b2c_support.hpp` and the object cache done in wave W3,
+  [06 §6.7](06-compiler-pipeline.md#67-ordering-and-declarations).)
 * Global variables and constants (with a const/constexpr suggestion), math
   functions and text/number conversions. Organisation blocks (namespace, use
   header, use namespace, static_assert) and the textbook-style
   `using namespace std` project setting (Q4). (Globals and constants, with
   `constexpr` chosen by the analyser, the math functions, the conversions,
-  *use header* and *check at compile time* done in wave W2; *namespace* and
-  *use namespace* go to wave W3, with modules.)
+  *use header* and *check at compile time* done in wave W2; *namespace*,
+  *use namespace … in this file* and Textbook style done in wave W3, without
+  Textbook style's preview; *use namespace … here*, the standard
+  sub-namespaces and *use header of module* moved to M4.)
 * The expert-mode switch (Q8): Friendly/C++ block labels and *Show advanced
   blocks*. Toolbox search. A project settings dialog (standard, options,
   build configurations, defines) and run options (arguments, working
@@ -286,10 +300,8 @@ the getting-started guide describe the polished editor.
   assignments. (Done in wave W2, falling through as the block *go on into
   the next case*; the *moved* parameter mode moved to M4, where `move`
   arrives.)
-* The project name in the project settings dialog (still open: the project
-  settings page merged from wave W3 edits the standard, the configurations,
-  the defines and the run options, and the name is changed from the top
-  bar).
+* The project name in the project settings dialog (done in wave W3: the
+  page's *Project* section, [04 §4.1](04-user-interface.md#41-main-window-layout)).
 * The type and slot foundations: an open type representation, typed slots,
   catalog schema extensions (including the catalog's `headers`),
   `text + "x"` where C++ allows it, and constant folding for overflow and
@@ -338,6 +350,12 @@ the getting-started guide describe the polished editor.
   the clock and the stopwatch, and *read word* with the other console
   stream blocks ([W2 contract §1.10](../plans/m3-contracts/w2.md#110-not-in-w2)).
   The structured binding waits until pairs exist, after M3.
+* From M3's wave W3 ([W3 contract §1.8](../plans/m3-contracts/w3-modules.md#18-not-in-w3)):
+  *use namespace … here*, the standard sub-namespaces in its menu (with
+  `B2C-E0703` before C++20) and *use header of module*; Textbook style's
+  preview, *Rename all and turn on* and the hovers that explain `::`; the
+  lookup model's rules for classes, Raw C++ and library packs; and the
+  background probe of a toolchain newer than the standard-name table.
 * Library-pack system (the `std` pack complete), library profiles, generic
   member block, Raw C++ blocks. First decided: whether building a project
   created in the app asks for trust once it holds Raw C++ or libraries

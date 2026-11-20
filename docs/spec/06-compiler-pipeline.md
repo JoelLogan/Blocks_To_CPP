@@ -20,6 +20,13 @@ The types passed between stages (the SAST, symbols, typed text leaves,
 diagnostics and source maps) live in `b2c-ir`, so each stage depends only on
 the contract it consumes, not on the crate that produced it.
 
+In a project with several modules, stage ⑤ also computes the **layout**
+(`compute_layout`, `crates/b2c-lang/src/layout.rs`): each module's file
+stem, its header and includes, the forward declarations and the order of
+every file over one declaration graph (§6.7), and the problems that need
+them, such as `B2C-E0213`, `B2C-E0422` and `B2C-E0423`. Stage ⑥ prints
+what the layout decided.
+
 Block upgrades ([05 §5.7](05-project-format.md#57-versioning-and-migration))
 are the first step of stage ②, and the app also runs them when it loads a
 document for the editor.
@@ -244,6 +251,17 @@ function is declared, before any body, with no parameter in scope.
   generated C++ names a struct or an enum unqualified, so a local, a
   parameter, `main`'s arguments or a field with the name of a struct or enum
   of the program is `E0210` too: C++ would find it instead of the type.
+* **Modules and namespaces** (M3, wave W3). A module sees its own
+  definitions, shared or not, then the definitions other modules share
+  whose names it has none of: a module's own definition hides another
+  module's shared one of that name, and a local name hides both. A
+  reference to another module's definition that it does not share is
+  `E0206`. Definitions are unique per namespace (`geo::count` and a global
+  `count` never clash); two modules sharing one name are `E0211` for
+  functions and `E0210` otherwise, and a definition that is not shared may
+  not have the name of any module's shared definition in its namespace
+  (`E0213`, §6.14.7). A namespace's members are definitions of their
+  module, and a namespace opened in several blocks or modules is one.
 * Exposes a **scope query API** to the editor:
   `symbols_in_scope(block_id, input) -> Vec<SymbolInfo>`. It feeds variable
   dropdowns, Quick Insert and the member block.
@@ -281,7 +299,12 @@ left to the analyser
   starts` or function definition that the analyser skips (a disabled one),
   and every block in it, answers with the module's functions.
 * Every answer lists the module's globals, functions, structs and enums
-  (a local name hides a global), and a struct or enum definition, like a
+  (a local name hides a global); in a project with several modules also the
+  definitions other modules share, under the precedence above, and the
+  top-level namespaces of the module and those of other modules that hold
+  a shared definition. A namespace's members are listed by their own name,
+  so a local hides them in the answer as `E0205` does. A struct or enum
+  definition, like a
   function, is an item of its own: it sees the module, not the parked
   scope. An answer that lists a struct or enum also lists its fields or its
   enumerators, each with its `owner`. No local name hides a member and a
@@ -337,7 +360,10 @@ when 0), `struct` (with `fields`, the
 field symbol IDs, and `comparable` and `printable`: ticked, and every
 field's type is comparable or printable), `enum` (with `values`, the
 enumerator symbol IDs), `field` or `enumerator` (each with `owner`, its
-struct's or enum's symbol ID). A type is written as its type term
+struct's or enum's symbol ID), or `namespace` (with `parent`, the namespace
+it is nested in, left out at global scope). `shared` is written, as `true`,
+only for a shared definition of a project with several modules. A type is
+written as its type term
 ([02 §2.5.1](02-architecture.md#251-requests-and-responses)): `"int"`,
 `"std::string"`, `{"std::vector": "int"}`, `{"ref": "sym_x"}`, or
 `"error"`. A struct's or enum's type is the type itself, an enumerator's is
@@ -431,8 +457,10 @@ queries from the analysis cached by its last preview.
   resolves an overload by name: two functions of one module share a name
   only when no list of argument types, of a length from the larger number
   of required parameters to the smaller full count, fits both (ignoring
-  pass modes), otherwise `B2C-E0211`; functions of different modules with
-  one name stay `B2C-E0211`, with their own message, until wave W3. Code
+  pass modes), otherwise `B2C-E0211`. Since wave W3, functions of
+  different modules may have one name unless both are shared (`B2C-E0211`,
+  with its own message: an overload set lives in one module). The
+  arguments' casts count only the functions the calling module can call. Code
   generation then makes g++ pick the same function: on a call to a function
   whose name another function of the module shares, each argument is cast
   to its parameter's type, quoted text becomes `std::string("…")` and a
@@ -561,10 +589,45 @@ changes the generated code.
 Headers use `#pragma once`. Single-module projects emit only `main.cpp`
 without an anonymous namespace, to keep student code simple.
 
-**In M2** every module is compiled on its own: functions cannot be called
-across modules (`E0206`), their names are unique in the program (`E0211`),
-and helpers are inline in each file. Until wave W3 a type that names
-another module's struct or enum is `E0206` too.
+**In M3** (wave W3) the header split is built for functions, structs,
+enums, globals and constants, as
+[modules.md §3](../plans/m3-contracts/modules.md#3-what-each-file-contains)
+lays the files out (the *shared* option is a checkbox on the block, not on
+`⚙`). Files are named by the layout's stem: the module's name, or
+`module<N>` for a name that is refused, taken or starts with `b2c`. A
+shared function's declaration, with its default values, is in `<stem>.hpp`
+and its definition, without them, in `<stem>.cpp`; a shared enum's
+`operator<<` and `b2c::to_text` are declared in the header right after it
+and defined once in the `.cpp`, not `inline`; a shared variable is
+`extern` in the header; a shared constant is `inline constexpr` there, or
+`extern const` when its value names something its module does not share
+(no `E0214` then). Each file and each source-map entry names its module.
+One declaration graph orders every unit, and each file prints its own
+declarations in that order, so circles across files are reported once. A
+header includes another module's header when a header part needs that
+module's definition complete: a default value, a field's default value, a
+constant's type or `constexpr` value, a shared variable's type, and a field
+naming another module's struct (also one inside lists, because the
+generated `{}` initialiser needs the struct complete). Only a function's
+inputs and result forward-declare. A forward declaration of a module's own
+struct is printed just before the declaration that needs it, in the
+`.hpp` as in the `.cpp` and in the struct's namespaces; a `.cpp` leaves it
+out when its header defines the struct. A header part that names a
+definition its module does not share is `E0214`, headers that would include
+each other are `E0422` (on each shared function whose default value makes a
+header need inside the circle), and a global set from another module's
+global is `E0423`. A header depends only on what its module shares, so an
+edit that keeps each shared definition's header part, and each shared
+constant's form, never changes a header. Non-shared code of a multi-module
+`.cpp` is in the anonymous namespace, while `b2c::to_text` and `main` stay
+at global scope. Code generation never writes `::name` for a function of
+the anonymous namespace that an included header also declares, so C++
+refuses an ambiguous call rather than call the other module's function.
+When a project gains its second module, the first module's `main.cpp`
+changes: its helpers move to `b2c_support.hpp` and its functions into the
+anonymous namespace, and a function nothing calls then draws
+`-Wunused-function`; deleting back to one module restores the
+single-module text.
 
 **In M3** (wave W2) step 3 is built for structs, enums, globals and function
 declarations, through the declaration graph of
@@ -754,6 +817,10 @@ statement (with its comment lines and nested bodies) and expression has one.
   offset, so the Raw editor can underline the exact line.
 * The editor uses the same map for hover highlighting and click-to-block.
   (M3) The editor receives the source map in a compact form.
+* Each range names its `module`, also in a header, so a message g++ reports
+  in `geometry.hpp` maps to the block of module `geometry` that the line
+  came from; an unmapped place maps to its file's module, and a place in
+  `b2c_support.hpp` to the project ([07 §7.5.3](07-toolchain-build-run.md#753-diagnostics-capture-and-mapping)).
 
 ## 6.10 Includes and support helpers
 
@@ -792,11 +859,22 @@ statement (with its comment lines and nested bodies) and expression has one.
   deduplicates and sorts them. An item's `decl` headers go into the file
   that prints its declaration and its `body` headers into the file that
   prints its definition: in a single-module project, both are the module's
-  `.cpp`. Library-pack types declare their headers in the pack's metadata.
+  `.cpp`. In a project with several modules, a `.cpp` includes its own
+  header and the header of each module whose shared definitions its code
+  uses, and a header the headers its header parts need complete
+  ([modules.md §3.3](../plans/m3-contracts/modules.md#33-header-parts-and-include-or-forward-declare));
+  a `.cpp` still lists the standard headers its own code needs, also when an
+  included project header brings them. Project headers are found with
+  `-iquote`, so a module named `string` cannot shadow `<string>`. A *use
+  namespace* naming a namespace whose shared members only another module's
+  header declares adds that header. Library-pack types declare their headers in the pack's metadata.
   There are no transitive-include assumptions: if `std::string` is used,
   `<string>` is included even when `<iostream>` happens to pull it in.
 * Helpers are selected by usage, together with their own header dependencies,
-  and emitted per [03 §3.9](03-block-language.md#39-support-helpers).
+  and emitted per [03 §3.9](03-block-language.md#39-support-helpers): inline
+  in a single-module `main.cpp`, and in `b2c_support.hpp` from two modules
+  on, decided by the module count alone, for the preview and the build
+  alike.
 * Feature gating: constructs that need a newer standard or library feature
   (e.g. `std::format`, `std::print`, `contains`) check the project's standard
   **and** the selected toolchain's probed capabilities
@@ -828,14 +906,30 @@ statement (with its comment lines and nested bodies) and expression has one.
 
 * The exported code is identical to what the IDE builds, minus the IDE-only
   init unit ([07 §7.6](07-toolchain-build-run.md#76-running-programs)).
-* In M1/M2 `b2c generate --export` only drops the banner; the folder layout
-  comes in M3.
+* The `Makefile` compiles and links every source in one g++ command. When
+  that line passes 8,000 characters (more than about 100 modules with long
+  names), the README says that the project needs the MSYS2 shell or CMake,
+  since cmd.exe takes at most 8,191. When an exported `.cpp` holds a
+  `using namespace` directive, the README says so, that headers never do,
+  and which GCC versions the names were checked against.
+* The manifest (format 3) records each written file's SHA-256. *Replace*
+  deletes or overwrites a file the earlier manifest lists only while its
+  content still has the recorded hash; a file changed since, or one whose
+  hash an older manifest does not record, is kept, named in the result and
+  kept in the manifest with its earlier hash, and the rest of the export
+  goes on. An export first writes a manifest that accepts what each file it
+  touches holds before and after (an entry's optional `previous` hash, only
+  beside `sha256`), then removes and writes the files, then writes the final
+  manifest with one hash a file, so an interrupted *Replace* leaves a folder
+  that a later *Replace* accepts. The manifest's read limits are in
+  [08 §8.6](08-security.md#86-filesystem-safety).
 * Library profile paths are machine-specific and are **not** exported by
   default. An opt-in checkbox adds them to `CMakeLists.txt` as cache
   variables, with a warning.
 * Export writes into a new subfolder and refuses to overwrite non-empty
   folders unless *Replace* is confirmed (and then only replaces files it
-  previously generated, recorded in a `.b2c-export.json` manifest).
+  previously generated and nobody changed since, recorded in a
+  `.b2c-export.json` manifest).
 
 ## 6.12 Diagnostics model
 
@@ -936,6 +1030,26 @@ rewritten. Every rule below was established with compiled test programs on
 g++ 11–14 and clang 18 (with libstdc++ and libc++), C++17/20/23, in three
 independent design studies and two rounds of adversarial review (§6.14.13).
 
+**In M3** (wave W3) the *namespace* block, *use namespace … in this file*
+and Textbook style are built, with the part of the lookup model that M3's
+blocks need: block and function scopes aside, the scopes are the enclosing
+user namespaces, the module's anonymous namespace, the global namespace,
+the nominated namespaces and, for calls, argument-dependent lookup through
+user namespaces (`std` as an argument's associated namespace qualifies no
+call yet). The analyser records each reference's spelling (`Plain`,
+`Global` for `::n`, `Qualified` for `geo::n`, `Full` for a standard name in
+full) in `Program::spellings`, beside the SAST and keyed by the referring
+block and the symbol, with each `.cpp`'s directives and empty namespace
+declarations, and the generator prints them. Textbook style counts as
+nominating `std` in every file. Block scopes are not modelled, so `E0205`
+still covers every hidden name. What M3 does not build waits for M4: the
+rules for classes, Raw C++ (§6.14.9: `E0217`, `E0218`, `W0525`) and library
+packs (§6.14.10), which have no blocks yet; *use namespace … here* and the
+standard sub-namespaces (with `E0703`); the `I0524` rename offer; the
+background probe of a newer toolchain (§6.14.8); and Textbook style's
+preview (§6.14.12). Typed names in slots and `E0216` (§6.14.11) come with
+typing in slots.
+
 ### 6.14.1 Terms
 
 * A **directive** is a `using namespace N;` line the generator writes. N is
@@ -1008,8 +1122,9 @@ from a method of a class that has its own `max` member is `::max(…)` either wa
 Locals, parameters, members and template parameters are found before nominated
 names and are written plainly. A namespace-scope entity hidden by a local,
 parameter or member is written `::name` or `geo::name`, so `E0205` remains only
-for a hidden local, parameter or member, which C++ cannot qualify (until this
-model lands in M3, `E0205` covers every hidden name). Info `I0524` explains a
+for a hidden local, parameter or member, which C++ cannot qualify (M3 does
+not model block scopes yet, so there `E0205` still covers every hidden
+name). Info `I0524` explains a
 `::` once per declaration and offers an optional rename.
 
 In an out-of-line member definition the class name in the declarator is
@@ -1214,18 +1329,18 @@ class derived from
     the standard headers' C globals (`GLOBAL_NAMES`; the
     `Ident::check_namespace_scope` rule applies to anonymous-namespace names
     too);
-  * for a module's non-shared name, also the module's own shared names (an
-    overload set may not be split between shared and non-shared) and the
-    shared names of every module whose header is included directly or
-    transitively. In a translation unit that includes a library pack that
+  * for a module's non-shared name, also the shared names of every module
+    in the same namespace, its own included (an overload set may not be
+    split between shared and non-shared), whether or not its `.cpp`
+    includes their headers (program-wide, so the error never appears as a
+    side effect of another edit that adds an include). In a translation unit that includes a library pack that
     nominates a namespace (§6.14.10), the global namespace nominates it too, so
     a non-shared function, variable or constant must also not be named like
     anything that namespace declares (for `std`, the names of the project's
     standard);
   * for a non-shared member of user namespace `geo` (emitted in
-    `namespace geo { namespace { … } }`): `geo`'s shared members declared by
-    the module's own header or by any header it includes, directly or
-    transitively;
+    `namespace geo { namespace { … } }`): `geo`'s shared members, in any
+    module;
   * when building, the names that a header included by a Raw C++ block, or a
     library pack without a complete list of its global names, puts into the
     global namespace (found by the probe of §6.14.9).
@@ -1241,7 +1356,14 @@ class derived from
   among them always get explicit template arguments.
 * `E0213` replaces the cross-module part of `E0211` once projects have several
   modules (M3): two non-shared functions in different modules may share a
-  name.
+  name. Its message names the cause when the module's `.cpp` does include
+  the other header (the use, and each header on the way as related
+  locations); otherwise it names the header that would bring the clash
+  (*"once this file includes `convert.hpp`, C++ could not tell the two
+  apart"*), and in the module that shares the name it says *"Rename one of
+  them, or share this one too."* It is computed with the layout (§6.1).
+  Owner decision W3M-D10 chose this program-wide rule over one that follows
+  the includes, which ADR-0019 point 6 first described.
 
 ### 6.14.8 The standard-name table
 
@@ -1272,6 +1394,18 @@ fingerprint and becomes one of the toolchain capabilities. Until it has
 finished, the table counts as incomplete: no standard name is shortened, every
 reference to a user namespace-scope name in a region is qualified as in
 §6.14.2, and `E0215` uses the built-in table.
+
+**In M3** the table names the GCCs it came from (`STD_NAMES_GCC`,
+`NEWEST_GCC_MAJOR`) and is the union of every local g++ (11 to 14) and of
+GCC 15's list, which the GCC 15 step of CI's `gcc` job prints for
+`gen-std-names.py --merge` and which fails while the table lacks a name GCC
+15 declares. The tool probes each g++ under C++17 to C++26, strict and GNU
+modes; a probe that crashes the compiler counts as refused, and the probes
+after it run again (GCC 13 crashes on a concept given as a template template
+argument). b2c-codegen's `std_names` test runs the tool in check mode with
+the g++ on `PATH` when it is not newer than the table. The background probe
+is not built: a toolchain newer than the table's newest GCC counts as an
+incomplete table, so nothing is shortened (M4 builds the probe).
 
 ### 6.14.9 Raw C++
 
@@ -1402,7 +1536,24 @@ share them), so a paste between such projects binds that way too, silently,
 to whatever the entity with that ID is called in the target. Otherwise (no
 match, or several) the reference is `E0201`, naming the original.
 
+**In M3** (wave W3) re-resolution follows the precedence of §6.5: a
+module's own definition before another module's shared one of that name.
+A recorded name is matched with its namespaces (`geo::area`), and of the
+visible entities of that name and kind the paste binds the only one of the
+target module, else the only one
+([05 §5.12](05-project-format.md#512-clipboard-format)). Typing names in
+slots, and `E0216`, come with typing in slots; until then no slot is
+resolved by name.
+
 ### 6.14.12 Turning Textbook style on and off; export
+
+**In M3** (wave W3, owner decision W3M-D13) the switch on the project
+settings page applies as one project edit with the other settings, without
+the preview below: the problems it causes (`E0215`, `E0213`) appear in
+Problems, the note under the switch says that a rename fixes them, and
+turning it off again removes them. The preview, *Rename all and turn on*
+and the hovers move to M4; M3 has no Raw C++, so the `E0218` and `W0525`
+parts have nothing to list yet.
 
 * Turning it on runs the analyser with the option set before applying it (in
   WASM, per module) and previews the effect: names that must change (`E0215`,
@@ -1434,6 +1585,21 @@ match, or several) the reference is `E0201`, naming the original.
   spells names in full so that it compiles on its own.
 
 ### 6.14.13 Tests
+
+**In M3** (wave W3) the tests are: golden files for every example, with
+`textbook_grades` saved with Textbook style on; a differential test that
+builds and runs each example with Textbook style the other way round from
+its file and checks it against the example's golden run data, and compiles
+the catalog blocks' default cases with it on; and, since the design
+studies' case programs were never committed, those cases rebuilt from
+blocks (`crates/b2c-build/tests/textbook_style.rs`: a user `max` and a
+global `count` beside `std::max` and `std::count`; `size`, `left`, `next`,
+`distance` and `sort` as globals and functions; argument-dependent lookup
+into a user namespace; a global hidden in a namespace; *use namespace*
+before its namespace, in one module and in two), each built and run under
+C++17 and C++20 without a directive, with Textbook style and with a *use
+namespace std in this file* block. The part that opens each standard
+namespace with a statement block waits for *use namespace … here* (M4).
 
 * Golden files for every example with Textbook style off and on.
 * A differential test: every example and every catalog block's default C++,

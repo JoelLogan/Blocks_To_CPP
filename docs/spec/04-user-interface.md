@@ -121,6 +121,54 @@
   full-window page such as Settings first closes the block editor's
   drop-downs and field editors.
 
+**In M3** (wave W3):
+
+* The **module strip** above the canvas replaces the module switcher. It is
+  shown from one module on, so that a second module can be added. Its
+  module buttons are one toolbar, *Modules*, with a roving tab index: one
+  Tab stop, `←`/`→`, `Home` and `End` move between modules, and `Enter` or
+  `Space` shows one (the shown module's button is `aria-pressed`). ⊕ *Add
+  module* is a Tab stop of its own, and so is the *Module actions* menu
+  button (⋯) for the shown module; each module's own actions open with
+  `Shift+F10`, the context-menu key or a right click on its button:
+  *Rename…*, *Delete…*, *Move left* and *Move right*. The moves' tooltip
+  says that the first module names the program. A disabled item keeps the
+  focus and gives its reason: ⊕ at 256 modules, *Delete…* on the only
+  module, a move past either end. When the buttons do not fit, the strip
+  scrolls inside itself, keeps the shown module in view and offers *All
+  modules…*, a list with type-ahead. A module whose name cannot be a file
+  name is shown as `module<N>.cpp` with an error mark, its name in the
+  button's accessible name and tooltip.
+* Adding, renaming, deleting, moving and *Undo delete* are edits of the
+  project: they mark it unsaved and are not on the canvas's Undo, which a
+  module switch clears. Each is refused, in a dialog with the banner's
+  text, while the canvas holds a change that could not be checked (§4.4).
+  A new module is shown at once, named `module2`, `module3`, … by default.
+  The add and rename dialogs check a name with the project loader's rules
+  (`B2C-E0117`, `B2C-E0118`, `B2C-E0119`, with their messages), refuse a
+  name starting with `b2c` with `B2C-E0221`'s words, and suggest the
+  lower-case form when capitals are the only problem. Deleting a module
+  that holds blocks asks first, saying how many and whether it holds *when
+  program starts*, with *Cancel* as the default. The deleted module is kept
+  for *Undo delete* (in the strip's status and as ≡ *Undo delete module*)
+  until the next module edit, another project or a reload of this one;
+  undoing puts it back at its place with its IDs, so references to it bind
+  again. The strip's own status region says each edit's outcome; for the
+  second module it says that the other module's C++ changed (its helpers
+  move to `b2c_support.hpp` and its functions into an anonymous namespace,
+  [06 §6.7](06-compiler-pipeline.md#67-ordering-and-declarations)).
+* The project settings page (≡ → *Project settings…*) starts with a
+  *Project* section whose *Name* field is checked as the top bar's rename
+  is. *Save changes* applies the name with the other settings as one edit;
+  the name is written only when the field was edited, so a rename made in
+  the top bar meanwhile is kept, and *Cancel* discards it. The *Language*
+  section has the *Textbook style* switch (*write `using namespace std;`*),
+  applied with the other settings as one edit, without a preview
+  ([06 §6.14.12](06-compiler-pipeline.md#61412-turning-textbook-style-on-and-off-export)).
+  The note under it says that a struct, enum or namespace named like a part
+  of `std` then shows a problem until it is renamed, and that turning the
+  switch off removes those problems.
+
 ## 4.2 Toolbox
 
 * **Scratch-style continuous toolbox.** Category bubbles on the left; the
@@ -251,6 +299,16 @@ toolbox takes about 45 ms to show its flyout again after a new variable on
 the guessing game (225 ms before blocks were kept) and 52 ms at 1,000 blocks
 (300 ms), and no longer grows with the number of catalog blocks.
 
+**In M3** (wave W3) Program lists *namespace* and *use namespace … in this
+file* after *check at compile time*. In a project with several modules,
+*Your functions* lists the shown module's functions, then each other
+module's shared functions under a heading with its name (*Module: utils*),
+leaving out one whose name the module's own function has; *define*,
+*struct*, *enum* and *global* show *share with other modules*, and the
+blocks are laid out again when the module count crosses one and two. The Types category follows the
+module count in the same way, and the type picker lists other modules'
+shared types under such headings after the module's own.
+
 ## 4.3 Code panel (live C++)
 
 * A read-only CodeMirror 6 view of the generated C++ for the active module,
@@ -274,6 +332,12 @@ the guessing game (225 ms before blocks were kept) and 52 ms at 1,000 blocks
   build use the same value, and it is part of the build's configuration hash
   ([07 §7.5.1](07-toolchain-build-run.md#751-build-directory)), so the code
   that is shown is the code that is compiled. *Export project…* comes in M3.
+* **In M3** (wave W3) the panel opens the shown module's `.cpp`, found by
+  its module rather than by its file name. Its file list has the shown
+  module's files first, then each other module's under a heading with its
+  name, then `b2c_support.hpp`. A file picked there is kept per module and falls
+  back to the module's `.cpp` when it goes. Clicking a declaration in a
+  header selects its block, showing its module, and the header stays shown.
 * Invisible and format characters (Unicode category Cf, such as U+200B) in
   block text are shown as visible placeholders (`⟨U+200B⟩`) in block fields,
   tooltips and the code panel. The stored text is unchanged.
@@ -360,6 +424,10 @@ snapshot can write. When the canvas went past a limit that editing can reach
 Save name the limit and how to get back within it; any other such problem is
 reported as a bug. When the compiler core was restarted after a crash, a
 dismissible banner says so.
+
+**In M3** (wave W3) choosing a problem of another module shows that module
+first, and a problem about a module alone (such as `B2C-E0221`) shows the
+module.
 
 ## 4.5 Console (integrated terminal)
 
@@ -506,7 +574,9 @@ scrolls. The shortcuts `F5`, `Shift+F5`, `Ctrl+B` and `Ctrl+S` work, and
 `Ctrl+Z` and `Ctrl+Y` undo and redo the block editor's changes also while the
 focus is outside the canvas (§4.1); the command palette, remapping, Find, Go
 to definition, Find references and Rename come in M5, and
-Quick Insert in M3. Full screen-reader announcements for the workspace and
+Quick Insert in M3. A checkbox is announced by its words and its state
+(*checkbox “share with other modules”, ticked*) in both label modes.
+Full screen-reader announcements for the workspace and
 the accessibility audit are M5 work. Copy, cut, paste and duplicate
 (`Ctrl+D`) use the validated clipboard format
 ([05 §5.12](05-project-format.md#512-clipboard-format)). `Ctrl+R`,
@@ -675,7 +745,7 @@ greyed-out menu items, buttons or shortcuts that lead nowhere.
 
 | Milestone | Not in M2 |
 | --- | --- |
-| M3 | Typing in expression slots, *Expand* / *Collapse* and Quick Insert (`Ctrl+Space`); the type picker popover; collection, string, struct, enum, file, error, random and time blocks; multi-module tabs and headers (adding, renaming and deleting modules); *Export* (`project_export_dialog`); the friendly g++ message catalog; globals, constants, math functions, conversions and organisation blocks; Textbook style; the Friendly / C++ label switch and *Show advanced blocks*; toolbox search; the project settings dialog (standard, options, configurations, defines); run options (arguments, working directory, stdin file, external terminal); quick fixes and *Copy bug report*; feature gating in the UI |
+| M3 | Typing in expression slots, *Expand* / *Collapse* and Quick Insert (`Ctrl+Space`); the type picker popover; collection, string, struct, enum, file, error, random and time blocks; multi-module projects and headers (the module strip with adding, renaming, deleting and moving modules, built in wave W3); *Export* (`project_export_dialog`); the friendly g++ message catalog; globals, constants, math functions, conversions and organisation blocks; Textbook style; the Friendly / C++ label switch and *Show advanced blocks*; toolbox search; the project settings dialog (standard, options, configurations, defines); run options (arguments, working directory, stdin file, external terminal); quick fixes and *Copy bug report*; feature gating in the UI |
 | M4 | Classes, lambdas, memory, templates and concurrency blocks; library packs and the *Libraries* category; Raw C++ blocks and the *Contains Raw C++ (n)* indicator; the extra-flags and environment pass-through settings |
 | M5 | Outline, frames, search, rename (`F2`), go to definition (`F12`), find references (`Shift+F12`), snippets, minimap, tidy-up beyond *Clean up blocks*, collapse to signatures, back/forward and bookmarks; the debugger, breakpoints, trace glow and runtime errors on blocks (§4.11); localisation; the command palette and remappable shortcuts; Focus and Presentation modes; swapping and splitting docks; High Contrast themes and the checked colour-blind-safe palette; lint levels (*Change level…*, lint lists); build and run settings (timeouts, cache size, link mode, caps); the example gallery and the full template set; *Export diagnostics bundle* |
 | M6 | The updater and the first-run update question, sandboxed runs, installers |

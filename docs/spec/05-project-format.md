@@ -93,11 +93,12 @@ that changes the content hash.
 
 `options.usingNamespaceStd` (*Textbook style*: `using namespace std;` in
 every generated `.cpp`, [06 §6.14](06-compiler-pipeline.md#614-standard-names-and-using-namespace))
-comes later in M3; until then it is an unknown key (`B2C-E0110`). A file
-that sets it has `formatVersion` 2 or higher (§5.7), like a file that holds
-a template type (§5.4). It is `false` when absent and is written only when
-`true`, like `language.gnuExtensions`, so files that do not use it are
-unchanged.
+is read and written since M3's wave W3 (before that it was an unknown key,
+`B2C-E0110`). A file that sets it has `formatVersion` 2 or higher (§5.7),
+like a file that holds a template type (§5.4), so an M2 app refuses it with
+`B2C-E0108`. It is `false` when absent and is written only when `true`, like
+`language.gnuExtensions`, so files that do not use it are unchanged; the
+content hash counts it.
 
 `project.lints` (M5; `formatVersion` 3 or higher) sets lint levels for
 everyone who opens the project
@@ -162,8 +163,18 @@ escaped by the emitter), which become `-D` arguments built by the backend.
 | `stack` | Only on a top-level *statement* block: the statement blocks attached below it on the canvas, in order (see *Loose blocks* below). |
 | `fields` | Field values: strings, numbers, booleans, symbol declarations (`{"sym": "sym_x", "name": "score"}`), symbol references (`{"ref": "sym_x"}`) or type terms (below). Each value is validated against the catalog field kind. |
 | `inputs` | Value inputs: either `{"block": …}` (a nested reporter) or `{"expr": [tokens]}` (an expression slot, [03 §3.4](03-block-language.md#34-expression-slots)). An absent input means the catalog default (shadow). |
-| `statements` | Statement inputs as **arrays** of blocks. |
+| `statements` | Statement inputs as **arrays** of blocks. The mouth of a *namespace* block is its statement list `DEFINITIONS`: the definitions inside it, in order, each without `x` and `y`, as a nested block has none ([03 §3.3](03-block-language.md#33-block-shapes)). |
 | `extra` | Mutator state (variadic counts, ⊕ parts and rows), validated against the catalog's schema for that block (below). |
+
+**Field kinds of M3's wave W3.** *use namespace*'s field has the kind
+`namespace`: either a closed name with a leading `::` (`::std`), which no
+symbol ID can contain, or a user namespace's symbol ID as a plain string.
+The analyser checks it against the closed list or the symbol table
+(`B2C-E0201`, `B2C-E0207`), and the generator prints only the resolved
+name, never the stored text. A field that the catalog marks `omit_default`
+(every `SHARED`) is written only when it differs from its default, and a
+value a file holds is written back as it was
+([03 §3.11.3](03-block-language.md#3113-block-versioning)).
 
 **Rows and repeated parts.** `extra` holds a count as a number and a flag
 as a boolean (`"caseCount": 2`, `"hasDefault": true`), and the rows of a
@@ -318,7 +329,18 @@ Further rules:
   listed only once.
 * **Module names** match `[a-z][a-z0-9_-]{0,63}`, are unique ignoring case,
   and are never Windows device names (`con`, `nul`, `com1`, … including the
-  superscript-digit forms), because they become file names.
+  superscript-digit forms), because they become file names (`B2C-E0117`,
+  `B2C-E0118`, `B2C-E0119`). A module name that starts with `b2c`, in any
+  case, loads but does not build, run or export (`B2C-E0221`, from the
+  analyser): the prefix is kept for the files Blocks2Cpp writes itself, such
+  as `b2c_support.hpp` and the IDE unit. Such a module, like one whose name
+  is refused or taken, is written as `module<N>.cpp` (its place in the
+  project) until it is renamed. The editor's add and rename dialogs check
+  the same rules ([04 §4.1](04-user-interface.md#41-main-window-layout)).
+* **Namespaces** nest at most 14 deep (`MAX_NAMESPACE_DEPTH`, tied to the
+  longest qualified name by a compile-time assertion). A file is not refused
+  for it: the analyser reports the first namespace past the limit
+  (`B2C-E0219`), and the editor refuses a drag that would go deeper.
 * In the frontend, JSON is never parsed into objects that are used as
   prototypes or merged into other objects. The WASM validator returns fresh,
   typed data. `__proto__`, `constructor` and `prototype` keys are rejected
@@ -685,8 +707,10 @@ payload has one spelling. `x`/`y` on a stacked or nested block is
 `B2C-E0128`, as in a project file.
 
 Pasting runs the **same validator and limits as file loading**. Pasted blocks
-get fresh IDs, and symbol references are re-resolved by qualified name in the
-target scope ([06 §6.14.11](06-compiler-pipeline.md#61411-names-typed-in-slots)).
+get fresh block IDs. A symbol the pasted blocks declare keeps its ID when the
+document does not use that ID (so cut, then paste into another module, keeps
+the calls from other modules bound), and gets a fresh one otherwise. Symbol
+references are re-resolved by qualified name in the target scope ([06 §6.14.11](06-compiler-pipeline.md#61411-names-typed-in-slots)).
 A paste that contains Raw C++ shows an inline notice: *"Pasted content
 includes Raw C++ – review before running."*
 
@@ -708,7 +732,9 @@ includes Raw C++ – review before running."*
   (`SeededIds`): the frontend passes 256 random bits from
   `crypto.getRandomValues`, so the WASM core itself uses no randomness. IDs
   already used in the document are skipped, and every reference to a symbol
-  declared inside the pasted blocks is rewritten to its new ID.
+  declared inside the pasted blocks is rewritten to its new ID. A declared
+  symbol whose ID the document does not use keeps it, locals included
+  (`b2c_model::remap_ids_keeping_free`); block IDs are always fresh.
 * A reference to a symbol declared outside the pasted blocks is bound again by
   qualified name and kind among the symbols in scope at the paste target
   ([06 §6.14.11](06-compiler-pipeline.md#61411-names-typed-in-slots)). When
@@ -721,10 +747,21 @@ includes Raw C++ – review before running."*
   symbol with its ID, whatever that symbol is called there. A reference that
   finds no match (or several) stays a reference and gets `B2C-E0201`,
   naming the original symbol.
-* Until namespaces arrive (M3), a qualified name is the plain name for
-  variables, parameters and loop variables, and `::name` for functions,
-  structs and enums. A field or enumerator is recorded with its owner's
-  name in front of its own (`::Student::mark`, `::Action::Deposit`) and is
+* A qualified name is the plain name for variables (globals among them),
+  parameters and loop variables. A function, struct or enum at global scope
+  is `::name`, and one in a namespace is written with its namespaces and no
+  leading `::` (`geo::area`, `geo::shapes::area`); a recorded `area` reads as
+  `::area`, and `::geo::area` as `geo::area`. Namespaces are matched by name,
+  so one namespace opened in several modules is one, and a namespace itself
+  is recorded by nothing (a pasted *use namespace* keeps the symbol ID it
+  holds). Among the visible symbols of the recorded name and kind, the paste
+  binds the only one of the target module, else the only one; the visible
+  symbols are the module's own definitions, then the definitions other
+  modules share whose names the module has none of, so a module's own
+  `area` wins over another module's shared `area`
+  ([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes)). A field
+  or enumerator is recorded with its owner's name in front of its own
+  (`::Student::mark`, `geo::Shape::width`, `::Action::Deposit`) and is
   bound again through its owner: the owner binds by name and kind as a
   struct or enum does; when it is the member's own owner at the target, the
   member keeps its ID, and when it bound to another type, the member binds
