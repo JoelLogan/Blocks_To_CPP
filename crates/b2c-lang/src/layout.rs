@@ -503,7 +503,7 @@ impl<'p> ItemParts<'p> {
 
 /// The symbols a statement changes or names by ID, not through an
 /// expression: assignment targets, a collection changed, a file written.
-fn stmt_symbols(stmt: &Stmt) -> Vec<&SymbolId> {
+pub(crate) fn stmt_symbols(stmt: &Stmt) -> Vec<&SymbolId> {
     match &stmt.kind {
         StmtKind::Assign { target, .. }
         | StmtKind::CompoundAssign { target, .. }
@@ -725,7 +725,7 @@ struct Place<'l, 'p> {
 }
 
 /// Every statement of a list, at any depth of statements, in order.
-fn body_stmts(body: &Block) -> Vec<&Stmt> {
+pub(crate) fn body_stmts(body: &Block) -> Vec<&Stmt> {
     let mut stmts = Vec::new();
     let mut lists = vec![body];
     while let Some(list) = lists.pop() {
@@ -929,7 +929,7 @@ impl HeaderCheck<'_, '_> {
 }
 
 /// The user types a type names, at any depth, each once, in order.
-fn user_types(ty: &Type) -> Vec<&SymbolId> {
+pub(crate) fn user_types(ty: &Type) -> Vec<&SymbolId> {
     let mut found: Vec<&SymbolId> = Vec::new();
     let mut stack = vec![ty];
     while let Some(ty) = stack.pop() {
@@ -1217,13 +1217,16 @@ struct SharedDef<'p> {
 /// the `.cpp` does include the header, with the use and each include of the
 /// chain as related locations.
 fn check_shared_names(program: &ProgramView<'_>, layout: &Layout, needs: &Needs<'_>, diags: &mut Diags) {
-    let mut shared: BTreeMap<&str, Vec<SharedDef<'_>>> = BTreeMap::new();
+    // By namespace and name: names in different namespaces never clash
+    // (06 §6.14.7).
+    let mut shared: BTreeMap<(Option<&SymbolId>, &str), Vec<SharedDef<'_>>> = BTreeMap::new();
     for (m, module) in program.modules.iter().enumerate() {
         for item in module.items.iter().filter(|item| item.shared) {
             if let Some(symbol) = item_symbol(item)
                 && let Some(found) = program.symbols.get(symbol)
             {
-                shared.entry(found.name.as_str()).or_default().push(SharedDef {
+                let key = (item.namespace.as_ref(), found.name.as_str());
+                shared.entry(key).or_default().push(SharedDef {
                     symbol,
                     module: m,
                     function: matches!(item.kind, ItemKind::Function(_)),
@@ -1244,7 +1247,7 @@ fn check_shared_names(program: &ProgramView<'_>, layout: &Layout, needs: &Needs<
             let Some(symbol) = program.symbols.get(symbol_id) else {
                 continue;
             };
-            let Some(list) = shared.get(symbol.name.as_str()) else {
+            let Some(list) = shared.get(&(item.namespace.as_ref(), symbol.name.as_str())) else {
                 continue;
             };
             let function = matches!(item.kind, ItemKind::Function(_));
@@ -1289,10 +1292,10 @@ fn check_shared_names(program: &ProgramView<'_>, layout: &Layout, needs: &Needs<
 /// (`B2C-E0211`): the headers would declare one name twice.
 fn check_shared_twice(
     program: &ProgramView<'_>,
-    shared: &BTreeMap<&str, Vec<SharedDef<'_>>>,
+    shared: &BTreeMap<(Option<&SymbolId>, &str), Vec<SharedDef<'_>>>,
     diags: &mut Diags,
 ) {
-    for (name, list) in shared {
+    for ((_, name), list) in shared {
         for (at, def) in list.iter().enumerate() {
             let Some(first) = list[..at]
                 .iter()

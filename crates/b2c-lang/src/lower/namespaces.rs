@@ -17,9 +17,10 @@
 //!   program-wide, §2.1): which one `geo::x` meant would then depend on
 //!   what each file sees.
 //!
-//! What a definition's namespace means for lookup, spellings and code
-//! generation (`Item::namespace`, `E0210` and `E0213` per namespace) is
-//! package N2's.
+//! What a definition's namespace means for lookup and spellings is
+//! `super::lookup`'s (package N2). Names are unique per namespace: the
+//! lowering keys a module's definitions by [`Lowerer::scoped`], so `count`
+//! and `geo::count` never clash (`B2C-E0210`).
 
 use std::collections::BTreeMap;
 
@@ -43,7 +44,17 @@ pub(super) struct Namespaces {
     /// by the definition's block: the symbol that stands for the namespace
     /// (see the module docs). Top-level definitions are not listed.
     pub(super) member_of: BTreeMap<BlockId, SymbolId>,
+    /// The symbol that stands for the namespace of each *namespace*
+    /// block's own symbol.
+    pub(super) standing: BTreeMap<SymbolId, SymbolId>,
+    /// The blocks of each namespace, by the symbol that stands for it: the
+    /// module's index and the block, in declaration order.
+    pub(super) blocks: BTreeMap<SymbolId, Vec<(usize, BlockId)>>,
 }
+
+/// The scope query's namespaces: each module's own top-level ones, and
+/// those the modules share, as `(module index, name, symbol)`.
+pub(super) type NamespaceEntries = (Vec<(usize, String, SymbolId)>, Vec<(usize, String, SymbolId)>);
 
 /// A namespace declared, for the name checks once all are known.
 struct Declared {
@@ -73,11 +84,17 @@ impl Lowerer<'_> {
                 .collect();
             pending.sort_by(|a, b| b.0.id.cmp(&a.0.id));
             while let Some((block, parent, depth)) = pending.pop() {
-                let Some((stands_for, name)) =
+                let Some((stands_for, name, own)) =
                     self.declare_namespace(block, parent.as_ref(), depth, &mut standing)
                 else {
                     continue;
                 };
+                self.namespaces.standing.insert(own, stands_for.clone());
+                self.namespaces
+                    .blocks
+                    .entry(stands_for.clone())
+                    .or_default()
+                    .push((index, block.id.clone()));
                 declared.push(Declared {
                     block: block.id.clone(),
                     module: index,
@@ -103,7 +120,7 @@ impl Lowerer<'_> {
 
     /// Declares one *namespace* block nested `depth` deep in `parent`, and
     /// returns the symbol that stands for its namespace with the block's
-    /// name; `None` when it has no name or its symbol ID is taken
+    /// name and own symbol; `None` when it has no name or its symbol ID is taken
     /// (reported).
     fn declare_namespace(
         &mut self,
@@ -111,7 +128,7 @@ impl Lowerer<'_> {
         parent: Option<&SymbolId>,
         depth: usize,
         standing: &mut BTreeMap<(Option<SymbolId>, String), SymbolId>,
-    ) -> Option<(SymbolId, String)> {
+    ) -> Option<(SymbolId, String, SymbolId)> {
         let name_loc = self.loc(&block.id, field("NAME"));
         if depth == MAX_NAMESPACE_DEPTH + 1 {
             let message = format!(
@@ -140,7 +157,94 @@ impl Lowerer<'_> {
             origin: self.origin(&block.id, field("NAME")),
         };
         self.insert_symbol(&decl.sym, &decl.name, symbol, name_loc)
-            .then(|| (stands_for, decl.name.clone()))
+            .then(|| (stands_for, decl.name.clone(), decl.sym.clone()))
+    }
+
+    /// The key a definition called `name`, declared by `block`, has among
+    /// its module's definitions: the name with the namespaces it is in
+    /// (`geo::area`), or the name alone at global scope. Names are unique
+    /// per key (`B2C-E0210`).
+    pub(super) fn scoped(&self, block: &BlockId, name: &str) -> String {
+        let Some(namespace) = self.namespaces.member_of.get(block) else {
+            return name.to_owned();
+        };
+        let mut key = String::new();
+        for id in self.symbols.namespace_path(Some(namespace)) {
+            if let Some(symbol) = self.symbols.get(id) {
+                key.push_str(symbol.name.as_str());
+                key.push_str("::");
+            }
+        }
+        key.push_str(name);
+        key
+    }
+
+    /// Keys each module's functions by [`Lowerer::scoped`] once the
+    /// namespaces are known: `module_functions` is built from pass 1 by
+    /// name alone.
+    pub(super) fn key_functions_by_namespace(&mut self) {
+        if self.namespaces.member_of.is_empty() {
+            return;
+        }
+        let mut keyed = vec![BTreeMap::new(); self.module_functions.len()];
+        for (sym, decl) in &self.decls {
+            if decl.kind == DeclKind::Function
+                && decl.status == DeclStatus::Active
+                && let Some(block) = &decl.location.block
+                && let Some(map) = keyed.get_mut(decl.module)
+            {
+                map.entry(self.scoped(block, &decl.name))
+                    .or_insert_with(|| sym.clone());
+            }
+        }
+        self.module_functions = keyed;
+    }
+
+    /// The top-level namespaces for the scope query, as `(module index,
+    /// name, symbol)`: each module's own (one block per name, the first by
+    /// ID), and, as shared, the first block of each that holds a shared
+    /// definition at any depth.
+    pub(super) fn namespace_entries(&self) -> NamespaceEntries {
+        let mut own: BTreeMap<(usize, &str), &SymbolId> = BTreeMap::new();
+        let mut shared = Vec::new();
+        for (own_sym, standing) in &self.namespaces.standing {
+            let Some(symbol) = self.symbols.get(own_sym) else {
+                continue;
+            };
+            let (SymbolKind::Namespace { parent: None }, Some(decl)) =
+                (&symbol.kind, self.decls.get(own_sym))
+            else {
+                continue;
+            };
+            let entry = own.entry((decl.module, symbol.name.as_str())).or_insert(own_sym);
+            if decl.location.block < self.decls.get(*entry).and_then(|d| d.location.block.clone()) {
+                *entry = own_sym;
+            }
+            let first = self
+                .namespaces
+                .blocks
+                .get(standing)
+                .and_then(|blocks| blocks.first());
+            let holds_shared = self.shared_blocks.iter().any(|block| {
+                self.namespaces
+                    .member_of
+                    .get(block)
+                    .is_some_and(|ns| self.symbols.namespace_path(Some(ns)).contains(&standing))
+            });
+            if holds_shared && first.is_some_and(|(_, block)| decl.location.block.as_ref() == Some(block)) {
+                shared.push((decl.module, symbol.name.as_str().to_owned(), own_sym.clone()));
+            }
+        }
+        let own = own
+            .into_iter()
+            .map(|((module, name), sym)| (module, name.to_owned(), sym.clone()))
+            .collect();
+        (own, shared)
+    }
+
+    /// Whether the definition declared by `block` is in a user namespace.
+    pub(super) fn in_namespace(&self, block: Option<&BlockId>) -> bool {
+        block.is_some_and(|block| self.namespaces.member_of.contains_key(block))
     }
 
     /// `B2C-E0210` for a namespace named like a definition of any module in

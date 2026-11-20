@@ -93,7 +93,9 @@ impl<'d> Lowerer<'d> {
             return None;
         };
         let ident = self.ident(&decl.name, &name_loc, true);
-        self.check_definition_name(&decl.name, &name_loc, names);
+        // Unique in its namespace (`geo::count` and `count` may both exist).
+        let key = self.scoped(&block.id, &decl.name);
+        self.check_definition_name(&key, &decl.name, &name_loc, names);
         let symbol = Symbol {
             name: ident,
             kind: SymbolKind::Global { is_const },
@@ -103,31 +105,32 @@ impl<'d> Lowerer<'d> {
         if !self.insert_symbol(&decl.sym, &decl.name, symbol, name_loc) {
             return None;
         }
-        names.entry(decl.name.clone()).or_insert_with(|| decl.sym.clone());
+        names.entry(key.clone()).or_insert_with(|| decl.sym.clone());
         if shared {
             self.share(block, &decl.name, &decl.sym);
         }
         let module = self.module_index;
         if let Some(globals) = self.module_globals.get_mut(module) {
-            globals
-                .entry(decl.name.clone())
-                .or_insert_with(|| decl.sym.clone());
+            globals.entry(key.clone()).or_insert_with(|| decl.sym.clone());
         }
         // The scopes hold this module's globals (`enter_module`): one more,
-        // not a copy of them all.
-        self.scopes.add_global(&decl.name, &decl.sym);
+        // not a copy of them all. A namespace's global is there by its
+        // qualified name, which no local name hides.
+        self.scopes.add_global(&key, &decl.sym);
         Some(decl.sym.clone())
     }
 
     /// Reports a global named like another global, a struct, an enum or a
-    /// function of its module (`B2C-E0210`).
+    /// function of its module in the same namespace (`B2C-E0210`); `key` is
+    /// its name with its namespaces ([`Lowerer::scoped`]).
     fn check_definition_name(
         &mut self,
+        key: &str,
         name: &str,
         location: &b2c_ir::diag::Location,
         names: &BTreeMap<String, SymbolId>,
     ) {
-        if let Some(other) = names.get(name).cloned() {
+        if let Some(other) = names.get(key).cloned() {
             let message = format!(
                 "There is already a global called {}. Rename one of them.",
                 quoted(name)
@@ -141,11 +144,11 @@ impl<'d> Lowerer<'d> {
             );
             return;
         }
-        let user_type = self.module_type(self.module_index, name).cloned();
+        let user_type = self.module_type(self.module_index, key).cloned();
         let function = self
             .module_functions
             .get(self.module_index)
-            .and_then(|functions| functions.get(name))
+            .and_then(|functions| functions.get(key))
             .cloned();
         let (other, what, note) = match (user_type, function) {
             (Some(other), _) => (other, "a struct or enum", "the type"),
