@@ -26,6 +26,9 @@ mod expr;
 mod files;
 mod forms;
 mod globals;
+pub(crate) mod names;
+#[cfg(test)]
+mod namespace_tests;
 mod scan;
 mod stmt;
 #[cfg(test)]
@@ -51,8 +54,8 @@ use b2c_ir::text::{Ident, NumLit};
 use b2c_ir::types::{Type, TypeFacts, UserKind};
 
 use crate::cast::{
-    BinOp, CBlock, CExpr, CExprKind, CFunction, CGlobal, CParam, CStmt, CStmtKind, CType, CTypeDef, Callee,
-    Init, ParamStyle,
+    BinOp, CBlock, CExpr, CExprKind, CFunction, CGlobal, CName, CParam, CStmt, CStmtKind, CType, CTypeDef,
+    Callee, Init, ParamStyle,
 };
 use crate::helpers::Helper;
 
@@ -403,6 +406,12 @@ struct Lowerer<'a> {
     overloaded: BTreeSet<&'a str>,
     /// How the analyser spelled each reference (w3-modules.md §2.12).
     spellings: &'a Spellings,
+    /// The user namespaces of each definition in one, which a qualified
+    /// reference writes (`names::definition_scopes`).
+    scopes_of: BTreeMap<&'a SymbolId, Vec<Ident>>,
+    /// The block of the innermost expression or statement being lowered:
+    /// where the references it prints are spelled.
+    at: Option<BlockId>,
     /// The functions in the module's anonymous namespace: those it does not
     /// share, in a project of several modules.
     private_functions: BTreeSet<&'a SymbolId>,
@@ -458,6 +467,8 @@ impl<'a> Lowerer<'a> {
             function_names,
             overloaded,
             spellings: &program.spellings,
+            scopes_of: names::definition_scopes(program),
+            at: None,
             private_functions: BTreeSet::new(),
             header_names: BTreeSet::new(),
             global_names,
@@ -518,14 +529,11 @@ impl<'a> Lowerer<'a> {
     /// reports such a name (`B2C-E0213`), so the plain name, which C++
     /// refuses as ambiguous, is the safe text.
     pub(crate) fn user_callee(&self, block: &BlockId, function: &SymbolId, name: &Ident) -> Callee {
-        let spelling = self.spellings.reference(block, function);
         let guarded = self.private_functions.contains(function) && self.header_names.contains(name.as_str());
-        match spelling {
-            Spelling::Global if !guarded => Callee::Global(name.clone()),
-            Spelling::Plain | Spelling::Global | Spelling::Qualified | Spelling::Full => {
-                Callee::User(name.clone())
-            }
+        if guarded && self.spellings.reference(block, function) == Spelling::Global {
+            return Callee::User(CName::plain(name.clone()));
         }
+        Callee::User(self.reference(Some(block), function, name))
     }
 
     /// The names of the user namespaces an item is in, outermost first.
@@ -558,9 +566,10 @@ impl<'a> Lowerer<'a> {
             .filter(|symbol| matches!(symbol.kind, SymbolKind::Function { .. }))
     }
 
-    /// The C++ type of a value of a static type.
+    /// The C++ type of a value of a static type, its user types as the
+    /// block being lowered writes them.
     fn ctype(&self, ty: &Type) -> CType {
-        CType::value(ty, self.symbols)
+        self.ctype_in(ty, self.at.as_ref())
     }
 
     /// Whether values of a static type are scalars (numbers, characters,
@@ -730,7 +739,7 @@ impl<'a> Lowerer<'a> {
             param(CType::Int, ParamStyle::Value, count.clone()),
             param(CType::Char, ParamStyle::PointerArray, values.clone()),
         ];
-        let ty = self.ctype(&symbol.ty);
+        let ty = self.declared_type(symbol);
         self.note_type(&ty);
         let end = CExpr::binary(BinOp::Add, name_expr(values.clone()), name_expr(count));
         self.declare(symbol.name.clone());
@@ -747,14 +756,14 @@ impl<'a> Lowerer<'a> {
     fn function(&mut self, def: &FunctionDef, item: &Item) -> Option<CFunction> {
         let symbol = self.symbol(&def.symbol)?;
         self.start_item();
-        let ret = CType::result(&def.ret, self.symbols);
+        let ret = self.result_type(&def.ret, &item.origin.block);
         self.note_type(&ret);
         let mut params = Vec::new();
         for param in &def.params {
             let Some(param_symbol) = self.symbol(&param.symbol) else {
                 continue;
             };
-            let ty = self.ctype(&param_symbol.ty);
+            let ty = self.declared_type(param_symbol);
             self.note_type(&ty);
             let style = match param.mode {
                 PassMode::Editable => ParamStyle::Ref,
@@ -851,8 +860,8 @@ fn int_literal(value: i32) -> CExpr {
 }
 
 /// A name expression.
-fn name_expr(name: Ident) -> CExpr {
-    CExpr::new(CExprKind::Name(name))
+fn name_expr(name: impl Into<CName>) -> CExpr {
+    CExpr::new(CExprKind::Name(name.into()))
 }
 
 /// The token for a boolean literal.

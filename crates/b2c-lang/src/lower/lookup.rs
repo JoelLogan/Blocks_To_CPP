@@ -276,8 +276,11 @@ fn expr_references<'p>(root: &'p Expr, out: &mut Vec<Reference<'p>>) {
     }
 }
 
-/// The references an item makes, and the blocks it holds.
-fn item_references<'p>(item: &'p Item, blocks: &mut BTreeSet<&'p BlockId>) -> Vec<Reference<'p>> {
+/// The references an item makes, and the blocks it holds. The first
+/// `.1` references are those of the item's declaration part, which a
+/// shared item's header prints (a function's result type and default
+/// values, a struct's field defaults, a global's starting value).
+fn item_references<'p>(item: &'p Item, blocks: &mut BTreeSet<&'p BlockId>) -> (Vec<Reference<'p>>, usize) {
     let mut out = Vec::new();
     let mut exprs: Vec<&'p Expr> = Vec::new();
     let mut bodies = Vec::new();
@@ -299,6 +302,8 @@ fn item_references<'p>(item: &'p Item, blocks: &mut BTreeSet<&'p BlockId>) -> Ve
         ItemKind::Enum(_) | ItemKind::UseHeader { .. } => {}
     }
     blocks.insert(&item.origin.block);
+    let mut body_exprs = Vec::new();
+    let head = std::mem::take(&mut out);
     for body in bodies {
         for stmt in body_stmts(body) {
             blocks.insert(&stmt.origin.block);
@@ -309,13 +314,19 @@ fn item_references<'p>(item: &'p Item, blocks: &mut BTreeSet<&'p BlockId>) -> Ve
                     args: Vec::new(),
                 });
             }
-            exprs.extend(crate::nesting::parts(stmt).0);
+            body_exprs.extend(crate::nesting::parts(stmt).0);
         }
     }
+    let body_refs = std::mem::replace(&mut out, head);
     for expr in exprs {
         expr_references(expr, &mut out);
     }
-    out
+    let declaration = out.len();
+    out.extend(body_refs);
+    for expr in body_exprs {
+        expr_references(expr, &mut out);
+    }
+    (out, declaration)
 }
 
 impl Lowerer<'_> {
@@ -688,6 +699,9 @@ impl Lowerer<'_> {
         let none = Nominated::default();
         let mut referred = vec![BTreeSet::new(); modules.len()];
         let mut place: BTreeMap<&BlockId, (usize, Option<&SymbolId>)> = BTreeMap::new();
+        // The blocks of the shared items, whose parameters', fields' and
+        // globals' types their headers print.
+        let mut header_blocks: BTreeSet<&BlockId> = BTreeSet::new();
         for (m, module) in modules.iter().enumerate() {
             let nominated = nominated.get(m).unwrap_or(&none);
             for item in &module.items {
@@ -695,16 +709,26 @@ impl Lowerer<'_> {
                     referred[m].insert(sym);
                 }
                 let mut blocks = BTreeSet::new();
-                let references = item_references(item, &mut blocks);
+                let (references, declaration) = item_references(item, &mut blocks);
                 for block in blocks {
                     place.insert(block, (m, item.namespace.as_ref()));
                 }
+                if item.shared {
+                    header_blocks.insert(&item.origin.block);
+                }
                 let ctx = self.symbols.namespace_path(item.namespace.as_ref());
-                for reference in references {
+                for (index, reference) in references.into_iter().enumerate() {
                     let Some(target) = model.defs.get(reference.target) else {
                         continue;
                     };
                     referred[m].insert(target.sym);
+                    // A shared item's declaration part is printed in its
+                    // header too, where no directive is.
+                    let nominated = if item.shared && index < declaration {
+                        &none
+                    } else {
+                        nominated
+                    };
                     let spelling = spelling(model, m, &ctx, nominated, target, &reference.args);
                     if spelling != Spelling::Plain {
                         spellings
@@ -714,8 +738,8 @@ impl Lowerer<'_> {
                 }
             }
         }
-        // The types of locals, parameters and fields, written where they are
-        // declared.
+        // The types of locals, parameters, fields and globals, written where
+        // they are declared.
         for symbol in self.symbols.symbols.values() {
             let local = matches!(
                 symbol.kind,
@@ -723,12 +747,17 @@ impl Lowerer<'_> {
                     | SymbolKind::Parameter { .. }
                     | SymbolKind::LoopVariable
                     | SymbolKind::Field { .. }
+                    | SymbolKind::Global { .. }
             );
             let Some(&(m, ns)) = place.get(&symbol.origin.block).filter(|_| local) else {
                 continue;
             };
             let ctx = self.symbols.namespace_path(ns);
-            let nominated = nominated.get(m).unwrap_or(&none);
+            let nominated = if header_blocks.contains(&symbol.origin.block) {
+                &none
+            } else {
+                nominated.get(m).unwrap_or(&none)
+            };
             for id in user_types(&symbol.ty) {
                 let Some(target) = model.defs.get(id) else {
                     continue;

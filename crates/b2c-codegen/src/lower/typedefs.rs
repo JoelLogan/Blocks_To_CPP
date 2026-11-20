@@ -29,8 +29,8 @@ use super::collections::fits_as_written;
 use super::scan::EnumUses;
 use super::{Lowerer, is_scalar, name_expr, scan};
 use crate::cast::{
-    AssignOp, BinOp, CBlock, CCase, CEnum, CExpr, CExprKind, CField, CGenerated, CStmt, CStmtKind, CStruct,
-    CType, CTypeDef, Generated, Init,
+    AssignOp, BinOp, CBlock, CCase, CEnum, CExpr, CExprKind, CField, CGenerated, CName, CStmt, CStmtKind,
+    CStruct, CType, CTypeDef, Generated, Init,
 };
 
 /// The six comparisons a comparable struct gets in C++17, in the order they
@@ -171,11 +171,12 @@ impl Lowerer<'_> {
                 let SymbolKind::Enumerator { owner } = &symbol.kind else {
                     return CExpr::error();
                 };
+                let owner_id = owner;
                 let Some(owner) = symbols.get(owner) else {
                     return CExpr::error();
                 };
                 CExpr::new(CExprKind::Enumerator {
-                    owner: vec![owner.name.clone()],
+                    owner: self.reference_at(owner_id, &owner.name),
                     value: symbol.name.clone(),
                 })
             }
@@ -262,7 +263,7 @@ impl Lowerer<'_> {
             .iter()
             .filter_map(|sym| symbols.get(sym).map(|field| (sym, field)))
         {
-            let ty = self.ctype(&field.ty);
+            let ty = self.declared_type(field);
             self.note_type(&ty);
             let init = match defaults.get(sym) {
                 Some(value) => Init::Value(self.expr(value)),
@@ -435,7 +436,7 @@ impl CEnum {
             return;
         }
         self.scope = scope;
-        let owner = self.qualified_name();
+        let owner = self.qualified();
         for function in &mut self.functions {
             if function.kind != Generated::EnumToString {
                 continue;
@@ -473,7 +474,7 @@ fn enum_function(
         .iter()
         .map(|enumerator| CCase {
             label: CExpr::new(CExprKind::Enumerator {
-                owner: vec![name.clone()],
+                owner: CName::plain(name.clone()),
                 value: enumerator.clone(),
             }),
             body: vec![CStmt::new(CStmtKind::Return(Some(result(text(

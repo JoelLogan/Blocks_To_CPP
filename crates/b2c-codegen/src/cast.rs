@@ -18,6 +18,62 @@ use b2c_ir::sast::{Origin, SymbolKind, SymbolTable};
 use b2c_ir::text::{CharLit, Comment, Ident, NumLit, StrLit};
 use b2c_ir::types::{LibType, Type};
 
+/// A name of one of the program's own namespace-scope entities (a function,
+/// global, struct or enum) as code writes it where it is referred to, by the
+/// analyser's spelling (w3-modules.md §2.12): `area`, `::area` or
+/// `geo::area`. A local's name is always plain.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct CName {
+    /// Whether it is written from the global namespace (`::area`).
+    pub(crate) global: bool,
+    /// The user namespaces it is written through, outermost first.
+    pub(crate) scope: Vec<Ident>,
+    /// The name itself.
+    pub(crate) name: Ident,
+}
+
+impl CName {
+    /// The name alone.
+    pub(crate) fn plain(name: Ident) -> Self {
+        Self {
+            global: false,
+            scope: Vec::new(),
+            name,
+        }
+    }
+
+    /// The length in bytes of the name as printed.
+    pub(crate) fn width(&self) -> usize {
+        usize::from(self.global) * 2
+            + self
+                .scope
+                .iter()
+                .map(|part| part.as_str().len() + 2)
+                .sum::<usize>()
+            + self.name.as_str().len()
+    }
+
+    /// The name as printed.
+    pub(crate) fn text(&self) -> String {
+        let mut text = String::new();
+        if self.global {
+            text.push_str("::");
+        }
+        for part in &self.scope {
+            text.push_str(part.as_str());
+            text.push_str("::");
+        }
+        text.push_str(self.name.as_str());
+        text
+    }
+}
+
+impl From<Ident> for CName {
+    fn from(name: Ident) -> Self {
+        Self::plain(name)
+    }
+}
+
 /// A C++ type as written in a declaration (types.md §5.1).
 ///
 /// It is made of names from closed tables (the keywords, [`LibType`]'s
@@ -46,9 +102,9 @@ pub(crate) enum CType {
     /// A standard-library type with its template arguments:
     /// `std::vector<int>`, `std::map<std::string, int>`, `std::ifstream`.
     Lib(LibType, Vec<CType>),
-    /// A user struct or enum, by its qualified name: the identifiers joined
-    /// by `::` (`Point`; `geo::Point` once namespaces arrive).
-    Named(Vec<Ident>),
+    /// A user struct or enum, by its name as the place that writes it spells
+    /// it (`Point`, `::Point`, `geo::Point`).
+    Named(CName),
     /// `auto`.
     Auto,
     /// A type that could not be determined (best-effort output after errors).
@@ -60,7 +116,18 @@ impl CType {
     /// value type and map to [`CType::Error`], and so does a user type whose
     /// symbol is missing or is not a struct or an enum, and a library type
     /// with such an argument (best-effort output after errors).
+    #[cfg(test)]
     pub(crate) fn value(ty: &Type, symbols: &SymbolTable) -> Self {
+        Self::value_with(ty, symbols, &|_, name| CName::plain(name.clone()))
+    }
+
+    /// As [`CType::value`], each user type named by `name` from its symbol
+    /// and its own name (the spelling at the place that writes the type).
+    pub(crate) fn value_with(
+        ty: &Type,
+        symbols: &SymbolTable,
+        name: &dyn Fn(&b2c_ir::ids::SymbolId, &Ident) -> CName,
+    ) -> Self {
         match ty {
             Type::Bool => Self::Bool,
             Type::Char => Self::Char,
@@ -70,7 +137,7 @@ impl CType {
             Type::Lib(app) => {
                 let mut args = Vec::with_capacity(app.args().len());
                 for arg in app.args() {
-                    match Self::value(arg, symbols) {
+                    match Self::value_with(arg, symbols, name) {
                         Self::Error => return Self::Error,
                         arg => args.push(arg),
                     }
@@ -81,7 +148,7 @@ impl CType {
                 Some(symbol)
                     if matches!(symbol.kind, SymbolKind::Struct { .. } | SymbolKind::Enum { .. }) =>
                 {
-                    Self::Named(vec![symbol.name.clone()])
+                    Self::Named(name(id, &symbol.name))
                 }
                 _ => Self::Error,
             },
@@ -91,10 +158,20 @@ impl CType {
 
     /// The C++ type for a function result (`void` allowed).
     pub(crate) fn result(ty: &Type, symbols: &SymbolTable) -> Self {
+        Self::result_with(ty, symbols, &|_, name| CName::plain(name.clone()))
+    }
+
+    /// As [`CType::result`], user types named as [`CType::value_with`]
+    /// names them.
+    pub(crate) fn result_with(
+        ty: &Type,
+        symbols: &SymbolTable,
+        name: &dyn Fn(&b2c_ir::ids::SymbolId, &Ident) -> CName,
+    ) -> Self {
         if *ty == Type::Void {
             Self::Void
         } else {
-            Self::value(ty, symbols)
+            Self::value_with(ty, symbols, name)
         }
     }
 
@@ -139,19 +216,21 @@ impl CType {
         }
     }
 
-    /// The length in bytes of the type as printed.
-    pub(crate) fn width(&self) -> usize {
+    /// The length in bytes of the type as printed, each piece of generator
+    /// text as long as `measure` says (standard names may be written short,
+    /// w3-modules.md §2.12).
+    pub(crate) fn width(&self, measure: &dyn Fn(&'static str) -> usize) -> usize {
         match self {
-            Self::Lib(ty, args) if args.is_empty() => ty.cpp_name().len(),
+            Self::Lib(ty, args) if args.is_empty() => measure(ty.cpp_name()),
             // `name<a, b>`
             Self::Lib(ty, args) => {
-                ty.cpp_name().len() + 2 + args.iter().map(Self::width).sum::<usize>() + 2 * (args.len() - 1)
+                measure(ty.cpp_name())
+                    + 2
+                    + args.iter().map(|arg| arg.width(measure)).sum::<usize>()
+                    + 2 * (args.len() - 1)
             }
-            // `a::b`
-            Self::Named(path) => {
-                path.iter().map(|part| part.as_str().len()).sum::<usize>() + 2 * path.len().saturating_sub(1)
-            }
-            other => other.keyword().map_or(0, str::len),
+            Self::Named(name) => name.width(),
+            other => other.keyword().map_or(0, measure),
         }
     }
 
@@ -178,14 +257,7 @@ impl CType {
                     key.push('>');
                 }
             }
-            Self::Named(path) => {
-                for (index, part) in path.iter().enumerate() {
-                    if index > 0 {
-                        key.push_str("::");
-                    }
-                    key.push_str(part.as_str());
-                }
-            }
+            Self::Named(name) => key.push_str(&name.text()),
             other => key.push_str(other.keyword().unwrap_or_default()),
         }
     }
@@ -317,13 +389,10 @@ pub(crate) enum Prec {
 /// The function a call names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Callee {
-    /// A user function.
-    User(Ident),
-    /// A user function of the global namespace, or of the file's anonymous
-    /// namespace, named from the global namespace: `::name` (w3-modules.md
-    /// §2.12), where the lookup model finds another entity by the plain
-    /// name.
-    Global(Ident),
+    /// A user function, as the call spells it (w3-modules.md §2.12): `area`,
+    /// `::area` where the lookup model finds another entity by the plain
+    /// name, or `geo::area`.
+    User(CName),
     /// A standard-library function or support helper chosen by the generator
     /// (e.g. `std::to_string`, `b2c::random_int`).
     Fixed(&'static str),
@@ -352,8 +421,8 @@ pub(crate) enum CExprKind {
     Char(CharLit),
     /// A primary token chosen by the generator: `true`, `std::cout`, `'\n'`, …
     Fixed(&'static str),
-    /// A variable, parameter or function name.
-    Name(Ident),
+    /// A variable or parameter, or a global as the reference spells it.
+    Name(CName),
     /// A prefix operator.
     Unary {
         /// Operator.
@@ -410,10 +479,11 @@ pub(crate) enum CExprKind {
         /// The field.
         field: Ident,
     },
-    /// `Color::Red`: an enumerator, after its enum's qualified name.
+    /// `Color::Red`: an enumerator, after its enum's name as the place
+    /// spells it (`geo::Color::Red`).
     Enumerator {
-        /// The enum's qualified name.
-        owner: Vec<Ident>,
+        /// The enum's name.
+        owner: CName,
         /// The enumerator.
         value: Ident,
     },
@@ -786,8 +856,8 @@ pub(crate) enum CStmtKind {
     Expr(CExpr),
     /// `target op value;`
     Assign {
-        /// Variable assigned to.
-        target: Ident,
+        /// Variable assigned to (a global as the statement spells it).
+        target: CName,
         /// Operator.
         op: AssignOp,
         /// Right-hand side.
@@ -795,8 +865,8 @@ pub(crate) enum CStmtKind {
     },
     /// `++target;` / `--target;`
     Inc {
-        /// Variable updated.
-        target: Ident,
+        /// Variable updated (a global as the statement spells it).
+        target: CName,
         /// Operator.
         op: IncOp,
     },
@@ -1098,6 +1168,15 @@ impl CEnum {
             .cloned()
             .collect()
     }
+
+    /// [`CEnum::qualified_name`] as a [`CName`].
+    pub(crate) fn qualified(&self) -> CName {
+        CName {
+            global: false,
+            scope: self.scope.clone(),
+            name: self.name.clone(),
+        }
+    }
 }
 
 /// A function the generator writes for a user type `T` (types.md §5.2).
@@ -1182,7 +1261,7 @@ mod tests {
     use super::*;
 
     fn name(text: &str) -> CExpr {
-        CExpr::new(CExprKind::Name(Ident::new(text).unwrap()))
+        CExpr::new(CExprKind::Name(Ident::new(text).unwrap().into()))
     }
 
     fn is_paren(e: &CExpr) -> bool {

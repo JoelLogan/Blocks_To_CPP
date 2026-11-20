@@ -9,6 +9,8 @@
 //! The printer also tracks the current line and column (1-based, columns in
 //! UTF-8 bytes, as GCC reports them) and records source-map ranges.
 
+use std::collections::BTreeSet;
+
 use b2c_ir::sast::Origin;
 use b2c_ir::source_map::{MappedRange, Position};
 use b2c_ir::text::{CharLit, Comment, FileStem, Ident, NumLit, StrLit};
@@ -28,6 +30,10 @@ pub(crate) struct Printer {
     ranges: Vec<MappedRange>,
     /// How many error placeholders (`/* error */`) were written.
     placeholders: usize,
+    /// The standard names generator text writes without `std::` from here
+    /// on, under a `using namespace std;` directive (w3-modules.md §2.12);
+    /// empty before the directive and in a file without one.
+    short_standard: BTreeSet<String>,
 }
 
 /// The marker every error placeholder contains. It can only come from
@@ -53,6 +59,7 @@ impl Printer {
             align_next: None,
             ranges: Vec::new(),
             placeholders: 0,
+            short_standard: BTreeSet::new(),
         }
     }
 
@@ -94,12 +101,35 @@ impl Printer {
     }
 
     /// Writes text chosen by the generator (keywords, punctuation, standard
-    /// names, support-helper code).
+    /// names, support-helper code), each standard name of
+    /// [`Printer::write_standard_short`]'s list without `std::`.
     pub(crate) fn fixed(&mut self, text: &'static str) {
         if text.contains(PLACEHOLDER_MARK) {
             self.placeholders += 1;
         }
-        self.write_raw(text);
+        if self.short_standard.is_empty() {
+            self.write_raw(text);
+        } else {
+            let short = crate::lower::names::shorten(text, &self.short_standard);
+            self.write_raw(&short);
+        }
+    }
+
+    /// From here on, generator text writes these standard names without
+    /// `std::` (`cout` for `std::cout`): the code after a `using namespace
+    /// std;` directive (06 §6.14.5).
+    pub(crate) fn write_standard_short(&mut self, names: BTreeSet<String>) {
+        self.short_standard = names;
+    }
+
+    /// The length in bytes of generator text as [`Printer::fixed`] would
+    /// write it here.
+    pub(crate) fn measure(&self, text: &'static str) -> usize {
+        if self.short_standard.is_empty() {
+            text.len()
+        } else {
+            crate::lower::names::shorten(text, &self.short_standard).len()
+        }
     }
 
     /// Writes an identifier.

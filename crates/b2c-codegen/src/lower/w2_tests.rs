@@ -69,7 +69,7 @@ fn out(items: Vec<CExpr>) -> CStmt {
 }
 
 fn student() -> CType {
-    CType::Named(vec![ident("Student")])
+    CType::Named(crate::cast::CName::plain(ident("Student")))
 }
 
 fn range_for(
@@ -169,7 +169,7 @@ fn compound_assignments_print_every_operator() {
         (AssignOp::Shr, ">>="),
     ] {
         let assign = CStmtKind::Assign {
-            target: ident("bits"),
+            target: ident("bits").into(),
             op,
             value: int_literal(1),
         };
@@ -307,7 +307,7 @@ fn switch_prints_cases_blocks_and_default() {
 fn do_while_try_throw_and_static_assert_print() {
     let do_while = CStmtKind::DoWhile {
         body: block(vec![stmt(CStmtKind::Inc {
-            target: ident("count"),
+            target: ident("count").into(),
             op: IncOp::Inc,
         })]),
         cond: CExpr::binary(BinOp::Lt, name("count"), int_literal(3)),
@@ -415,7 +415,7 @@ fn nodes_program(standard: CppStandard) -> String {
     let count = || name("count");
     let inc_count = || {
         stmt(CStmtKind::Inc {
-            target: ident("count"),
+            target: ident("count").into(),
             op: IncOp::Inc,
         })
     };
@@ -502,7 +502,7 @@ fn nodes_program(standard: CppStandard) -> String {
             false,
             items(),
             vec![stmt(CStmtKind::Assign {
-                target: ident("item"),
+                target: ident("item").into(),
                 op: AssignOp::Add,
                 value: int_literal(1),
             })],
@@ -514,7 +514,7 @@ fn nodes_program(standard: CppStandard) -> String {
             items(),
             vec![
                 stmt(CStmtKind::Assign {
-                    target: ident("item"),
+                    target: ident("item").into(),
                     op: AssignOp::Mul,
                     value: int_literal(2),
                 }),
@@ -565,7 +565,7 @@ fn nodes_program(standard: CppStandard) -> String {
             vec![inc_count()],
         )),
         stmt(CStmtKind::Assign {
-            target: ident("count"),
+            target: ident("count").into(),
             op: AssignOp::Sub,
             value: int_literal(1),
         }),
@@ -586,7 +586,7 @@ fn nodes_program(standard: CppStandard) -> String {
         (AssignOp::Shr, 2),
     ] {
         body.push(stmt(CStmtKind::Assign {
-            target: ident("bits"),
+            target: ident("bits").into(),
             op,
             value: int_literal(value),
         }));

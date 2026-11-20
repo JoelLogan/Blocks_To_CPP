@@ -20,14 +20,15 @@
 use std::collections::BTreeSet;
 
 use b2c_ir::headers::Header;
+use b2c_ir::sast::Origin;
 use b2c_ir::source_map::MappedRange;
 use b2c_ir::text::{Comment, FileStem, Ident};
 
 use crate::CodegenOptions;
 use crate::cast::{
     BinOp, BindingStyle, CBlock, CCase, CCatch, CEnum, CExpr, CExprKind, CFunction, CGenerated, CGlobal,
-    CParam, CStmt, CStmtKind, CStruct, CType, CTypeDef, Callee, ForStep, Generated, GeneratedParam, Init,
-    ParamStyle, Qualifier, RangeBinding,
+    CName, CParam, CStmt, CStmtKind, CStruct, CType, CTypeDef, Callee, ForStep, Generated, GeneratedParam,
+    Init, ParamStyle, Qualifier, RangeBinding,
 };
 use crate::helpers::{self, Helper};
 use crate::lower::{CDecl, LoweredModule, Placed, Region};
@@ -154,6 +155,35 @@ pub(crate) struct FilePlan<'a> {
     /// The types the `.hpp` forward-declares: each one's region, keyword
     /// (`struct` or `enum class`) and name.
     pub(crate) forward: Vec<(Region, &'static str, Ident)>,
+    /// What the `.cpp` writes after its includes and helpers.
+    pub(crate) directives: Directives,
+}
+
+/// The `using namespace` directives of a `.cpp` and what goes with them
+/// (w3-modules.md §1.7, §2.12; 06 §6.14.3): the user namespaces declared
+/// empty first, the directives (in a single-module `main.cpp` at global
+/// scope, in a multi-module `.cpp` as the first lines of an
+/// anonymous-namespace block), and the standard names written short after
+/// them. Each line maps to the block whose directive it is; Textbook
+/// style's has no block.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Directives {
+    /// The user namespaces declared empty (`namespace geo {}`), sorted by
+    /// name, each with the block of the directive that names it.
+    pub(crate) declare_empty: Vec<(Ident, Option<Origin>)>,
+    /// Whether `using namespace std;` is written.
+    pub(crate) std: bool,
+    /// The block that writes `using namespace std;` (none for Textbook
+    /// style).
+    pub(crate) std_origin: Option<Origin>,
+    /// `using namespace geo;` for each user namespace, sorted by name, with
+    /// its block.
+    pub(crate) user: Vec<(Ident, Origin)>,
+    /// Whether `#include <cstddef>` is added so that `std` is declared: a
+    /// block nominates it in a file with no standard header.
+    pub(crate) cstddef: bool,
+    /// The standard names written without `std::` after the directives.
+    pub(crate) short_standard: BTreeSet<String>,
 }
 
 #[cfg(test)]
@@ -168,6 +198,7 @@ impl<'a> FilePlan<'a> {
             header_includes: Vec::new(),
             header_order: &[],
             forward: Vec::new(),
+            directives: Directives::default(),
         }
     }
 }
@@ -208,6 +239,9 @@ pub(crate) fn source_file(
     if inline {
         headers.extend(helper_headers(helpers_used));
     }
+    if plan.directives.cstddef {
+        headers.extend(Header::standard("<cstddef>"));
+    }
     includes(&mut p, &headers);
     project_includes(&mut p, &plan.source_includes, !inline && !helpers_used.is_empty());
     if inline && !helpers_used.is_empty() {
@@ -219,6 +253,7 @@ pub(crate) fn source_file(
         p.newline();
     }
     let mut emitter = Emitter::new(p);
+    emitter.directives(&plan.directives, plan.multi_module);
     // Step 3 of 06 §6.7: each type in a section of its own; a run of
     // function declarations, or of globals, in one section. What the
     // module's header declares is not declared again, but a shared global
@@ -311,15 +346,12 @@ pub(crate) fn header_file(
     p.section();
     p.fixed("#pragma once");
     p.newline();
-    let parts = plan
+    let headers = header_headers(module, plan.header_order);
+    let support = plan
         .header_order
         .iter()
-        .filter_map(|item| module.decl_parts.get(item));
-    let headers: BTreeSet<Header> = parts
-        .clone()
-        .flat_map(|part| part.includes.iter().copied())
-        .collect();
-    let support = parts.clone().any(|part| !part.helpers.is_empty());
+        .filter_map(|item| module.decl_parts.get(item))
+        .any(|part| !part.helpers.is_empty());
     includes(&mut p, &headers);
     project_includes(&mut p, &plan.header_includes, support);
     let mut emitter = Emitter::new(p);
@@ -374,6 +406,28 @@ pub(crate) fn header_file(
         ranges,
         placeholders,
     }
+}
+
+/// The standard headers a module's `.hpp` includes: those of the
+/// declaration parts of the items it declares (`header_order`).
+pub(crate) fn header_headers(module: &LoweredModule, header_order: &[usize]) -> BTreeSet<Header> {
+    header_order
+        .iter()
+        .filter_map(|item| module.decl_parts.get(item))
+        .flat_map(|part| part.includes.iter().copied())
+        .collect()
+}
+
+/// Whether `b2c_support.hpp` with these helpers includes a standard
+/// header.
+pub(crate) fn support_has_standard_header(used: &BTreeSet<Helper>) -> bool {
+    helper_headers(used).next().is_some()
+}
+
+/// Whether a `.cpp` with this code includes a standard header itself (its
+/// helpers inline when `inline`).
+pub(crate) fn source_has_standard_header(module: &LoweredModule, inline: bool) -> bool {
+    !module.usage.includes.is_empty() || (inline && helper_headers(&module.usage.helpers).next().is_some())
 }
 
 /// Prints the shared support header with the given helpers.
@@ -450,6 +504,59 @@ impl Emitter {
         }
     }
 
+    /// The empty namespace declarations and the directives of a `.cpp`
+    /// (06 §6.14.3 rule 2), then writes the standard names short from here
+    /// on.
+    fn directives(&mut self, lines: &Directives, multi_module: bool) {
+        if !lines.declare_empty.is_empty() {
+            self.p.section();
+            for (name, origin) in &lines.declare_empty {
+                let start = self.p.position();
+                self.p.fixed("namespace ");
+                self.p.ident(name);
+                self.p.fixed(" {}");
+                if let Some(origin) = origin {
+                    self.p.map(start, origin);
+                }
+                self.p.newline();
+            }
+        }
+        if !lines.std && lines.user.is_empty() {
+            return;
+        }
+        if multi_module {
+            self.enter(&Region {
+                namespaces: Vec::new(),
+                anonymous: true,
+            });
+        }
+        self.p.section();
+        if lines.std {
+            let start = self.p.position();
+            self.p.fixed("using namespace std;");
+            if let Some(origin) = &lines.std_origin {
+                self.p.map(start, origin);
+            }
+            self.p.newline();
+        }
+        for (name, origin) in &lines.user {
+            let start = self.p.position();
+            self.p.fixed("using namespace ");
+            self.p.ident(name);
+            self.p.fixed(";");
+            self.p.map(start, origin);
+            self.p.newline();
+        }
+        if lines.std {
+            self.p.write_standard_short(lines.short_standard.clone());
+        }
+    }
+
+    /// The length in bytes of an expression printed on one line here.
+    fn width(&self, expr: &CExpr) -> usize {
+        flat_width(expr, &|text| self.p.measure(text))
+    }
+
     /// Closes and opens namespaces until `target`'s are open: the open ones
     /// that `target` does not share are closed, innermost first, then
     /// `target`'s other ones are opened, each `namespace n {` on a line of
@@ -524,9 +631,23 @@ impl Emitter {
                     self.p.fixed(">");
                 }
             }
-            CType::Named(path) => self.qualified(path),
+            CType::Named(name) => self.cname(name),
             other => self.p.fixed(other.keyword().unwrap_or("int /* error */")),
         }
+    }
+
+    /// A name of the program's own entities as its place spells it: `::`
+    /// first for the global namespace, then its namespaces and the name
+    /// joined by `::`.
+    fn cname(&mut self, name: &CName) {
+        if name.global {
+            self.p.fixed("::");
+        }
+        for part in &name.scope {
+            self.p.ident(part);
+            self.p.fixed("::");
+        }
+        self.p.ident(&name.name);
     }
 
     /// Identifiers joined by `::`.
@@ -821,7 +942,7 @@ impl Emitter {
         self.p.fixed("return ");
         let column = self.p.position().column;
         // The columns used so far, the value and the `;`.
-        let width = column as usize - 1 + flat_width(value) + 1;
+        let width = column as usize - 1 + self.width(value) + 1;
         match &value.kind {
             CExprKind::Binary { op, lhs, rhs } if width > LINE_WIDTH => {
                 self.expr(lhs);
@@ -956,7 +1077,7 @@ impl Emitter {
                 self.p.fixed(";");
             }
             CStmtKind::Assign { target, op, value } => {
-                self.p.ident(target);
+                self.cname(target);
                 self.p.fixed(" ");
                 self.p.fixed(op.token());
                 self.p.fixed(" ");
@@ -973,7 +1094,7 @@ impl Emitter {
             }
             CStmtKind::Inc { target, op } => {
                 self.p.fixed(op.token());
-                self.p.ident(target);
+                self.cname(target);
                 self.p.fixed(";");
             }
             CStmtKind::If { branches, else_body } => self.if_stmt(branches, else_body.as_ref()),
@@ -1076,7 +1197,7 @@ impl Emitter {
         let start = self.p.position().column as usize;
         let Some((head, rest)) = operands
             .split_first()
-            .filter(|_| start + flat_width(expr) > LINE_WIDTH)
+            .filter(|_| start + self.width(expr) > LINE_WIDTH)
         else {
             self.expr(expr);
             return;
@@ -1085,7 +1206,7 @@ impl Emitter {
         let align = self.p.position().column.saturating_add(1);
         for (index, operand) in rest.iter().enumerate() {
             // ` << operand`, plus the `;` after the last operand.
-            let width = 4 + flat_width(operand) + usize::from(index + 1 == rest.len());
+            let width = 4 + self.width(operand) + usize::from(index + 1 == rest.len());
             let used = self.p.position().column as usize - 1;
             if index > 0 && used + width > LINE_WIDTH {
                 self.p.newline_aligned(align);
@@ -1243,7 +1364,7 @@ impl Emitter {
             CExprKind::Str(lit) => self.p.str_lit(lit),
             CExprKind::Char(lit) => self.p.char_lit(*lit),
             CExprKind::Fixed(text) => self.p.fixed(text),
-            CExprKind::Name(name) => self.p.ident(name),
+            CExprKind::Name(name) => self.cname(name),
             CExprKind::Unary { op, operand } => {
                 self.p.fixed(op.token());
                 self.expr(operand);
@@ -1268,11 +1389,7 @@ impl Emitter {
             }
             CExprKind::Call { callee, args } => {
                 match callee {
-                    Callee::User(name) => self.p.ident(name),
-                    Callee::Global(name) => {
-                        self.p.fixed("::");
-                        self.p.ident(name);
-                    }
+                    Callee::User(name) => self.cname(name),
                     Callee::Fixed(name) => self.p.fixed(name),
                     Callee::Template(name, types) => {
                         self.p.fixed(name);
@@ -1316,7 +1433,7 @@ impl Emitter {
                 self.p.ident(field);
             }
             CExprKind::Enumerator { owner, value } => {
-                self.qualified(owner);
+                self.cname(owner);
                 self.p.fixed("::");
                 self.p.ident(value);
             }
@@ -1376,14 +1493,18 @@ fn stream_operands<'a>(expr: &'a CExpr, out: &mut Vec<&'a CExpr>) {
     }
 }
 
-/// The length in bytes of an expression printed on one line.
-fn flat_width(expr: &CExpr) -> usize {
+/// The length in bytes of an expression printed on one line, each piece
+/// of generator text as long as `measure` says (standard names may be
+/// written short, w3-modules.md §2.12).
+fn flat_width(expr: &CExpr, measure: &dyn Fn(&'static str) -> usize) -> usize {
+    let flat_width = |expr: &CExpr| flat_width(expr, measure);
+    let list_width = |items: &[CExpr]| list_width(items, measure);
     match &expr.kind {
         CExprKind::Num(lit) => lit.as_str().len(),
         CExprKind::Str(lit) => lit.to_cpp().len(),
         CExprKind::Char(lit) => lit.to_cpp().len(),
-        CExprKind::Fixed(text) => text.len(),
-        CExprKind::Name(name) => name.as_str().len(),
+        CExprKind::Fixed(text) => measure(text),
+        CExprKind::Name(name) => name.width(),
         CExprKind::Unary { op, operand } => op.token().len() + flat_width(operand),
         CExprKind::Binary { op, lhs, rhs } => flat_width(lhs) + op.token().len() + 2 + flat_width(rhs),
         CExprKind::Conditional {
@@ -1393,31 +1514,28 @@ fn flat_width(expr: &CExpr) -> usize {
         } => flat_width(cond) + 3 + flat_width(then_value) + 3 + flat_width(else_value),
         CExprKind::Call { callee, args } => {
             let name = match callee {
-                Callee::User(name) => name.as_str().len(),
-                Callee::Global(name) => name.as_str().len() + 2,
-                Callee::Fixed(name) => name.len(),
+                Callee::User(name) => name.width(),
+                Callee::Fixed(name) => measure(name),
                 Callee::Template(name, types) => {
-                    name.len()
+                    measure(name)
                         + 2
-                        + types.iter().map(CType::width).sum::<usize>()
+                        + types.iter().map(|ty| ty.width(measure)).sum::<usize>()
                         + 2 * types.len().saturating_sub(1)
                 }
             };
             name + 2 + list_width(args)
         }
-        CExprKind::Cast { ty, value } => "static_cast<>()".len() + ty.width() + flat_width(value),
+        CExprKind::Cast { ty, value } => "static_cast<>()".len() + ty.width(measure) + flat_width(value),
         CExprKind::Method { object, name, args } => {
             flat_width(object)
                 + 1
                 + name.len()
                 + 2
-                + args.iter().map(flat_width).sum::<usize>()
+                + args.iter().map(&flat_width).sum::<usize>()
                 + 2 * args.len().saturating_sub(1)
         }
         CExprKind::Field { object, field } => flat_width(object) + 1 + field.as_str().len(),
-        CExprKind::Enumerator { owner, value } => {
-            owner.iter().map(|part| part.as_str().len() + 2).sum::<usize>() + value.as_str().len()
-        }
+        CExprKind::Enumerator { owner, value } => owner.width() + 2 + value.as_str().len(),
         CExprKind::Index { object, index } => flat_width(object) + 2 + flat_width(index),
         CExprKind::Braces(items) => 2 + list_width(items),
         CExprKind::Init { ty, items } => {
@@ -1427,7 +1545,7 @@ fn flat_width(expr: &CExpr) -> usize {
                     field.as_ref().map_or(0, |field| field.as_str().len() + 4) + flat_width(value)
                 })
                 .sum();
-            ty.width() + 2 + fields + 2 * items.len().saturating_sub(1)
+            ty.width(measure) + 2 + fields + 2 * items.len().saturating_sub(1)
         }
         CExprKind::Paren(inner) => 2 + flat_width(inner),
         CExprKind::Error => "0 /* error */".len(),
@@ -1435,8 +1553,8 @@ fn flat_width(expr: &CExpr) -> usize {
 }
 
 /// The length of expressions separated by `, `.
-fn list_width(items: &[CExpr]) -> usize {
-    items.iter().map(flat_width).sum::<usize>() + 2 * items.len().saturating_sub(1)
+fn list_width(items: &[CExpr], measure: &dyn Fn(&'static str) -> usize) -> usize {
+    items.iter().map(|item| flat_width(item, measure)).sum::<usize>() + 2 * items.len().saturating_sub(1)
 }
 
 #[cfg(test)]
