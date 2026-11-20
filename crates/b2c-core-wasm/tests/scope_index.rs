@@ -392,3 +392,55 @@ fn other_modules_shared_functions_answer_as_the_scope_query() {
     let parked = analysis.parked_scope(&ModuleId::new("mod_stats").unwrap());
     assert_eq!(names(parked), ["s_area", "s_total"]);
 }
+
+/// The worker's index holds the definitions other modules share, with their
+/// module, and the namespaces that hold them (w3-modules.md §3.3, §5.3):
+/// in `shapes`, module main sees `geo::area`, `geo::Shape` and the other
+/// definitions geometry and report share, and the namespace `geo`, from the
+/// index alone; it does not see their own definitions (`geo::bounded`,
+/// `::bounded`).
+#[test]
+fn the_index_holds_other_modules_shared_definitions() {
+    let text = common::example("shapes");
+    let update = parse(&b2c_core_wasm::update(&text, r#"{"indentWidth":4}"#));
+    let index: Value = serde_json::from_str(&b2c_core_wasm::scope_index()).unwrap();
+    assert!(!index["shared"].as_array().unwrap().is_empty());
+    let lookup = Lookup::new(index, &update);
+    let module_of = |visible: &[Value], id: &str| -> Option<(String, bool)> {
+        visible.iter().find(|info| info["id"] == id).map(|info| {
+            (
+                info["module"].as_str().unwrap().to_owned(),
+                info["shared"] == true,
+            )
+        })
+    };
+    // On main's canvas and in its `when program starts`.
+    for visible in [lookup.parked("mod_main"), lookup.at("b422", None).unwrap()] {
+        for (id, module) in [
+            ("s_area", "mod_geometry"),
+            ("s_Shape", "mod_geometry"),
+            ("s_Colour", "mod_geometry"),
+            ("s_kMaxShapes", "mod_geometry"),
+            ("s_perimeter", "mod_report"),
+            ("s_print_shapes", "mod_report"),
+        ] {
+            assert_eq!(module_of(&visible, id), Some((module.to_owned(), true)), "{id}");
+        }
+        let geo = visible.iter().find(|info| info["kind"] == "namespace").unwrap();
+        assert_eq!(geo["name"], "geo");
+        for own in ["s_g_bounded", "s_r_bounded"] {
+            assert_eq!(module_of(&visible, own), None, "{own}");
+        }
+    }
+    // Report sees geometry's shared `geo::area` beside its own definitions.
+    let report = lookup.parked("mod_report");
+    assert_eq!(
+        module_of(&report, "s_area"),
+        Some((String::from("mod_geometry"), true))
+    );
+    assert_eq!(
+        module_of(&report, "s_r_bounded"),
+        Some((String::from("mod_report"), false))
+    );
+    assert_eq!(module_of(&report, "s_g_bounded"), None);
+}
