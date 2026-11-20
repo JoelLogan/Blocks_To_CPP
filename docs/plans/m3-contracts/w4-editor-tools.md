@@ -73,6 +73,12 @@ coordinator builds W3's second part (multi-module) and another session W5.
   pages (M5).
 * Cross-module types in the picker: W3's second part adds them to the
   symbol service; the picker lists whatever `userTypes()` gives (§6.2).
+  *Done by W3's package T:* `userTypes()` gives the shown module's structs
+  and enums, then each other module's shared ones with the module's name
+  (`PickerUserType.moduleName`, the provider's optional `otherModuleName`),
+  which the picker lists under a heading per module (*Module: utils*)
+  after *My types*; a module's own type hides another module's shared one of its
+  name ([w3-modules.md §7.1](w3-modules.md#71-corrections-made-with-p0-and-the-packages)).
 
 ## 2. Design
 

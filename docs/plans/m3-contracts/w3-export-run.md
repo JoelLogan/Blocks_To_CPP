@@ -195,14 +195,19 @@ and stay in it.
 ├── CMakeLists.txt       CMake ≥ 3.20 (target b2c_program, OUTPUT_NAME the program)
 ├── Makefile             g++ and GNU make; the program is <program>-<config>[-nosanitize][-noharden]
 ├── README.md            how to build, what the flags are
-└── .b2c-export.json     { format, formatVersion: 2, projectId, files: [...] }
+└── .b2c-export.json     { format, formatVersion: 3, projectId, files: [{ path, sha256 }, ...] }
 ```
 
 `<project-folder-name>` is the project's name in lower-case ASCII letters,
 digits and `-` (`export::folder_name`), or the program's name when nothing
 is left of it. The manifest records the project's ID (format 2; format 1,
 which did not, is read as "unknown project"), and a replacement is refused
-when it names another project. The CMake target has a fixed name so that a
+when it names another project. Since W3's second part the manifest is
+format 3, with each file's SHA-256 ([w3-modules.md §2.8](w3-modules.md#28-export)).
+With several modules, `src/` holds each module's `<stem>.cpp` and
+`<stem>.hpp` and `b2c_support.hpp`; the `Makefile` builds every source in
+one g++ command, and the README says that a project whose command passes
+8,000 characters needs the MSYS2 shell or CMake (cmd.exe takes 8,191). The CMake target has a fixed name so that a
 program called `install`, `test` or `clean` builds; C++26 is given as a
 compile flag (`-std=c++2c`, `/std:c++latest`) since CMake before 3.25 knows
 no C++26. `check_cxx_compiler_flag` links with the flag it checks, so a
@@ -241,7 +246,17 @@ assertions, sanitizers, hardening), so they cannot drift:
   names). `mode` is `New` (the folder must be missing or empty) or `Replace`
   (the folder must hold a `.b2c-export.json`; only the files it lists are
   replaced or removed, anything else is kept, and a file the new export
-  would write that the earlier one did not list refuses the export).
+  would write that the earlier one did not list refuses the export). Since
+  format 3, a listed file is replaced or removed only while its content
+  still has the recorded hash; a file changed since, or one an older
+  manifest records without a hash, is kept, named in the result
+  (`Written { files, kept }`, assembled by `export::assemble`) and kept in
+  the manifest with its earlier hash. An export first writes a manifest that
+  accepts each touched file's content before and after (`previous` beside
+  `sha256`), then removes and writes, then writes the final manifest, so an
+  interrupted _Replace_ leaves a folder a later _Replace_ accepts. The
+  manifest is read as a regular file of at most 256 KiB and 1,024 entries,
+  no path twice even ignoring case.
 * CLI: `b2c generate <project> --out <dir> --export` writes the layout into
   `<dir>` (`--replace` to replace an earlier export). Without `--export` it
   writes the generated files as before, with the banner; `--export` without

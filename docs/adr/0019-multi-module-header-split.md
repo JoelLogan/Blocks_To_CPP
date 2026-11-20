@@ -99,6 +99,8 @@ globals from values not yet set and broke `case` labels).
 **An own name against another module's shared name.** The module's own name
 wins (chosen), or `E0213` for every shared name in the project whatever is
 included, which turns an edit in one module into an error in another.
+(Owner decision W3M-D10 later took the second for `E0213` and kept the
+first for lookup: see point 6.)
 
 **Build.** A per-unit object cache, or recompiling every unit in parallel
 after any change, as M2 does (the cache costs replayed warnings and pruning).
@@ -142,8 +144,9 @@ when it has one, and otherwise to the one shared `area`.
   text *"`helper` belongs to module `utils`, which does not share it"* and
   the quick fix *Share `helper`* (W4).
 * Shared names are unique per namespace in the project (`E0210`, `E0211`).
-  A non-shared name may not be a shared name of its own module or of a
-  module whose header its `.cpp` includes (`E0213`, 06 §6.14.7).
+  A non-shared name may not be a shared name of any module in the same
+  namespace, whatever its `.cpp` includes (`E0213`, 06 §6.14.7; program-wide
+  since W3M-D10, point 6).
 * A shared definition's **header part** (a function's signature and default
   arguments; a struct's field types, default values and ticks; a constant's
   type and `constexpr` value) may name only shared, standard or library
@@ -330,4 +333,10 @@ and deleting a module.
 5. A module name that starts with `b2c` is an analyser error in every
    project, so the file still opens, rather than a load error.
 6. A module's own name hides another module's shared name, rather than
-   `E0213` across the whole project.
+   `E0213` across the whole project. *Amended by owner decision W3M-D10*
+   ([w3-modules.md §6](../plans/m3-contracts/w3-modules.md#6-for-the-owner-to-confirm)):
+   the own name still wins in lookup, but `E0213` applies program-wide. A
+   module's `.cpp` includes another header for any use, and then C++ needs
+   the non-shared name changed, so following the includes would put the
+   error on a definition the student did not touch; program-wide, it never
+   appears as a side effect of another edit.

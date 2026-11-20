@@ -906,7 +906,9 @@ impl Header {
 /// The catalog headers of an item, by where its code is printed.
 pub struct ItemHeaders {
     /// Blocks printed with the declaration: the signature, default arguments, a
-    /// `constexpr` constant's value, default member initialisers.
+    /// `constexpr` constant's value, default member initialisers. A shared
+    /// constant's form (`inline constexpr` or `extern const`) is itself part of
+    /// its header (w3-modules.md §2.4), so only an `inline constexpr` value is here.
     pub decl: BTreeSet<Header>,
     /// Blocks printed only with the definition: function bodies, a variable's
     /// initialiser, a `const` constant's value (ADR-0019 prints it in the `.cpp`).
@@ -1001,8 +1003,10 @@ The same allocation stands in ADR-0017, ADR-0018 and here.
 | Code | Meaning | From | First emitted |
 | --- | --- | --- | --- |
 | `B2C-E0140` | type term too deep or too wide | ADR-0017 | W1 (loader) |
-| `B2C-E0213` | name reachable through `::name` (06 §6.14.7) | spec, used by ADR-0019 | W3 |
+| `B2C-E0213` | a non-shared name that is any module's shared name in its namespace (06 §6.14.7; program-wide, W3M-D10) | spec, used by ADR-0019 | W3 |
 | `B2C-E0214` | a shared header part names a non-shared definition (was `E0424`) | ADR-0019 | W3 |
+| `B2C-E0215` | a type or namespace named like a nominated standard name (06 §6.14.7) | spec | W3 (with *use namespace* and Textbook style) |
+| `B2C-E0219` | namespaces nested more than 14 deep (`MAX_NAMESPACE_DEPTH`) | w3-modules.md | W3 |
 | `B2C-E0221` | a module name starts with `b2c` | ADR-0019 | W3 |
 | `B2C-E0313` | not comparable | ADR-0017 | W1 |
 | `B2C-E0314` | not printable | ADR-0017 | W1 |
@@ -1011,6 +1015,8 @@ The same allocation stands in ADR-0017, ADR-0018 and here.
 | `B2C-E0420`, `B2C-E0421` | declaration cycles (06 §6.7) | spec | W2 (structs; globals and default values) |
 | `B2C-E0422` | modules' headers form a cycle | ADR-0019 | W3 |
 | `B2C-E0423` | cross-module initialisation order | ADR-0019 | W3 |
+| `B2C-I0523` | a *use namespace* that is already in use | spec | W3 |
+| `B2C-E0703` | a C++20 standard sub-namespace in an older standard (06 §6.10) | spec | not yet: with *use namespace*'s sub-namespaces, M4 |
 | `B2C-W0506` | a decimal result that is infinity or NaN (division by a constant zero, a constant calculation too large) | L10 (§11.2) | W1 |
 
 * **Reused with new text:** `E0206` (ADR-0019's new meaning), `E0207`
@@ -1019,9 +1025,11 @@ The same allocation stands in ADR-0017, ADR-0018 and here.
   ADR-0018: class messages), `E0303` (L16: only text with what is not text
   or a character) and `E0517` (L10: also a constant `int` calculation or
   conversion that does not fit).
-* **Next free:** `E0141`, `E0219`, `E0222`, `E0429`; `W0509`. (W2 took
+* **Next free:** `E0141`, `E0222`, `E0429`; `W0509`. (W2 took
   `E0424` to `E0428`, `W0507` and `W0508`, and first emitted `E0402`,
-  `E0420` and `E0421`; w2.md §1.11.)
+  `E0420` and `E0421`; w2.md §1.11. W3 took `E0219` and first emitted
+  `E0213`, `E0214`, `E0215`, `E0219`, `E0221`, `E0422`, `E0423` and
+  `I0523`, with `E0206`'s new text; w3-modules.md §1.9.)
 * Each code gets its reference entry in `docs/reference/diagnostics/` in the
   pull request that first defines it, which `tools/check-diagnostics-docs.py`
   and `codes.rs:183-201` enforce. So `E0313`, `E0314` and `E0315` land in W1

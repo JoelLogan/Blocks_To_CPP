@@ -161,16 +161,21 @@ In a multi-module project (a single-module project behaves as today):
   fix *Share `helper`* (W4). The M2 meaning (no use across modules at all)
   goes.
 * **Duplicates.** Two shared definitions with one name in one namespace
-  are `E0210`, or `E0211` for functions until W2's overloads allow
-  different parameters. Non-shared definitions of different modules may
-  share a name.
+  are `E0210`, or `E0211` for functions: overloads of a shared function
+  live in one module (W3M-D5). Non-shared definitions of different modules
+  may share a name.
 * **`E0213`** ([06 §6.14.7](../../spec/06-compiler-pipeline.md#6147-names-that-must-change)):
-  a non-shared name of a module may not be a shared name of its own module
-  or of a module whose header its `.cpp` includes, directly or through
-  other headers. It replaces the cross-module part of `E0211`. With the
-  precedence rule, the only way to reach it is a reference made before the
-  module defined its own name; the scope query never offers the hidden
-  definition.
+  a non-shared name of a module may not be a shared name of any module in
+  the same namespace, its own included, whatever its `.cpp` includes
+  (program-wide, W3M-D10). It replaces the cross-module part of `E0211`.
+  The first draft let it follow the includes and claimed it could be
+  reached only by a reference made before the module defined its own name;
+  in fact any use that makes the `.cpp` include the other header reaches
+  it, on a definition the student did not touch. Its message names the
+  cause when the `.cpp` includes that header (the use, and each header on
+  the way as related locations), otherwise the header that would bring the
+  clash, and in the sharing module says *"Rename one of them, or share
+  this one too."*
 * **`E0214`.** A shared definition's header part (§3.3) names a non-shared
   definition of its own module. Text: *"`area` is shared, but its input
   `box` has the type `Box`, which is not. Share `Box` too."* Quick fix
@@ -234,10 +239,12 @@ struct's field types, default values and ticks, a constant's type and (for
 `<stem>.hpp` includes the header of module `n` when a header part needs a
 complete type or a definition from `n`:
 
-* a default argument, or a `constexpr` constant's type or value, that names
-  or builds anything of `n`;
-* a struct field whose type names a type of `n`, unless the field gets a
-  forward declaration under the next list;
+* a default argument, a field's default value, or a constant's type or
+  `constexpr` value, that names or builds anything of `n` (a type, an
+  enumerator, a function, a constant or a variable), and a shared
+  variable's type;
+* a struct field whose type names a type of `n`, also only inside lists:
+  the generated `{}` initialiser needs the struct complete;
 * a field of a comparable or printable struct: its generated operators
   compare or print the field, which needs the complete type (checked: the
   C++17 hidden friends fail on `std::vector<Point>` with `Point` only
@@ -248,13 +255,16 @@ complete type or a definition from `n`:
   template body.
 
 A type of `n` gets a forward declaration instead (`struct Point;`,
-`enum class Color;`, in its namespace) when it is named only in:
+`enum class Color;`, in its namespace) when it is named only in a
+parameter or return type of a function declaration. (The first draft also
+forward-declared for the type of an `extern` declaration and for a field
+of `std::vector<T>`; W3 includes for both, as the list above says.)
 
-* a parameter or return type of a function declaration;
-* the type of an `extern` declaration;
-* a field whose type is `std::vector<T>`, at any depth of `std::vector`
-  only, with `T` that type, when the field has no default value and the
-  struct is neither comparable nor printable.
+A shared constant's form, `inline constexpr` with its value in the header
+or `extern const`, is itself a header part: it follows L10's verdict and
+what the value names (`extern const` when it names something the module
+does not share), with no user choice, so an edit of the value that changes
+the form changes the header.
 
 The standard allows an incomplete element type only in `std::vector`,
 `std::list` and `std::forward_list` (C++17 `[vector.overview]`;
@@ -282,8 +292,8 @@ another standard library, so those fields include.
 
 `types.md` §5.1 lists "a constant's value" under `decl`. For a `const`
 constant the value is printed in the `.cpp`, so its headers are `body`
-headers; only a `constexpr` constant's value is `decl`. Types.md is to say
-so (§13 of this file).
+headers; only a `constexpr` constant's value is `decl`. types.md §5.1
+says so.
 
 ### 3.5 `<stem>.cpp`, in order
 
@@ -316,8 +326,11 @@ A `.cpp` is never included, so its includes cannot form a cycle.
 
 A header depends only on its own module's shared definitions and on the
 names, kinds and modules of the other modules' types and constants they
-use. Editing a function body, a variable's initialiser, a `const`
-constant's value or anything that is not shared never changes a header.
+use. Editing a function body, a variable's starting value, the value of a
+shared constant printed `extern const` that stays so, or anything not
+shared never changes a header. A property test holds this over edits that
+keep each shared constant's form
+([w3-modules.md §2.4](w3-modules.md#24-include-order-and-cycles)).
 
 ### 3.7 Helpers
 
@@ -326,8 +339,8 @@ some file uses a helper; otherwise helpers stay inline (03 §3.9). Codegen
 decides it from `program.modules.len()` and its own usage, which it tracks
 per output file (`Usage`, `crates/b2c-codegen/src/lower/mod.rs:31-37`, per
 `.cpp` and per `.hpp`). `CodegenOptions::helper_placement` and
-`FrontendOptions::helper_placement` (`crates/b2c-build/src/frontend.rs:53-54`)
-go, so the build and the preview cannot differ.
+`FrontendOptions::helper_placement` are gone (W3's integration step), so
+the build and the preview cannot differ.
 
 ## 4. The declaration graph
 
@@ -408,6 +421,10 @@ Calls into library packs and Raw C++ are not followed (M4). Reads in
 
 ## 5. Building several translation units
 
+Built in W3 as this section says, with the corrections of
+[w3-modules.md §7.1](w3-modules.md#71-corrections-made-with-p0-and-the-packages);
+the specification is [07 §7.5.1 to §7.5.3](../../spec/07-toolchain-build-run.md#751-build-directory).
+
 ### 5.1 `gen/` holds exactly the generated files
 
 After `write_generated_tracked` (`crates/b2c-build/src/compile.rs:711`),
@@ -429,13 +446,15 @@ never deletes anything.
   at once (`compile.rs:172`), then linked. Objects are passed relative to
   the compiler's working directory (`diag/`): `../obj/<stem>-<key12>.o`,
   or `../out/<stem>.o` without the cache. 257 objects with 64-character
-  stems take 257 × 87 ≈ 22,400 characters, below Windows' 32,767.
+  stems keep g++'s link argv under 26,000 characters, below Windows'
+  32,767 with room for what collect2 and ld add; the nightly 256-module
+  Windows build checks it.
 * **Progress** counts reused units as compiled at once.
 * **Limits** stay: per-unit time and memory, at most 256 modules
   ([05 §5.6](../../spec/05-project-format.md#56-validation-limits)), so at
   most 513 generated files and 257 translation units.
 
-### 5.3 The object cache (if-time; *owner to confirm*)
+### 5.3 The object cache (built in W3)
 
 * **Key:** SHA-256 of the toolchain fingerprint, the compile `argv` without
   its source and output paths, the unit's text, the text of every generated
@@ -445,8 +464,12 @@ never deletes anything.
   can include a project header (M4).
 * **Files:** `obj/<stem>-<key12>.o` and `obj/<stem>-<key12>.messages.json`,
   the unit's `b2c_toolchain::diagnostics::ParsedOutput` (already
-  `Serialize` and `Deserialize`). Both are written to temporary names in
-  `obj/` and renamed after a successful compile.
+  `Serialize` and `Deserialize`), as `{"format": 1, "output": …}`, read
+  with unknown fields refused. The compiler writes `tmp/<stem>.o` and the
+  build `tmp/<stem>.messages.json`, in the build folder's private `tmp/`;
+  both are renamed into `obj/` after the unit compiles (GCC 13 and 14 name
+  the SARIF file after the output's stem, so the temporary keeps the
+  source's). The key's toolchain fingerprint is the build manifest's.
 * **Reuse:** a unit whose two files exist is not compiled. Its messages are
   read (at most 4 MiB, a regular file, parsed strictly); anything wrong is a
   miss and the unit is compiled. The messages are mapped again with the
@@ -456,7 +479,8 @@ never deletes anything.
   removed, `compile.rs:801-803`, `:831-837`); cached objects stay, so after
   fixing an error in one unit only that unit compiles.
 * **Pruning:** after a successful link, `obj/` keeps only that build's
-  files (regular files matching the pattern, never through a link).
+  files (regular files matching the pattern, never through a link). It is
+  best effort: a file that cannot be deleted is logged and left.
 * Without the cache, a multi-module build compiles every unit into `out/`,
   in parallel, as M2 does.
 
@@ -464,6 +488,9 @@ never deletes anything.
 
 * Header code has source-map ranges like any other, on the blocks of its
   module. A forward declaration maps to the defining block of its type.
+* A message several units report at one place is kept once, with the
+  later copies' related places and raw text merged in (as built; see
+  [07 §7.5.3](../../spec/07-toolchain-build-run.md#753-diagnostics-capture-and-mapping)).
 * An unmapped place in a file attaches to `FileMap::module` (this replaces
   the first-range lookup of `compile.rs:1352-1363`, which finds no module
   for a file without ranges); in `b2c_support.hpp` it attaches to the
@@ -515,11 +542,12 @@ never deletes anything.
   position lookup of `apps/desktop/src/app/panels.tsx:113-122`; the file
   switcher exists, `apps/desktop/src/panels/code/CodePanel.tsx:79-81`).
 
-### 7.3 `use header of module` (if-time)
+### 7.3 `use header of module` (moved to M4)
 
-Including a module's header is automatic (§3.5). For an explicit include,
-as courses write it, a separate block `use header of module [utils]`
-(`org.use_module`) has one field of a new catalog field kind `module`. Its
+Not built in W3: it was part of the if-time sweep (package S), cut for the
+budget. Including a module's header is automatic (§3.5). For an explicit
+include, as courses write it, a separate block `use header of module
+[utils]` (`program.use_module`) has one field of a new catalog field kind `module`. Its
 value is a plain string holding the module's ID, so there is no new value
 shape and no format version. The resolve stage checks it against the
 document's modules (`E0607` when the ID is not one of them, for example
@@ -531,69 +559,13 @@ only (types.md §5.4).
 
 ## 8. Export (W3)
 
-### 8.1 Layout
-
-```text
-<chosen folder>/<slug>/
-├── src/<stem>.cpp, src/<stem>.hpp, src/b2c_support.hpp   (no init unit)
-├── CMakeLists.txt     add_executable(<slug> …) with the .cpp files in module order
-├── Makefile           one object per .cpp, each depending on its .cpp and every .hpp
-├── README.md
-└── .b2c-export.json   the manifest (§8.3)
-```
-
-No user text is written into `CMakeLists.txt` or the `Makefile` except the
-slug. The project name appears in comments through the comment encoder and
-in `README.md` as an escaped code span.
-
-### 8.2 The slug
-
-1. Lower-case ASCII letters and digits are kept; every other run of
-   characters becomes one `-`.
-2. Cut to 64 characters, then trim `-` at both ends.
-3. If the result does not start with a letter (empty, or `2048-game`),
-   prefix `project-`, then cut to 64 and trim again.
-4. If the result is a device name or starts with `b2c`, use `project`.
-
-The result always passes `FileStem::new`. Tests: `3D Shapes` gives
-`project-3d-shapes`; a 70-character name whose 64th character is a space
-gives no trailing `-`; `Con` gives `project`.
-
-### 8.3 The manifest
-
-```json
-{ "format": "blocks2cpp/export-manifest", "formatVersion": 1,
-  "files": [ { "path": "src/main.cpp", "sha256": "…64 hex…" }, … ] }
-```
-
-It lists every file the export wrote except itself, with the SHA-256 of
-what it wrote. It is untrusted input: the folder may have been copied,
-cloned or edited.
-
-* **Read:** a regular file, not through a link, at most 256 KiB, parsed by
-  the strict JSON parser (`b2c-model`); unknown keys, a duplicate path, a
-  path in different case from another, or more than 520 entries refuse it.
-* **Entries:** only `CMakeLists.txt`, `Makefile`, `README.md`,
-  `src/b2c_support.hpp`, or `src/<stem>.cpp` and `src/<stem>.hpp` with a
-  stem that passes `FileStem::new`. No other separator, no `..`, no
-  absolute path.
-* **Replace**, in order:
-  1. The export folder and `src/` are opened without following links;
-     either being a link or a junction refuses Replace.
-  2. A manifest that is missing or fails the checks above refuses Replace:
-     the folder counts as one Blocks2Cpp did not make.
-  3. Every listed file that exists must be a regular file whose content
-     still matches its hash; every file the new export writes that already
-     exists must be listed. Otherwise Replace stops before writing and names
-     the files.
-  4. The new files are written atomically, the listed files the new export
-     no longer writes (a deleted module's) are deleted, and the new manifest
-     is written last.
-* Nothing is ever deleted or overwritten that the manifest does not list
-  with a matching hash (08 §8.6, M3-D3).
-* `b2c generate --export` follows the same rules and replaces only with
-  `--replace`. Plain `b2c generate` writes the generated files by name, as
-  today, and never deletes anything.
+Superseded by what was built: the layout, the folder name and the scripts
+are in [w3-export-run.md §4](w3-export-run.md#4-export-to-cmake-and-make),
+and the manifest (format tag `blocks2cpp/export`, version 3, a SHA-256 per
+file, at most 1,024 entries) and *Replace* keeping edited files in
+[w3-modules.md §2.8](w3-modules.md#28-export) and
+[06 §6.11](../../spec/06-compiler-pipeline.md#611-export). This section's
+first draft (a slug, a `<slug>` target, manifest format 1) was not built.
 
 ## 9. Codes
 
@@ -632,12 +604,19 @@ From the plan of types.md §7:
 | --- | --- | --- |
 | W1 (done) | §1: `b2c-ir` types with defaults, `is_device_name` with both callers switched (no behaviour change), the `b2c-ipc` mirrors, `ipc-types` regenerated | — |
 | W2 (done 2026-10-28) | the declaration graph (§4.1, §4.2) with `E0420` and `E0421` in `b2c-lang`, filling `source_order` (types, globals and function declarations, with the *initialised* edges of globals and of struct and parameter default values, walked once per global rather than by the summary of §4.1); codegen printing in that order; the `SHARED` field on the new definition blocks (never shown yet) | W1 |
-| W3, first part | functions-only multi-module: `SHARED` on `func.define`, visibility and precedence, `E0206`, `E0213`, `E0214` for function signatures, `E0221`, headers and includes for functions, `b2c_support.hpp`, `gen/` pruning, the build's steps and de-duplication, `FileMap::module`, the module tabs, the C++ tab | W1 |
-| W3, second part | structs, enums, globals and constants across modules: the rest of §3.2 and §3.3, `E0214` for fields and constants, `E0422`, `E0423`, the `shapes.b2c` golden; export (§8); the *namespace* and *use namespace* blocks, moved from W2 ([w2.md §1.10](w2.md#110-not-in-w2)), with a module's namespace (§3.2) and the textbook-style setting | W2's definition blocks and graph |
-| W3, if-time | the object cache (§5.3), `use header of module` (§7.3) | — |
+| W3, first part (done 2026-11-04) | functions-only multi-module: `SHARED` on `func.define`, visibility and precedence, `E0206`, `E0213`, `E0214` for function signatures, `E0221`, headers and includes for functions, `b2c_support.hpp`, `gen/` pruning, the build's steps and de-duplication, `FileMap::module`, the module tabs, the C++ tab | W1 |
+| W3, second part (done 2026-11-20) | structs, enums, globals and constants across modules: the rest of §3.2 and §3.3, `E0214` for fields and constants, `E0422`, `E0423`, the `shapes.b2c` golden; export (§8); the *namespace* and *use namespace* blocks, moved from W2 ([w2.md §1.10](w2.md#110-not-in-w2)), with a module's namespace (§3.2) and the textbook-style setting | W2's definition blocks and graph |
+| W3, if-time | the object cache (§5.3, done); `use header of module` (§7.3, moved to M4) | — |
 | W4 | the *Share* quick fixes, the friendly `-Wunused-*` messages; if-time a *Move to module* command that keeps symbol IDs | W3 |
 
 ## 12. Tests
+
+The tests W3 wrote are listed per package in
+[w3-modules.md §5.2](w3-modules.md#52-per-package) (F's in
+`crates/b2c-lang/tests/modules_functions.rs`, the codegen snapshots
+`w3_f_shared_functions` and `w3_f_global_guard`, `golden.rs` and
+`export.rs`; T's in `crates/b2c-lang/tests/modules_types.rs`); the list
+below is the plan they came from.
 
 **Unit.**
 
@@ -780,6 +759,9 @@ takes these rows).
 | [07 §7.6.3](../../spec/07-toolchain-build-run.md#763-ide-init-unit) | the init unit's stem is covered by the reserved `b2c` prefix | W3 |
 | [08 §8.4.1](../../spec/08-security.md#841-identifiers) rule 6, [08 §8.6](../../spec/08-security.md#86-filesystem-safety) | the `b2c` prefix; `FileStem`; pruning; the manifest checks; export scripts | W3 |
 | [09 §9.2](../../spec/09-quality-and-delivery.md#92-testing-strategy) | the golden layout and checks of §12 | W3 |
+
+The W3 rows were applied by W3's docs step (2026-11-20), with what W3
+built; 03 §3.7.13's *use header of module* moved to M4 with package S.
 
 Also: the module documentation of `crates/b2c-core-wasm/src/clipboard.rs`
 (*Qualified names in milestone M2*) and types.md §5.1 (a `const`

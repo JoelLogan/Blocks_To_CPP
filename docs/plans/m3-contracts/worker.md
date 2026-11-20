@@ -308,10 +308,25 @@ export function serveCoreWorker(
   checks the version, the content hash against the preview's, that every
   parent is smaller than its node and every index is in range; a lookup
   never throws.
+* **Modules** (W3, [w3-modules.md §2.1](w3-modules.md#21-name-resolution-across-modules)).
+  The index gains `shared`, three numbers per entry (`[module, name,
+  symbol, …]`, program-wide, in symbol order): the definitions the modules
+  share. After the trail and its module's `functions`, a position sees
+  those of the other modules whose names neither has, so a module's own
+  `area` hides another module's shared `area`. A reader treats an index
+  without `shared` as sharing nothing. Since N2 the answers also list each
+  module's top-level namespaces and, through `shared`, the first block of
+  each top-level namespace that holds a shared definition.
 * **Store.** `AnalysisState` (`apps/desktop/src/app/store/state.ts:61-73`)
   gains `scope: ScopeIndex | null`, set in the same `setAnalysis` call as
   `preview`. `analysisScope` takes `{ scope, preview }` instead of
-  `{ core, preview }`.
+  `{ core, preview }`. *As built (W3's package E):* `scope` is
+  `ScopeIndex | 'none' | null` (`NO_SCOPE`, in `app/store`): the index;
+  `'none'` while the worker previews and no index fits the document shown,
+  so nothing answers rather than the main thread's core, which has not seen
+  that document; or `null` when the main thread's core previews. The core
+  host no longer answers from the index, and the session's pipeline holds
+  answers while a block is dragged.
 
 ## 5. The clipboard arguments
 

@@ -259,6 +259,26 @@ apply to every project on this computer:
 
 _Back to the editor_ returns to your project.
 
+## Modules and the project settings
+
+A bigger program can be split into **modules**, one canvas each, which
+become one `.cpp` file each. The strip above the canvas shows a button per
+module: click one (or use the arrow keys in the strip) to show it, **⊕** to
+add a module, and **⋯** (or a right click on a module) to rename, delete or
+move it; the first module names the program. Deleting a module can be
+undone with _Undo delete module_ in **≡** until the next module change.
+Tick _share with other modules_ on a _define_, _struct_, _enum_ or _global_
+to use it from the other modules: Blocks2Cpp writes its declaration into the
+module's header (`<module>.hpp`) and includes that header where it is used.
+
+**≡ → Project settings…** edits what is stored in the project: its name,
+the C++ standard, the build configurations, defines and run options. Under
+_Language_, **Textbook style** writes `using namespace std;` in every `.cpp`,
+so the code says `cout` instead of `std::cout`, as many textbooks do. A
+struct, enum or namespace named like a part of `std` (such as `list`) then
+shows a problem until you rename it; turning Textbook style off removes
+those problems. _Save changes_ applies the page as one change.
+
 ## Keyboard
 
 | Keys       | What they do                                 |

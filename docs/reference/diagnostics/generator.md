@@ -46,5 +46,8 @@ use a newer version of Blocks2Cpp.
 the project's C++ standard does not have yet: `std::ranges`, `std::views` and
 `std::numbers` arrive with C++20.
 
+**Not reported yet:** only the standard sub-namespaces in the menu of *use
+namespace* would bring these namespaces, and they come in M4.
+
 **How to fix:** choose C++20 or newer in the project settings, or do without
 that namespace.

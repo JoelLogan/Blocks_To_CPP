@@ -625,11 +625,16 @@ worker on.
 `AnalysisState.scope: ScopeIndex | null`, set by the pipeline with the
 preview; `analysisScope` reads `{ scope, preview }` and falls back to the
 core when `scope` is `null`. The host's view (§2.2) is then removed.
+_Done by W3's package E:_ `scope` is `ScopeIndex | 'none' | null`
+(`NO_SCOPE`, now in `app/store`), set with its preview in one update;
+`'none'` while the worker previews and no index fits the document shown,
+so nothing answers rather than the main core, which has not seen that
+document. The core host no longer answers from the index.
 
 ### 10.4 The hold's one line (`sync/session.ts`, W4's)
 
 In `EditorSession`'s constructor, the pipeline's options gain
-`isBusy: () => isDragging(this.workspace)`.
+`isBusy: () => isDragging(this.workspace)`. _Done by W3's package E._
 
 ### 10.5 `pnpm doctor`'s test in CI
 

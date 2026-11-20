@@ -199,7 +199,7 @@ pushed.
 | W0   | Decisions above; ADR-0016 (Worker) and ADRs for the type representation (L14), slot typing (L15) and the header split (L18); the catalog schema extension (L17); the M3-D1 assignments as acceptance tests checked against reference solutions; the Blockly 13 / xterm 6.1 spike. Done 2026-10-25 (§3.6) | — | M    |
 | W1   | Foundations from [the contracts](m3-contracts/types.md): L14, L15, L17 with `headers` (L8), L16, L10, and ADR-0019's IR types (no output change); the catalog snapshot test. Done 2026-10-25 (§3.7) | W0 ADRs | XL   |
 | W2   | Language blocks needed by the assignments: collections, strings, structs, enums, files, errors, random, time, globals, constants, math, conversions, `switch`, `do … while`, overloads, default arguments, M3-8. Contract and packages: [w2.md](m3-contracts/w2.md). Done 2026-10-28 (§3.8) | W1                             | XL   |
-| W3   | Projects, build, run: multi-module (L18) in two parts (functions across modules after W1; structs, enums, globals and constants after W2's definition blocks; the per-unit object cache if-time), _namespace_ and _use namespace_ (from W2, [w2.md §1.10](m3-contracts/w2.md#110-not-in-w2)), CMake/Make export, project settings dialog, run options, close-input, S7-5, S7-7, S7-8. Export, run options, close-input, the project settings page and S7-5, S7-7, S7-8 merged 2026-10-28 ([w3-export-run.md](m3-contracts/w3-export-run.md)) | W1; W2's integration for the first part, as it shares files with W2 ([w2.md §3.4](m3-contracts/w2.md#34-order)); W2 for the second part | L    |
+| W3   | Projects, build, run: multi-module (L18) in two parts (functions across modules after W1; structs, enums, globals and constants after W2's definition blocks; the per-unit object cache if-time), _namespace_ and _use namespace_ (from W2, [w2.md §1.10](m3-contracts/w2.md#110-not-in-w2)), CMake/Make export, project settings dialog, run options, close-input, S7-5, S7-7, S7-8. Export, run options, close-input, the project settings page and S7-5, S7-7, S7-8 merged 2026-10-28 ([w3-export-run.md](m3-contracts/w3-export-run.md)); the rest done 2026-11-20 ([w3-modules.md](m3-contracts/w3-modules.md), §3.9), but for the if-time sweep (package S), moved to M4 | W1; W2's integration for the first part, as it shares files with W2 ([w2.md §3.4](m3-contracts/w2.md#34-order)); W2 for the second part | L    |
 | W4   | Editor: type picker, Quick Insert, toolbox search, expert mode, quick fixes, _Copy bug report_, feature gating, friendly g++ messages, Appearance (F-1, U14d); from W2, the ⚙ popover (`constexpr`, `static`), _format … with_ and the unchecked `[]` index from the block's context menu. Appearance, expert mode's settings and the gating service merged 2026-10-28 ([w4-appearance-expert.md](m3-contracts/w4-appearance-expert.md)) | W1, W2 for the blocks it shows | L    |
 | W5   | Performance and platform: starting with the worker CSP spike on both webviews (ADR-0016), the Worker preview (M3-1), M3-5, M3-4, M3-9, M3-6, M3-7, RD-15 (the Blockly 13 upgrade moved after M3: W0's spike was not clean); the toolbox flyout's cost per block (§3.8). The spike and M3-1's first part, behind a flag, merged 2026-10-28 ([w5-worker.md](m3-contracts/w5-worker.md)) | W2 (stable `update()`) | L    |
 | W6   | Close-out: every M3-D1 assignment green, threat-model review, toolchain cells, docs and the getting-started guide, usability protocol for M3, a green nightly and weekly                                                                                 | all                            | M    |
@@ -451,13 +451,9 @@ helper that injects only some categories would let most of them go back
   folder in the project, the input file for the app session, the external
   terminal, export to CMake and Make (`b2c generate --export`, _Export as
   C++ project…_), the project settings page, and S7-5, S7-7 and S7-8. The
-  IPC contract has 39 commands. **Remaining:** multi-module projects in
-  their two parts (functions across modules first, which can start now;
-  then structs, enums, globals and constants across modules), _namespace_
-  and _use namespace_, the per-unit object cache if time, the project name
-  in the project settings page (an M3 item of
-  [10 §10.1](../spec/10-roadmap.md#m3-language-breadth-i); the page does
-  not edit the name yet), and the spec sections of w3-export-run.md §10.
+  IPC contract has 39 commands. **Remaining:** done on 2026-11-20 but for
+  the if-time sweep (§3.9); the spec sections of w3-export-run.md §10 that
+  W3's docs step did not cover remain (§3.9).
 - **W4**, Appearance and expert mode
   ([w4-appearance-expert.md](m3-contracts/w4-appearance-expert.md)): the
   Appearance setting with the `[data-theme]` refactor and a console that
@@ -483,3 +479,89 @@ helper that injects only some categories would let most of them go back
   and the drag hold, the spans and metrics, the hooks and E2E flows with the
   worker on, and removing the flag), M3-5, M3-4, M3-9, M3-6, M3-7, RD-15 and
   the toolbox cost above.
+
+### 3.9 W3: done, and what remains
+
+**Done** on 2026-11-20, on `ccr-01f82d9b-v70u20`, from `62f5b9f`: W3's
+second part, after its contract ([w3-modules.md](m3-contracts/w3-modules.md),
+reviewed three times on 2026-10-28). Round R0: P0, the
+contracts in code (the IR's namespace symbols and spellings, Textbook style
+readable and written, `MAX_NAMESPACE_DEPTH`, _share with other modules_ on
+_define_ written only when ticked, the layout and its codes, files by the
+layout and `b2c_support.hpp` from two modules on; `43239a7`..`2a73ca2`),
+and package B, building and exporting several modules (`gen/` pruning,
+relative object paths, messages across units, export manifest format 3 and
+_Replace_ keeping edited files; merged in `c3f3cd9`, with its fixes
+`b6213db`, `58b860f` and `256d12c`). Round R1: package F, functions across
+modules (`c5d8536`..`59435b1`, the `unit_converter` example), and package
+E, the editor for modules (the module strip, module edits with _Undo
+delete_, the C++ tab by module, the project name on the settings page;
+merged in `7906a48`), with the reviews of F and E (`34d7871`..`b5c810b`)
+and `B2C-E0213` made program-wide (`03bf24a`). Round R2: package T,
+structs, enums, globals and constants across modules (`a80b630`..`2c922c0`,
+the `gradebook` and `inventory` examples); package N1, the _namespace_
+block and the standard-name table (`3d8778d`..`f1bbce6`); and package C,
+the per-unit object cache (`38b7e4e`, `db34a5d`, `0b7133d`). Round R3:
+package N2, the lookup model's M3 subset, _use namespace … in this file_
+and Textbook style (`9dcd0e0`..`be726fa`, the `shapes` and
+`textbook_grades` examples; N1 and N2 merged in `55a1c7e`). The
+integration step of w3-modules.md §5.3 (`f6bbcaf`..`07f907d`: the
+standard-name table with GCC 15's names, the every-g++ forms test on a
+three-module program, paste binding namespace-qualified names and keeping
+free symbol IDs (W3M-D12 (b)), `helper_placement` dropped, the scope
+index's test, the native benchmark's 8-module case `pipeline/preview-modules`
+(reported, not gated), `pnpm test:tools` in CI, the security suite and
+fuzz seeds at the limits, and the nightly 256-module build and export),
+then the module strip's last fix and its visual scenes (`a89f994`,
+`3fbad30`), and this docs step. The catalog has 88 blocks. The owner's
+decisions W3M-D10 to W3M-D13 were taken as recommended: `B2C-E0213` is
+program-wide (ADR-0019 point 6 amended), `SHARED` is written only when
+ticked, a paste keeps free symbol IDs, and Textbook style has no preview in
+M3. The specification describes what W3 built, and w3-modules.md §7.1
+records each place where the code differs from the contract, with its
+reason.
+
+**Moved to M4:**
+
+- **Package S**, the if-time sweep: _use namespace … here_, the standard
+  sub-namespaces in _use namespace_'s menu and _use header of module_, cut
+  for the budget ([10 §10.1](../spec/10-roadmap.md#m4-language-breadth-ii)).
+  `B2C-E0703` (a C++20 sub-namespace in an older standard) is allocated and
+  documented, and waits for it.
+- Textbook style's preview, _Rename all and turn on_ and the hovers that
+  explain `::`; the lookup model's rules for classes, Raw C++ and library
+  packs; the background probe of a toolchain newer than the standard-name
+  table (w3-modules.md §1.8).
+
+**Still to do for W3:**
+
+- **W5 §10.1**, lowering parked stacks (M3-4): not done by the integration
+  step, since it is well defined but not small (w3-modules.md §7.1, _From
+  the W4 and W5 merges_); a change of its own.
+- **Lookup (owner decision):** the scope query hides another module's
+  shared definition behind the module's own definition of the same plain
+  name, whatever their namespaces (an own `::count` hides a shared
+  `geo::count`), and the paste binds only what the query lists. C++ would
+  see both. Fixing it changes `ScopeIndex::visible` and both lookups (Rust
+  and TypeScript), so it was left as it is and is put to the owner
+  (w3-modules.md §7.1).
+- **WebAssembly size:** the core is 1,985,234 bytes after `wasm-opt`,
+  against the 2,000,000-byte budget of ADR-0003; the next wave's growth
+  will need a saving or a decision on the budget.
+- **Analysis time:** it grows faster than linearly with the module count
+  when every module has globals: 128 modules take 0.56 s and 256 take
+  1.5 s (the layout of 64 modules sharing structs, functions and globals is
+  about linear, `c4ecb92`).
+- **Visual baselines:** `chrome-modules-two` and `chrome-modules-five` wait
+  for CI candidates.
+- **Bench A/B:** the run on the wave's range `62f5b9f..HEAD` is in progress;
+  `pipeline/preview-modules` is gated once it has its baselines.
+- **Dependabot #35:** `@codemirror/view` 6.43.15, `zustand` 5.0.16 and
+  `vite` 8.3.5 are still to review.
+- The spec sections of w3-export-run.md §10 (W3's export and run slice)
+  that this docs step did not cover: 04 §4.5 (_End input_, run options),
+  §4.10 and §4.12, 05 §5.9 (`run.externalTerminal`), and 07 §7.5.1's
+  sandboxes, §7.6.1, §7.6.2, §7.6.5 and §7.9; 02 §2.5.2 and
+  `docs/reference/cli.md` already name the new commands and `--replace`.
+- `ProjectExportDialogResponse` could gain an additive list of the kept
+  files, so that the app names them (it logs their count now).

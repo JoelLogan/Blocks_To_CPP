@@ -87,12 +87,15 @@ check compiles. The first line sets it for your shell; changing `RUSTFLAGS`
 rebuilds everything, so you may prefer a `CARGO_TARGET_DIR` of its own for
 these checks (they need about 20 GB of disk). CI also sets `B2C_REQUIRE_GXX`,
 the second line: without it, the tests that need g++ pass by skipping when
-there is none. `cargo deny` downloads the RustSec advisory database first;
+there is none. Likewise `B2C_REQUIRE_MAKE` makes the export test's `make`
+builds fail, rather than skip, without GNU make (on Windows, MSYS2's
+`mingw-w64-ucrt-x86_64-make`, whose `mingw32-make` the test also finds). `cargo deny` downloads the RustSec advisory database first;
 `cargo deny --offline …` uses the copy from its last run.
 
 ```sh
 export RUSTFLAGS='-D warnings'               # as in CI
 export B2C_REQUIRE_GXX=1                     # as in CI: fail, not skip, without g++
+export B2C_REQUIRE_MAKE=1                    # as in CI: fail, not skip, without make
 cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 rustup target add x86_64-pc-windows-gnu      # once, for the next lines
