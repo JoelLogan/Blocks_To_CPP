@@ -1,0 +1,6 @@
+Side of the tile: square has area 9 and perimeter 12 and is Red
+banner has area 16 and perimeter 20 and is Blue
+dot has area 1 and perimeter 0 and is Green
+Shapes made: 4 of which listed at most 3
+Total area: 30
+Perimeter of the first: 12

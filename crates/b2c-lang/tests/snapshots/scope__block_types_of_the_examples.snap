@@ -102,6 +102,33 @@ palindrome.b2c:
   b033: "bool"
 primes.b2c:
   (no value blocks)
+shapes.b2c:
+  b012: "int"
+  b013: "int"
+  b014: "int"
+  b015: "int"
+  b016: "int"
+  b201: "int"
+  b202: "int"
+  b203: "int"
+  b204: "int"
+  b214: "int"
+  b215: "int"
+  b216: {"ref":"s_Shape"}
+  b218: "std::string"
+  b219: {"ref":"s_Colour"}
+  b401: {"std::vector":{"ref":"s_Shape"}}
+  b403: {"ref":"s_Shape"}
+  b404: {"ref":"s_Colour"}
+  b406: {"ref":"s_Shape"}
+  b407: {"ref":"s_Colour"}
+  b409: {"ref":"s_Shape"}
+  b410: {"ref":"s_Colour"}
+  b414: {"ref":"s_Shape"}
+  b415: {"ref":"s_Colour"}
+  b417: "int"
+  b425: {"ref":"s_Shape"}
+  b426: "int"
 student_records.b2c:
   b004: "int"
   b010: "bool"
@@ -122,6 +149,14 @@ temperature.b2c:
   (no value blocks)
 temperature_table.b2c:
   (no value blocks)
+textbook_grades.b2c:
+  b021: "int"
+  b029: "double"
+  b030: "double"
+  b031: "double"
+  b103: "int"
+  b105: "int"
+  b107: "double"
 times_table.b2c:
   (no value blocks)
 tricky_text.b2c:

@@ -26,14 +26,16 @@ use common::run_data::RunData;
 /// struct, an enum with its print support and a `constexpr` constant, and
 /// forward-declare a struct; `inventory`, whose header declares a shared
 /// variable and an `extern const` constant.
-const EXAMPLES: [&str; 7] = [
+const EXAMPLES: [&str; 9] = [
     "hello_world",
     "greeting",
     "matrix_sum",
     "palindrome",
+    "textbook_grades",
     "unit_converter",
     "gradebook",
     "inventory",
+    "shapes",
 ];
 
 /// The examples of several modules, which CMake builds too.
@@ -1130,4 +1132,46 @@ fn the_readme_names_the_shell_only_for_a_command_too_long_for_cmd() {
     assert!(sources > 7_000, "{sources}");
     assert!(long.contains(note), "{long}");
     assert!(long.contains("MSYS2 shell,\nor build with CMake."), "{long}");
+}
+
+/// 06 §6.14.12, w3-modules.md §2.8: the README says that a `.cpp` holds a
+/// `using namespace` directive, that a header never does, and which GCC
+/// versions the names were checked against, only when an exported `.cpp`
+/// holds one: Textbook style's (`textbook_grades`) or a *use namespace*
+/// block's (`shapes`).
+#[test]
+fn the_readme_names_the_directives_only_when_a_source_holds_one() {
+    let note = "hold a `using namespace` directive";
+    for (name, directive) in [
+        ("hello_world", false),
+        ("gradebook", false),
+        ("textbook_grades", true),
+        ("shapes", true),
+    ] {
+        let bytes = std::fs::read(repo_root().join("examples").join(format!("{name}.b2c"))).unwrap();
+        let export = export::prepare(&bytes, 4, "0.0.0-test").unwrap();
+        let readme = &export
+            .files
+            .iter()
+            .find(|file| file.path == "README.md")
+            .unwrap()
+            .contents;
+        assert_eq!(readme.contains(note), directive, "{name}:\n{readme}");
+        if directive {
+            assert!(readme.contains("a header (`.hpp`) never holds one"), "{readme}");
+            assert!(readme.contains("the standard library of GCC 11"), "{readme}");
+            let sources = export
+                .files
+                .iter()
+                .filter(|file| Path::new(&file.path).extension().is_some_and(|ext| ext == "cpp"))
+                .any(|file| file.contents.contains("using namespace "));
+            assert!(sources, "{name}");
+        }
+        let headers = export
+            .files
+            .iter()
+            .filter(|file| Path::new(&file.path).extension().is_some_and(|ext| ext == "hpp"))
+            .all(|file| !file.contents.contains("using namespace "));
+        assert!(headers, "{name}");
+    }
 }
