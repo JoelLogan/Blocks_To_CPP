@@ -181,13 +181,14 @@ export function ModuleSwitcher() {
     }
   };
 
-  // Keep the shown module's button in view inside the strip.
+  // Keep the shown module's button in view inside the strip, also once *All modules…* has
+  // appeared: it takes room from the buttons, which can push the shown one out of view.
   useEffect(() => {
     const button = active === null ? undefined : buttons.current.get(active);
     if (typeof button?.scrollIntoView === 'function') {
       button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
-  }, [active, ids.length]);
+  }, [active, ids.length, overflowing]);
 
   // Whether the buttons overflow the strip (then *All modules…* is offered).
   useLayoutEffect(() => {

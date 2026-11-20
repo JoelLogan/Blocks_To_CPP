@@ -453,6 +453,46 @@ describe('the module strip', () => {
     }
   });
 
+  it('keeps the shown module in view once All modules… takes room from the buttons', () => {
+    const scroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
+    const client = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const scrolled: { file: string; withAllModules: boolean }[] = [];
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.getAttribute('role') === 'toolbar' ? 900 : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 300,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value(this: HTMLElement) {
+        scrolled.push({
+          file: this.textContent,
+          withAllModules: screen.queryByRole('button', { name: 'All modules…' }) !== null,
+        });
+      },
+    });
+    try {
+      openWith(['main', 'geometry', 'graphics', 'report'], 'report');
+      renderStrip();
+      expect(screen.getByRole('button', { name: 'All modules…' })).toBeDefined();
+      // The last time the strip scrolled, the shown module's button had its final room.
+      expect(scrolled.at(-1)).toEqual({ file: 'report.cpp', withAllModules: true });
+    } finally {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+      if (scroll !== undefined) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollWidth', scroll);
+      }
+      if (client !== undefined) {
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', client);
+      }
+    }
+  });
+
   it('shows a module whose name cannot be a file name as module<N>.cpp with an error mark', async () => {
     openWith(['main', 'b2c_tools']);
     renderStrip();
