@@ -562,6 +562,66 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   run in a dedicated worker under its own policy (`WORKER_CSP`: WebAssembly
   and nothing more), in builds made with `B2C_PREVIEW_WORKER=1` only; the
   E2E flow `preview-worker`. It was clean on WebKitGTK and WebView2.
+- Multi-module projects (wave W3, ADR-0019): _share with other modules_ on
+  _define_, _struct_, _enum_ and _global_, shown in a project with several
+  modules, lets other modules use a function, struct, enum, global variable
+  or constant. A shared definition is declared in its module's header
+  (`<module>.hpp`, `#pragma once`): a function with its default values, a
+  struct or enum in full (a shared enum's `operator<<` and `b2c::to_text`
+  declared right after it and defined in the `.cpp`), a variable `extern`,
+  a constant `inline constexpr`, or `extern const` when its value names
+  something not shared. Each `.cpp` includes the headers it needs, the
+  headers include what their declarations need and forward-declare the
+  rest, and one declaration graph orders every file. What a module does not
+  share is in an anonymous namespace, so modules may reuse those names, and
+  the helpers go to `b2c_support.hpp`. _Your functions_ and the type picker
+  list other modules' shared functions and types under each module's name,
+  and a module's own definition hides another module's shared one of that
+  name. Examples `unit_converter`, `gradebook` and `inventory`.
+- The module strip above the canvas (wave W3), shown from one module on: a
+  button per module (one Tab stop, the arrow keys, Home and End), ⊕ _Add
+  module_, and _Rename…_, _Delete…_, _Move left_ and _Move right_ from ⋯,
+  Shift+F10 or a right click, with _All modules…_ and type-ahead when the
+  buttons do not fit. Module edits are project edits: names are checked as
+  the loader checks them, deleting a module with blocks asks first, and
+  _Undo delete_ (in the strip and as ≡ _Undo delete module_) puts a deleted
+  module back with its IDs until the next module edit. The C++ tab lists
+  the shown module's files first, then each other module's, and clicking a
+  header's declaration selects its block. E2E flows `modules`,
+  `modules-types` and `project-name`.
+- The project's name on the project settings page (wave W3): a _Project_
+  section with a _Name_ field, saved with the other settings as one edit.
+- Namespaces and Textbook style (wave W3): the _namespace_ block, whose
+  mouth holds functions, structs, enums, globals and other namespaces (at
+  most 14 deep), one namespace across blocks and modules; _use namespace …
+  in this file_ (for `std` or a namespace of the program); and _Textbook
+  style_ on the project settings page, which writes `using namespace std;`
+  in every `.cpp` (`options.usingNamespaceStd`, project format 2), applied
+  as one edit without a preview. The analyser decides how each name is
+  written (plainly, `::max(…)` or `geo::area`) so that the program does
+  the same with or without a directive, against a table of the standard
+  library's names for GCC 11 to 15. Examples `shapes` and `textbook_grades`;
+  the block catalog has 88 blocks. E2E flow `namespaces`.
+- The per-unit object cache (wave W3): a build of several modules compiles
+  only the units whose code, headers, flags or compiler changed, keeps the
+  objects of a failed or cancelled build, and replays a reused unit's
+  warnings.
+- New diagnostics (wave W3): `B2C-E0213` (a definition that is not shared
+  has the name of a shared one), `B2C-E0214` (a shared definition needs one
+  that is not shared), `B2C-E0215` (a type or namespace named like a part
+  of `std` with a directive), `B2C-E0219` (namespaces nested too deeply),
+  `B2C-E0221` (a module name that starts with `b2c`), `B2C-E0422` (modules
+  whose headers would include each other), `B2C-E0423` (a global set from
+  another module's global) and `B2C-I0523` (a namespace already in use);
+  `B2C-E0703` is documented and waits for the standard sub-namespaces.
+- Tests for several modules (wave W3): golden examples built as several
+  units with each header compiled alone, the every-g++ forms test on a
+  three-module program, exported examples built with `make` and CMake
+  (`B2C_REQUIRE_MAKE`; CI's Windows job installs MSYS2's `make`), a nightly
+  build and export of 256 modules, the security suite at the limits of
+  modules and namespaces, fuzz seeds and dictionary entries for them, and
+  the native benchmark's 8-module case `pipeline/preview-modules`
+  (reported).
 
 ### Changed
 
@@ -928,6 +988,37 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   (S7-5); sandbox folders unused for 30 days are removed at startup (S7-7);
   and on Linux discovery finds every `g++-N` from 11 on, newest first
   (S7-8).
+- A project that gains its second module, or an M2 project with several
+  modules, gets different C++ in the modules it already had (wave W3): their
+  helpers move to `b2c_support.hpp` and their functions into an anonymous
+  namespace, where a function nothing calls draws `-Wunused-function` (an
+  error with _warnings as errors_). The strip's status says so; deleting
+  back to one module restores the single-module text. A call to another
+  module's function, which M2 refused, now needs it shared (`B2C-E0206`
+  says so). Functions of different modules may have one name unless both
+  are shared (`B2C-E0211`), and a definition that is not shared may not have
+  the name of any module's shared definition (`B2C-E0213`, program-wide).
+- _share with other modules_ is written into a project only when ticked
+  (the catalog's `omitDefault`), so a project that shares nothing still
+  opens in M2; one that shares a function shows it there as from a newer
+  catalog (`B2C-E0602`). A project with Textbook style on is format 2, which
+  M2 refuses (`B2C-E0108`).
+- Export manifest format 3 (wave W3): _Replace_ deletes or overwrites a
+  file of the earlier export only while it still has the SHA-256 the
+  manifest recorded, and keeps and names a file changed since, so renaming
+  or deleting a module never removes a student's edited `.cpp`. The
+  exported README says when a project of many modules needs the MSYS2 shell
+  or CMake (cmd.exe's 8,191 characters), and when its code uses `using
+  namespace`.
+- Builds of several modules (wave W3): `gen/` holds exactly the generated
+  files (a renamed module's old file is deleted; `b2c generate` never
+  deletes), objects are named relative to the compiler's folder so the
+  link line of 256 modules stays short, and a message several units report
+  in one header is shown once.
+- Pasting keeps the symbol ID of each pasted declaration the document no
+  longer uses, so cutting a function and pasting it into another module
+  keeps the calls from other modules bound, and pasted references bind
+  namespace-qualified names (`geo::area`), a module's own definition first.
 
 ### Removed
 
@@ -941,6 +1032,20 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 
 ### Fixed
 
+- An export interrupted during _Replace_ could leave a folder that the
+  next _Replace_ refused; the manifest now accepts each file's content
+  before and after until the export ends. A header forward-declares a
+  struct of its own module before the declaration that needs it.
+- Review fixes (wave W3): _Undo delete_ is forgotten when the project is
+  reloaded, so it never puts back a module the reload brought back, and is
+  refused while the canvas holds a change that was not checked; a renamed
+  module is no longer shown as refused under its old file name; the
+  toolbox's _define_ follows the module count; a strip menu item gives the
+  focus back to the strip; the shown module stays in view once _All
+  modules…_ appears; `B2C-E0421` is reported once for a circle within one
+  module, and `B2C-E0422` on each shared function whose default value
+  closes a circle of headers. The toolbox's _try_ shows its caught error
+  as `e` again, not `name`.
 - The visual diff passed a recolouring of a third of a scene: the W2
   review's new Types and Files colours moved every pixel of those blocks by
   0.060 to 0.084, under `pixelmatch` 8's threshold of 0.1, so it counted
