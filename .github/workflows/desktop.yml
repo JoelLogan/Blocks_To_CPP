@@ -35,6 +35,8 @@ on:
       - "tools/check-package-layering.py"
       - "tools/check-windows-manifest.ps1"
       - "tools/bench-compare.py"
+      # pnpm doctor and its tests (the frontend job runs pnpm test:tools).
+      - "tools/*.mjs"
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
@@ -59,6 +61,8 @@ on:
       - "tools/check-package-layering.py"
       - "tools/check-windows-manifest.ps1"
       - "tools/bench-compare.py"
+      # pnpm doctor and its tests (the frontend job runs pnpm test:tools).
+      - "tools/*.mjs"
       - ".github/workflows/desktop.yml"
   workflow_dispatch:
     inputs:
@@ -124,6 +128,10 @@ jobs:
         run: |
           python3 tools/check-package-layering.py
           python3 tools/check-package-layering.py --self-test
+
+      # pnpm doctor's own tests (node --test "tools/*.test.mjs"; w5-performance.md §10.5).
+      - name: Tools' tests (pnpm doctor)
+        run: pnpm test:tools
 
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
