@@ -2696,14 +2696,20 @@ mod tests {
         let dir = BuildDir::create(&deep, &project, "release-0123abcd").unwrap();
         let modules: Vec<String> = (0..256).map(|index| format!("m{index:063}")).collect();
         assert!(modules.iter().all(|stem| stem.len() == 64));
+        // `../obj` joined with the host's separator (`..\obj\` on Windows).
+        let from_diag = dir.obj_dir_from_diag();
         for toolchain in [fake_toolchain(), windows_toolchain()] {
             let planned = steps_for(&toolchain, &dir, &modules);
             assert_eq!(planned.len(), 258);
             let link = planned.last().unwrap();
             assert_eq!(link.kind, StepKind::Link);
             assert!(link.command.args.iter().any(|arg| {
-                let arg = arg.to_string_lossy();
-                arg.starts_with("../obj/m") && arg.len() == "../obj/".len() + 64 + 15
+                let arg = Path::new(arg);
+                let name = arg.file_name().unwrap_or_default().to_string_lossy();
+                arg.parent() == Some(from_diag.as_path())
+                    && name.starts_with('m')
+                    && name.len() == 64 + 15
+                    && arg.as_os_str().len() == "../obj/".len() + 64 + 15
             }));
             let length = command_line_length(&link.command);
             assert!(length < 26_000, "{length}");
