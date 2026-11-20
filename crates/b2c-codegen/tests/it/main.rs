@@ -16,6 +16,7 @@ mod roundtrip;
 mod runtime;
 mod snapshots;
 mod source_map;
+mod std_names;
 mod text_plus;
 mod types;
 

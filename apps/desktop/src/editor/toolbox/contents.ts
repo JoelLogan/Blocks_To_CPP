@@ -831,6 +831,8 @@ function symbolKey(symbol: SymbolInfo): unknown[] {
     case 'field':
     case 'enumerator':
       return [...common, symbol.owner];
+    case 'namespace':
+      return [...common, symbol.parent];
     case 'loopVariable':
       return common;
   }

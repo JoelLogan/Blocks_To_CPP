@@ -23,6 +23,7 @@ export const FIELD_TYPE = Object.freeze({
   text: 'b2c_text',
   dropdown: 'b2c_dropdown',
   checkbox: 'b2c_checkbox',
+  namespace: 'b2c_namespace',
 } as const);
 
 /** A Blocks2Cpp field registry name. */

@@ -13,6 +13,8 @@ mod errors;
 mod expr;
 mod files;
 mod globals;
+mod lookup;
+mod namespaces;
 mod resolve;
 mod stmt;
 mod text;
@@ -82,7 +84,11 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
         };
     };
     let mut lowerer = Lowerer::new(document, first.id.clone(), sigs, unchecked);
-    let modules = lowerer.program();
+    let mut modules = lowerer.program();
+    // Each definition's innermost namespace (w3-modules.md §2.12).
+    for item in modules.iter_mut().flat_map(|module| module.items.iter_mut()) {
+        item.namespace = lowerer.namespaces.member_of.get(&item.origin.block).cloned();
+    }
     // Parked blocks and skipped definitions answer the scope query too; the
     // parked scope is known once every `main` is lowered.
     lowerer.index.record_unlowered(document);
@@ -118,21 +124,38 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
         )
         .then(|| (module, symbol.name.as_str(), sym))
     });
-    let shared = shared_functions.chain(shared_definitions);
-    lowerer
-        .index
-        .finish(trail, document.modules.len(), functions.chain(user_types), shared);
+    // The top-level namespaces: a module sees its own, and those of the
+    // others that share a member (the *use namespace* menu, 06 §6.14.3).
+    let (own_namespaces, shared_namespaces) = lowerer.namespace_entries();
+    let shared = shared_functions.chain(shared_definitions).chain(
+        shared_namespaces
+            .iter()
+            .map(|(m, name, sym)| (*m, name.as_str(), sym)),
+    );
+    lowerer.index.finish(
+        trail,
+        document.modules.len(),
+        functions.chain(user_types).chain(
+            own_namespaces
+                .iter()
+                .map(|(m, name, sym)| (*m, name.as_str(), sym)),
+        ),
+        shared,
+    );
     // Each module's files, what they include and the order of their
     // declarations (ADR-0019, modules.md §4, w3-modules.md §1.7).
-    let layout =
+    let mut layout =
         crate::layout::compute_layout(&modules, &lowerer.symbols, &lowerer.constants, &mut lowerer.diags);
+    // How each reference is written, and each `.cpp`'s directives
+    // (w3-modules.md §2.12).
+    let spellings = lowerer.spell(&modules, &mut layout);
     Analysis {
         program: Program {
             standard,
             modules,
             symbols: lowerer.symbols,
             layout,
-            spellings: b2c_ir::spelling::Spellings::default(),
+            spellings,
         },
         diagnostics: lowerer.diags.list,
         index: lowerer.index,
@@ -320,6 +343,12 @@ struct Lowerer<'d> {
     /// The struct fields whose row holds a default value (w2.md §1.9),
     /// known before any *new … with* is lowered.
     defaulted_fields: BTreeSet<SymbolId>,
+    /// The program's user namespaces and the namespace of each definition in
+    /// a mouth (w3-modules.md §2.12), declared before anything else.
+    namespaces: namespaces::Namespaces,
+    /// The checked *use namespace … in this file* blocks of each module, by
+    /// module index, for the lookup model (`lookup.rs`).
+    use_blocks: BTreeMap<usize, Vec<lookup::UseBlock>>,
 }
 
 /// A field part.
@@ -353,11 +382,12 @@ fn holds_value(block: &Block, name: &str) -> bool {
     }
 }
 
-/// Top-level blocks of a module in a deterministic order (by block ID).
+/// The definitions of a module in a deterministic order (by block ID): its
+/// top-level blocks, and the definitions in its enabled namespaces' mouths
+/// (w3-modules.md §2.12), which are definitions of the module as top-level
+/// ones are.
 fn sorted_blocks(module: &b2c_model::Module) -> Vec<&Block> {
-    let mut blocks: Vec<&Block> = module.workspace.blocks.iter().collect();
-    blocks.sort_by(|a, b| a.id.cmp(&b.id));
-    blocks
+    namespaces::with_namespace_members(module.workspace.blocks.iter().collect())
 }
 
 /// Block types the analyser lowers as values (`Lowerer::value_block`): the
@@ -475,12 +505,18 @@ impl<'d> Lowerer<'d> {
             constants: BTreeMap::new(),
             in_defaults: false,
             defaulted_fields: BTreeSet::new(),
+            namespaces: namespaces::Namespaces::default(),
+            use_blocks: BTreeMap::new(),
         }
     }
 
     /// Lowers every module.
     fn program(&mut self) -> Vec<Module> {
         let document = self.document;
+        // Namespaces first: every definition's namespace is then known, and
+        // a module's functions are keyed by their namespaces too.
+        self.declare_namespaces();
+        self.key_functions_by_namespace();
         // Structs and enums come first, so that any parameter, result or
         // field may name them (w2.md §2.2), and their flags are known before
         // any type that holds them is checked or any body is lowered
@@ -535,6 +571,15 @@ impl<'d> Lowerer<'d> {
                     "type.struct" | "type.enum" => (self.type_definition(block), true),
                     "var.global" => (self.global_items.remove(&block.id), true),
                     "program.use_header" => (self.use_header(block), true),
+                    // A namespace is declared with the others, and its
+                    // definitions are among the module's blocks.
+                    "program.namespace" => (None, false),
+                    // A directive changes how the module's `.cpp` spells
+                    // names (`lookup.rs`).
+                    "program.use_namespace" => {
+                        self.use_namespace(block);
+                        (None, false)
+                    }
                     _ => {
                         self.report_parked(block);
                         (None, false)
@@ -662,7 +707,7 @@ impl<'d> Lowerer<'d> {
         if self.document.modules.len() < 2 {
             return;
         }
-        let shared: Vec<(usize, &str, &SymbolId)> = self
+        let shared: Vec<(usize, String, &SymbolId)> = self
             .shared_symbols
             .iter()
             .filter(|sym| {
@@ -673,7 +718,8 @@ impl<'d> Lowerer<'d> {
             })
             .filter_map(|sym| {
                 let decl = self.decls.get(sym)?;
-                Some((decl.module, decl.name.as_str(), sym))
+                let key = self.scoped(decl.location.block.as_ref()?, &decl.name);
+                Some((decl.module, key, sym))
             })
             .collect();
         let visible: Vec<BTreeMap<String, SymbolId>> = self
@@ -682,9 +728,9 @@ impl<'d> Lowerer<'d> {
             .enumerate()
             .map(|(module, own)| {
                 let mut seen = own.clone();
-                for &(owner, name, sym) in &shared {
-                    if owner != module {
-                        seen.entry(name.to_owned()).or_insert_with(|| sym.clone());
+                for (owner, name, sym) in &shared {
+                    if *owner != module {
+                        seen.entry(name.clone()).or_insert_with(|| (*sym).clone());
                     }
                 }
                 seen
@@ -872,9 +918,11 @@ impl<'d> Lowerer<'d> {
         let params = self.declare_params(block, &decl.name);
         let required = self.check_default_order(&params, &decl.name);
         let shared = self.shared_tick(block);
-        let others = names.get(&decl.name).cloned().unwrap_or_default();
+        // Overloads are the functions of one name in one namespace.
+        let key = self.scoped(&block.id, &decl.name);
+        let others = names.get(&key).cloned().unwrap_or_default();
         self.check_overloads(&others, &decl.name, shared, &params, required, &name_loc);
-        names.entry(decl.name.clone()).or_default().push(decl.sym.clone());
+        names.entry(key).or_default().push(decl.sym.clone());
         let symbol = Symbol {
             name: ident,
             kind: SymbolKind::Function {
@@ -1665,8 +1713,9 @@ impl<'d> Lowerer<'d> {
     fn share(&mut self, block: &Block, name: &str, sym: &SymbolId) {
         self.shared_blocks.insert(block.id.clone());
         self.shared_symbols.insert(sym.clone());
+        let namespace = self.namespaces.member_of.get(&block.id).cloned();
         self.shared
-            .entry(None)
+            .entry(namespace)
             .or_default()
             .entry(name.to_owned())
             .or_default()

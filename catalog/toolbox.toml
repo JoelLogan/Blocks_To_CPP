@@ -33,6 +33,12 @@ block = "program.exit"
 block = "program.use_header"
 
 [[category.entry]]
+block = "program.namespace"
+
+[[category.entry]]
+block = "program.use_namespace"
+
+[[category.entry]]
 block = "program.check"
 
 [[category]]

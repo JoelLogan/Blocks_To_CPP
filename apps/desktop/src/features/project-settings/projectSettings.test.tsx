@@ -10,7 +10,7 @@ import type { EditorHandle, ProjectInfo } from '../../app/editor-types';
 import { resetAppStore, useAppStore } from '../../app/store';
 import { expectNoAxeViolations } from '../../test/axe';
 import { documentFixture, projectFixture, settingsFixture } from '../../app/testing/fixtures';
-import { testCore } from '../../editor/sync/testing';
+import { present, testCore } from '../../editor/sync/testing';
 import { featureContext, renderScreen, type TestFeatureContext } from '../settings/page/testing';
 import { projectSettingsFeature } from './feature';
 import {
@@ -20,6 +20,7 @@ import {
   draftProblems,
   settingsChanged,
   settingsFrom,
+  TEXTBOOK_STYLE_NOTE,
 } from './model';
 
 let test: TestFeatureContext;
@@ -385,6 +386,122 @@ describe('the page', () => {
       fireEvent.click(screen.getByTestId('project-settings-cancel'));
       expect(useAppStore.getState().project?.document).toBe(before);
       expect(useAppStore.getState().project?.dirty).toBe(false);
+    });
+  });
+
+  describe('Textbook style (w3-modules.md §1.4, §6 W3M-D13)', () => {
+    function textbookSwitch(): HTMLInputElement {
+      return screen.getByRole<HTMLInputElement>('checkbox', {
+        name: 'Textbook style: write using namespace std;',
+      });
+    }
+
+    /** The codes of the problems the real core reports for the open project. */
+    function problemCodes(core: NonNullable<Awaited<ReturnType<typeof testCore>>>): string[] {
+      const open = present(useAppStore.getState().project, 'the open project');
+      return core
+        .update(JSON.stringify(open.document), { indentWidth: 4 })
+        .diagnostics.map((diagnostic) => diagnostic.code);
+    }
+
+    it('is a switch in the Language section with its note, off by default', async () => {
+      const { container } = openPage();
+      await settle();
+      const section = screen.getByTestId('project-settings-language');
+      expect(section.contains(textbookSwitch())).toBe(true);
+      expect(textbookSwitch().checked).toBe(false);
+      const note = document.getElementById(textbookSwitch().getAttribute('aria-describedby') ?? '');
+      expect(note?.textContent).toBe(TEXTBOOK_STYLE_NOTE);
+      expect(note?.textContent).toContain('turning this off again removes those problems');
+      await expectNoAxeViolations(container);
+    });
+
+    it('is saved with the other settings as one edit, and off removes the option', async () => {
+      const infos: ProjectInfo[] = [];
+      test.ctx.editor = () =>
+        ({
+          updateProjectInfo: (info: ProjectInfo) => {
+            infos.push(info);
+          },
+        }) as unknown as EditorHandle;
+      openPage();
+      await settle();
+      fireEvent.click(textbookSwitch());
+      fireEvent.change(screen.getByTestId('project-settings-standard'), {
+        target: { value: 'c++17' },
+      });
+      fireEvent.click(screen.getByTestId('project-settings-save'));
+      expect(infos).toHaveLength(1);
+      expect(infos[0]?.settings?.options).toEqual({
+        ...documentFixture().project.options,
+        usingNamespaceStd: true,
+      });
+      expect(infos[0]?.settings?.language).toEqual({ standard: 'c++17' });
+
+      // Without an editor the page edits the document itself; off writes no key (05 §5.3).
+      test.ctx.editor = () => null;
+      act(() => {
+        useAppStore.getState().actions.setProject(
+          projectFixture({
+            document: documentFixture('Guessing Game', { usingNamespaceStd: true }),
+          }),
+        );
+      });
+      cleanup();
+      openPage();
+      await settle();
+      expect(textbookSwitch().checked).toBe(true);
+      fireEvent.click(textbookSwitch());
+      fireEvent.click(screen.getByTestId('project-settings-save'));
+      const { project } = useAppStore.getState();
+      expect(project?.dirty).toBe(true);
+      expect(project?.document.project.options).toEqual(documentFixture().project.options);
+      expect('usingNamespaceStd' in (project?.document.project.options ?? {})).toBe(false);
+    });
+
+    it('is discarded by Cancel', async () => {
+      openPage();
+      await settle();
+      const before = useAppStore.getState().project?.document;
+      fireEvent.click(textbookSwitch());
+      fireEvent.click(screen.getByTestId('project-settings-cancel'));
+      expect(useAppStore.getState().project?.document).toBe(before);
+    });
+
+    it('brings the problems it causes, and turning it off takes them away', async () => {
+      const core = await testCore();
+      if (core === null) {
+        return;
+      }
+      // A struct named like std::list: B2C-E0215 only while std is nominated.
+      const document = documentFixture();
+      present(document.modules[0], 'the main module').workspace.blocks.push(
+        { id: 'b_main', type: 'program.main', v: 1, x: 40, y: 40 },
+        {
+          id: 'b_list',
+          type: 'type.struct',
+          v: 1,
+          x: 40,
+          y: 200,
+          extra: { fields: [{ name: 'size', sym: 's_list_size', type: 'int' }] },
+          fields: { COMPARABLE: false, NAME: { sym: 's_list', name: 'list' }, PRINTABLE: false },
+        },
+      );
+      act(() => {
+        useAppStore.getState().actions.setProject(projectFixture({ document }));
+      });
+      expect(problemCodes(core)).not.toContain('B2C-E0215');
+      openPage();
+      await settle();
+      fireEvent.click(textbookSwitch());
+      fireEvent.click(screen.getByTestId('project-settings-save'));
+      expect(problemCodes(core)).toContain('B2C-E0215');
+      cleanup();
+      openPage();
+      await settle();
+      fireEvent.click(textbookSwitch());
+      fireEvent.click(screen.getByTestId('project-settings-save'));
+      expect(problemCodes(core)).not.toContain('B2C-E0215');
     });
   });
 

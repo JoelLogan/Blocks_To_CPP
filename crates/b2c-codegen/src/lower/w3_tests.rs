@@ -80,7 +80,7 @@ fn sizes_module() -> Value {
 
 /// Loads, resolves and analyses a project as a build does, checking the
 /// codes the analysis reports.
-fn analyse(value: &Value, codes: &[&str]) -> Program {
+pub(super) fn analyse(value: &Value, codes: &[&str]) -> Program {
     let document = b2c_model::load(&serde_json::to_vec(value).unwrap()).unwrap();
     let catalog = b2c_catalog::core_catalog();
     let resolved = b2c_catalog::resolve_report(&document, catalog);
@@ -97,7 +97,7 @@ fn analyse(value: &Value, codes: &[&str]) -> Program {
 }
 
 /// Generates a program, with no error placeholder.
-fn generate(program: &Program) -> GeneratedProject {
+pub(super) fn generate(program: &Program) -> GeneratedProject {
     let options = CodegenOptions {
         project_name: String::from("Colours"),
         app_version: String::from("1.0.0"),
@@ -109,7 +109,7 @@ fn generate(program: &Program) -> GeneratedProject {
 }
 
 /// Every file, under a line with its name.
-fn render(project: &GeneratedProject) -> String {
+pub(super) fn render(project: &GeneratedProject) -> String {
     project
         .files
         .iter()
@@ -141,7 +141,7 @@ fn files(project: &GeneratedProject) -> Vec<(String, FileKind, Option<String>)> 
 /// files with each of `compilers` under C++17 at the *strict* level with
 /// `-Werror` and links them, then runs each program with `input` and
 /// checks it prints `output`.
-fn compile_and_run(
+pub(super) fn compile_and_run(
     project: &GeneratedProject,
     compilers: &[std::path::PathBuf],
     dir: &Path,

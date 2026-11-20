@@ -138,7 +138,9 @@ impl Lowerer<'_> {
             return CExpr::error().with_origin(expr.origin.clone());
         }
         self.depth += 1;
+        let outer = self.at.replace(expr.origin.block.clone());
         let lowered = self.expr_kind(expr);
+        self.at = outer;
         self.depth -= 1;
         lowered.with_origin(expr.origin.clone())
     }
@@ -151,7 +153,7 @@ impl Lowerer<'_> {
             ExprKind::Str(lit) => CExpr::new(CExprKind::Str(lit.clone())),
             ExprKind::Char(lit) => CExpr::new(CExprKind::Char(*lit)),
             ExprKind::Var(id) => match self.variable(id) {
-                Some(symbol) => CExpr::new(CExprKind::Name(symbol.name.clone())),
+                Some(symbol) => CExpr::new(CExprKind::Name(self.variable_name(id, symbol))),
                 None => CExpr::error(),
             },
             ExprKind::Unary { op, operand } => CExpr::unary(un_op(*op), self.expr(operand)),

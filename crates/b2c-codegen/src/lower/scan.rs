@@ -483,6 +483,15 @@ pub(super) fn is_loop_invariant(symbols: &SymbolTable, expr: &Expr, body: &Block
 /// Picks a readable name that is not in `taken`: the first free name of
 /// `first`, otherwise `stem2`, `stem3`, …
 pub(super) fn fresh_name(first: &[&'static str], stem: &'static str, taken: &BTreeSet<String>) -> Ident {
+    // Standard names are not written short under these names
+    // (`names::is_generated`).
+    debug_assert!(
+        super::names::GENERATED_STEMS.contains(&stem)
+            && first
+                .iter()
+                .all(|name| super::names::GENERATED_STEMS.contains(name)),
+        "{stem}"
+    );
     let free = |name: &str| {
         if taken.contains(name) {
             None

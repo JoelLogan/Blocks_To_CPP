@@ -423,6 +423,21 @@ describe('readCatalogJson', () => {
     expect(exported.blocks.find((b) => b.id === 'func.define')?.field.map((f) => f.name)).toContain(
       'SHARED',
     );
+    // A namespace's mouth holds the five namespace members (w3-modules.md §2.12).
+    const members = exported.blocks.filter((b) => b.namespaceMember === true).map((b) => b.id);
+    expect(members.sort()).toEqual([
+      'func.define',
+      'program.namespace',
+      'type.enum',
+      'type.struct',
+      'var.global',
+    ]);
+    const namespace = exported.blocks.find((b) => b.id === 'program.namespace');
+    expect(namespace?.statement).toEqual([
+      { name: 'DEFINITIONS', repeat: null, when: null, definitions: true },
+    ]);
+    const use = exported.blocks.find((b) => b.id === 'program.use_namespace');
+    expect(use?.field[0]).toMatchObject({ name: 'NS', kind: 'namespace', default: '::std' });
   });
 
   it('names the place of the problem', () => {

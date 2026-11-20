@@ -839,6 +839,11 @@ fn the_place_of_a_new_block_is_known_before_it_is_analysed() {
         let mut lists = Vec::new();
         statement_lists(&original, &mut lists);
         for (owner, list, items) in lists {
+            // A namespace's mouth holds definitions, never a statement
+            // (`B2C-E0604`, w3-modules.md §2.12).
+            if list == "DEFINITIONS" {
+                continue;
+            }
             for at in 0..=items.len() {
                 let expected = match at.checked_sub(1).and_then(|i| items.get(i)) {
                     None => before.scope_at(&block(&owner), Some(&list)),

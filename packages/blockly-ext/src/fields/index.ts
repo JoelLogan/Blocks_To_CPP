@@ -6,6 +6,7 @@
 export { readB2cField, writeB2cField } from './access';
 export { B2cCheckboxField, type CheckboxFieldConfig } from './checkbox';
 export { B2cDropdownField, type DropdownFieldConfig } from './dropdown';
+export { B2cNamespaceField, STD_NAMESPACE_VALUE, topLevelNamespaces } from './namespace';
 export { optionOffered, setOptionFilter, type OptionFilter } from './option-filter';
 export { NUMBER_ENTRY_PATTERN, B2cNumberField, type NumberFieldConfig } from './number';
 export { B2cOptionsFieldBase, isOptionList, type OptionPair } from './options-base';

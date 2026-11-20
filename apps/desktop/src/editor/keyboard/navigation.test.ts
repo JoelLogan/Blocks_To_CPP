@@ -455,10 +455,13 @@ describe('the toolbox’s buttons, headings and notes', () => {
     intoToolbox(opened);
     const { keyboard } = opened;
     // *use header* and *check at compile time* are advanced: not shown (w4-editor-tools.md §2.1).
-    expect(walk(keyboard, 'ArrowDown', 13)).toEqual([
+    // *namespace* and *use namespace* are basic (w3-modules.md §7.1).
+    expect(walk(keyboard, 'ArrowDown', 15)).toEqual([
       // A note of two lines is one stop, read as a whole.
       'note: Your program starts at “when program starts”.',
       'block “stop program with exit code”',
+      'block “namespace myNamespace”',
+      'block “use namespace”',
       'category “Variables”',
       'button “Make a variable”',
       'block “create int variable value”',
@@ -496,7 +499,7 @@ describe('the toolbox’s buttons, headings and notes', () => {
       },
     });
     intoToolbox(opened);
-    walk(opened.keyboard, 'ArrowDown', 4);
+    walk(opened.keyboard, 'ArrowDown', 6);
     expect(opened.keyboard.announcer.last).toBe('button “Make a variable”');
     expect(nameOf(focused())).toBe('button:Make a variable');
     press('Enter');

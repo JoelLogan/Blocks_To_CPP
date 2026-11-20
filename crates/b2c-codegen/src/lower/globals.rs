@@ -21,10 +21,11 @@ impl Lowerer<'_> {
         let Some(symbol) = self.variable(target) else {
             return CStmtKind::Error;
         };
+        let name = self.variable_name(target, symbol);
         CStmtKind::Assign {
-            target: symbol.name.clone(),
+            target: name.clone(),
             op: AssignOp::Set,
-            value: CExpr::unary(UnOp::Not, name_expr(symbol.name.clone())),
+            value: CExpr::unary(UnOp::Not, name_expr(name)),
         }
     }
 
@@ -39,7 +40,7 @@ impl Lowerer<'_> {
             return None;
         };
         self.start_item();
-        let ty = self.ctype(&symbol.ty);
+        let ty = self.declared_type(symbol);
         self.note_type(&ty);
         let init = match &def.init {
             Some(value) => Init::Value(self.expr(value)),

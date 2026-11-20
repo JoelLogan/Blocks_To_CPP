@@ -209,6 +209,15 @@ jobs:
           B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
           B2C_REQUIRE_MAKE: "1" # fail, rather than skip, the export's make builds
 
+      # The standard-name table (crates/b2c-ir/src/std_names.rs,
+      # docs/plans/m3-contracts/w3-modules.md §2.12) is made from the local
+      # g++ 11 to 14; GCC 15 is only here. The step prints what GCC 15 declares
+      # in std, as a list for `tools/gen-std-names.py --merge`, and fails when
+      # the table lacks one of those names.
+      - name: Check the standard-name table against GCC 15
+        if: matrix.gcc == '15'
+        run: python3 tools/gen-std-names.py --check --print --compiler g++
+
   # Linux cgroup v2 containment (docs/spec/07-toolchain-build-run.md §7.5.2,
   # §7.6.2; ADR-0008). Lingering starts a user systemd instance for the
   # runner's user, so captured runs and sessions go through

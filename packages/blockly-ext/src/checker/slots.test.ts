@@ -197,6 +197,15 @@ describe('the type rule on M2’s typed inputs', () => {
     expect(canDrop(block('text.literal'), inMain, 'VALUE')).toBe(false);
     // Loose on the canvas, the result is not known.
     expect(canDrop(block('text.literal'), block('func.return'), 'VALUE')).toBe(true);
+    // A function in a namespace's mouth (w3-modules.md §2.12) gives its own result type.
+    const namespace = block('program.namespace');
+    const inner = block('func.define');
+    inner.setFieldValue('double', 'RETURNS');
+    nest(namespace, 'DEFINITIONS', inner);
+    const inInner = block('func.return');
+    nest(inner, 'BODY', inInner);
+    expect(canDrop(block('text.literal'), inInner, 'VALUE')).toBe(false);
+    expect(canDrop(number('1'), inInner, 'VALUE')).toBe(true);
   });
 
   it('connects unknown and erroneous values, and asks the oracle for references', () => {

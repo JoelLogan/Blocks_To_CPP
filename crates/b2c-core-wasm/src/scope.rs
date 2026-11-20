@@ -67,7 +67,10 @@ pub fn conversion_table() -> Vec<ConversionRow> {
 /// What is visible everywhere in one module, from every symbol of the
 /// program (sorted by name, then ID): its functions, structs and enums, with
 /// the fields and enumerators of those structs and enums, which blocks refer
-/// to through their type (types.md §2.4), as the scope query lists them.
+/// to through their type (types.md §2.4), as the scope query lists them. A
+/// namespace (`SymbolInfoKind::Namespace`, w3-modules.md §2.12) is not
+/// among them: the scope query lists namespaces once package N2's lookup
+/// does.
 fn module_wide(symbols: Vec<SymbolInfo>, module: &ModuleId) -> Vec<SymbolInfo> {
     symbols
         .into_iter()

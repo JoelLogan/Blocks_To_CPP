@@ -4,6 +4,7 @@ import * as Blockly from 'blockly/core';
 import type { FieldDefJson } from '../generated/catalog';
 import { B2cCheckboxField } from './checkbox';
 import { B2cDropdownField } from './dropdown';
+import { B2cNamespaceField } from './namespace';
 import { B2cNumberField } from './number';
 import { B2cSymbolDeclField } from './symbol-decl';
 import { B2cSymbolRefField, type SymbolRefKinds } from './symbol-ref';
@@ -20,11 +21,12 @@ const FIELD_CLASSES: readonly (readonly [B2cFieldType, Blockly.fieldRegistry.Reg
     [FIELD_TYPE.text, B2cTextField],
     [FIELD_TYPE.dropdown, B2cDropdownField],
     [FIELD_TYPE.checkbox, B2cCheckboxField],
+    [FIELD_TYPE.namespace, B2cNamespaceField],
   ];
 
 /**
- * Registers the seven field types (`b2c_symbol_decl`, `b2c_symbol_ref`, `b2c_type`, `b2c_number`,
- * `b2c_text`, `b2c_dropdown`, `b2c_checkbox`), so block definitions and mutators can create them with
+ * Registers the eight field types (`b2c_symbol_decl`, `b2c_symbol_ref`, `b2c_type`, `b2c_number`,
+ * `b2c_text`, `b2c_dropdown`, `b2c_checkbox`, `b2c_namespace`), so block definitions and mutators can create them with
  * `Blockly.fieldRegistry.fromJson`. Idempotent.
  */
 export function registerB2cFields(): void {
@@ -74,5 +76,8 @@ export function createCatalogField(
       return new B2cDropdownField(def.options, textDefault);
     case 'checkbox':
       return new B2cCheckboxField(def.default === true);
+    case 'namespace':
+      // `::std` or a namespace's symbol ID (w3-modules.md §2.9).
+      return new B2cNamespaceField(textDefault);
   }
 }

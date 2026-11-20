@@ -69,6 +69,9 @@
 //!   is skipped, unless `B2C_REQUIRE_GXX` is set, as in CI, where the Linux
 //!   job (GCC 13), the GCC 11 and GCC 15 containers and the Windows job
 //!   (MSYS2) run it.
+//! * **Textbook style.** Every case is also generated with *Textbook style*
+//!   on and compiled the same way (06 §6.14.13, w3-modules.md §5.2): a case
+//!   that includes a standard header then writes `using namespace std;`.
 
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -164,9 +167,10 @@ impl Case {
         self
     }
 
-    /// The case as project bytes for `standard`.
-    fn project(&self, standard: CppStandard) -> Vec<u8> {
-        let document = json!({
+    /// The case as project bytes for `standard`, with *Textbook style* on
+    /// when `textbook` (format version 2 at least, which has the option).
+    fn project_with(&self, standard: CppStandard, textbook: bool) -> Vec<u8> {
+        let mut document = json!({
             "format": "blocks2cpp/project",
             "formatVersion": self.format_version,
             "generator": {
@@ -184,6 +188,10 @@ impl Case {
                 "workspace": { "blocks": self.blocks },
             }],
         });
+        if textbook {
+            document["formatVersion"] = json!(self.format_version.max(2));
+            document["project"]["options"] = json!({ "usingNamespaceStd": true });
+        }
         serde_json::to_vec_pretty(&document).unwrap()
     }
 
@@ -433,7 +441,15 @@ fn only_printed(b: &Blocks, kind: &'static str) -> Case {
 /// The generated project of `case` for `standard`, or what went wrong: any
 /// diagnostic other than a note fails a case.
 fn generate(case: &Case, standard: CppStandard) -> Result<GeneratedProject, String> {
-    let frontend = run_frontend(&case.project(standard), &FrontendOptions::default());
+    generate_with(case, standard, false)
+}
+
+/// [`generate`], with *Textbook style* on when `textbook`.
+fn generate_with(case: &Case, standard: CppStandard, textbook: bool) -> Result<GeneratedProject, String> {
+    let frontend = run_frontend(
+        &case.project_with(standard, textbook),
+        &FrontendOptions::default(),
+    );
     let reported: Vec<String> = frontend
         .diagnostics
         .iter()
@@ -443,9 +459,10 @@ fn generate(case: &Case, standard: CppStandard) -> Result<GeneratedProject, Stri
     match frontend.generated {
         Some(generated) if reported.is_empty() => Ok(generated),
         _ => Err(format!(
-            "{} (as a {} project): {reported:#?}",
+            "{} (as a {} project{}): {reported:#?}",
             case.name,
-            spelling(standard)
+            spelling(standard),
+            if textbook { " in Textbook style" } else { "" }
         )),
     }
 }
@@ -722,7 +739,7 @@ fn catalog_blocks_compile_with_the_strict_warnings() {
             .iter()
             .map(|&standard| {
                 let (toolchain, cases, root) = (&toolchain, &cases, root.path());
-                scope.spawn(move || syntax_check(toolchain, cases, standard, root))
+                scope.spawn(move || syntax_check(toolchain, cases, standard, false, root))
             })
             .collect();
         checks
@@ -733,20 +750,69 @@ fn catalog_blocks_compile_with_the_strict_warnings() {
     finish(&failures);
 }
 
-/// Generates every case as a `standard` project into a folder of `root`,
-/// each into a folder named after the case, and compiles them all with one
-/// `g++ -c`.
+/// The differential test's catalog part (06 §6.14.13, w3-modules.md §5.2,
+/// N2): every case also compiles with *Textbook style* on, which writes
+/// `using namespace std;` after the includes and helpers of each case that
+/// includes a standard header and the standard names short after it.
+#[test]
+fn catalog_blocks_compile_with_textbook_style() {
+    let cases = cases();
+    let mut failures = Vec::new();
+    for case in &cases {
+        for standard in STANDARDS {
+            match generate_with(case, standard, true) {
+                Ok(project) => {
+                    let file = &project.files[0];
+                    let standard_header = file.contents.lines().any(|line| line.starts_with("#include <"));
+                    let directive = file.contents.lines().any(|line| line == "using namespace std;");
+                    if standard_header != directive {
+                        failures.push(format!(
+                            "{} ({}): a standard header {standard_header}, `using namespace std;` {directive}",
+                            case.name,
+                            spelling(standard)
+                        ));
+                    }
+                }
+                Err(failure) => failures.push(failure),
+            }
+        }
+    }
+    finish(&failures);
+    let Some(toolchain) = common::real_toolchain() else {
+        return;
+    };
+    let root = tempfile::tempdir().unwrap();
+    let failures: Vec<String> = std::thread::scope(|scope| {
+        let checks: Vec<_> = STANDARDS
+            .iter()
+            .map(|&standard| {
+                let (toolchain, cases, root) = (&toolchain, &cases, root.path());
+                scope.spawn(move || syntax_check(toolchain, cases, standard, true, root))
+            })
+            .collect();
+        checks
+            .into_iter()
+            .filter_map(|check| check.join().unwrap().err())
+            .collect()
+    });
+    finish(&failures);
+}
+
+/// Generates every case as a `standard` project, in Textbook style when
+/// `textbook`, into a folder of `root`, each into a folder named after the
+/// case, and compiles them all with one `g++ -c`.
 fn syntax_check(
     toolchain: &Toolchain,
     cases: &[Case],
     standard: CppStandard,
+    textbook: bool,
     root: &Path,
 ) -> Result<(), String> {
     let folder = root.join(spelling(standard));
     std::fs::create_dir(&folder).unwrap();
     let mut sources = Vec::new();
     for case in cases {
-        let generated = generate(case, standard)?;
+        let generated = generate_with(case, standard, textbook)?;
         let dir = folder.join(&case.name);
         std::fs::create_dir(&dir).unwrap();
         for file in &generated.files {

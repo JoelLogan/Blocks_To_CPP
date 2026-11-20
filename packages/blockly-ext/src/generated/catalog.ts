@@ -58,10 +58,19 @@ export type TypeClass =
 
 /**
  * The kind of a field. `header` (types.md §5.4) holds a standard header from the header table as
- * its text, such as `<cmath>`.
+ * its text, such as `<cmath>`. `namespace` (w3-modules.md §2.9) holds a namespace as text: a
+ * standard one as `::` and its name (`::std`), or a user namespace's symbol ID.
  */
 export type FieldKind =
-  'dropdown' | 'checkbox' | 'text' | 'number' | 'type' | 'symbol_decl' | 'symbol_ref' | 'header';
+  | 'dropdown'
+  | 'checkbox'
+  | 'text'
+  | 'number'
+  | 'type'
+  | 'symbol_decl'
+  | 'symbol_ref'
+  | 'header'
+  | 'namespace';
 
 /**
  * The type of the value a reporter or predicate gives: its pattern as catalog files write it
@@ -187,6 +196,11 @@ export interface StatementDefJson {
   readonly repeat: RepeatJson | null;
   /** The input exists only while this `extra` flag is true. */
   readonly when: string | null;
+  /**
+   * Present and `true` on a namespace's mouth: it holds the blocks marked
+   * {@link BlockDefJson.namespaceMember}, not statements (w3-modules.md §2.12).
+   */
+  readonly definitions?: true;
 }
 
 /**
@@ -249,6 +263,11 @@ export interface BlockDefJson {
   readonly headers: readonly string[];
   /** The headers a dropdown option adds, by field, then option. */
   readonly optionHeaders: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
+  /**
+   * Present and `true` on a definition that also fits a namespace's mouth, after the definitions
+   * there (*define*, *struct*, *enum*, *global*, *namespace*; w3-modules.md §2.12).
+   */
+  readonly namespaceMember?: true;
 }
 
 /** Blocks the editor adds to a category for the open project. */
@@ -1975,6 +1994,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     members: {},
     headers: [],
     optionHeaders: {},
+    namespaceMember: true,
   },
   {
     id: 'func.return',
@@ -2998,6 +3018,38 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     optionHeaders: {},
   },
   {
+    id: 'program.namespace',
+    version: 1,
+    category: 'program',
+    shape: 'definition',
+    label: { friendly: 'namespace %NAME %DEFINITIONS', cpp: 'namespace %NAME { %DEFINITIONS }' },
+    labelParts: [{ text: 'namespace' }, { arg: 'NAME' }, { arg: 'DEFINITIONS' }],
+    statementsNotInLabel: [],
+    help: 'Groups definitions under one name, so that they are called geo::area in other code and their names cannot clash with others. Put functions, structs, enums, global variables and other namespaces inside it.',
+    output: null,
+    fields: [
+      {
+        name: 'NAME',
+        kind: 'symbol_decl',
+        options: [],
+        types: [],
+        default: null,
+        type: null,
+        repeat: null,
+      },
+    ],
+    inputs: [],
+    statements: [{ name: 'DEFINITIONS', repeat: null, when: null, definitions: true }],
+    extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
+    namespaceMember: true,
+  },
+  {
     id: 'program.use_header',
     version: 1,
     category: 'program',
@@ -3014,6 +3066,37 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         options: [],
         types: [],
         default: '<cmath>',
+        type: null,
+        repeat: null,
+      },
+    ],
+    inputs: [],
+    statements: [],
+    extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
+  },
+  {
+    id: 'program.use_namespace',
+    version: 1,
+    category: 'program',
+    shape: 'definition',
+    label: { friendly: 'use namespace %NS in this file', cpp: 'using namespace %NS;' },
+    labelParts: [{ text: 'use namespace' }, { arg: 'NS' }, { text: 'in this file' }],
+    statementsNotInLabel: [],
+    help: "Lets the code of this module name what a namespace holds without writing the namespace's name in front, as textbooks write cout for std::cout. It never changes another module's code.",
+    output: null,
+    fields: [
+      {
+        name: 'NS',
+        kind: 'namespace',
+        options: [],
+        types: [],
+        default: '::std',
         type: null,
         repeat: null,
       },
@@ -3613,6 +3696,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     members: {},
     headers: [],
     optionHeaders: {},
+    namespaceMember: true,
   },
   {
     id: 'type.enum_value',
@@ -3902,6 +3986,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     members: {},
     headers: [],
     optionHeaders: {},
+    namespaceMember: true,
   },
   {
     id: 'var.change',
@@ -4200,6 +4285,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     members: {},
     headers: [],
     optionHeaders: {},
+    namespaceMember: true,
   },
   {
     id: 'var.set',
@@ -4256,6 +4342,8 @@ export const TOOLBOX: readonly ToolboxCategoryJson[] = [
       { block: 'program.main', label: null, preset: null },
       { block: 'program.exit', label: null, preset: null },
       { block: 'program.use_header', label: null, preset: null },
+      { block: 'program.namespace', label: null, preset: null },
+      { block: 'program.use_namespace', label: null, preset: null },
       { block: 'program.check', label: null, preset: null },
     ],
   },

@@ -163,6 +163,7 @@ function testField(def: FieldDefJson): Blockly.Field {
     case 'text':
     case 'number':
     case 'header':
+    case 'namespace':
       return new Blockly.FieldTextInput(text ?? '');
     case 'symbol_decl':
     case 'symbol_ref':
@@ -199,7 +200,8 @@ export function defineTestBlocks(options: TestBlockOptions = {}): void {
             }
           }
         }
-        if (def.shape === 'statement') {
+        if (def.shape === 'statement' || def.namespaceMember === true) {
+          // A namespace member also has the two connections (w3-modules.md §2.12).
           this.setPreviousStatement(true);
           this.setNextStatement(true);
         } else if (def.shape === 'reporter' || def.shape === 'predicate') {

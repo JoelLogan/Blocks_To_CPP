@@ -52,7 +52,9 @@ impl Lowerer<'_> {
             CStmtKind::Error
         } else {
             self.depth += 1;
+            let outer = self.at.replace(stmt.origin.block.clone());
             let kind = self.stmt_kind(&stmt.kind);
+            self.at = outer;
             self.depth -= 1;
             kind
         };
@@ -69,7 +71,7 @@ impl Lowerer<'_> {
             StmtKind::VarDecl(decl) => self.var_decl(decl),
             StmtKind::Assign { target, value } => match self.variable(target) {
                 Some(symbol) => CStmtKind::Assign {
-                    target: symbol.name.clone(),
+                    target: self.variable_name(target, symbol),
                     op: AssignOp::Set,
                     value: self.expr(value),
                 },
@@ -144,7 +146,7 @@ impl Lowerer<'_> {
         let Some(symbol) = self.variable(&decl.symbol) else {
             return CStmtKind::Error;
         };
-        let declared = self.ctype(&symbol.ty);
+        let declared = self.declared_type(symbol);
         self.note_type(&declared);
         let init = decl.init.as_ref().map(|value| {
             let lowered = self.expr(value);
@@ -179,12 +181,12 @@ impl Lowerer<'_> {
         let numeric = matches!(symbol.ty, Type::Int | Type::Double | Type::Char);
         if op == CompoundOp::Add && numeric && is_literal_one(value) {
             return CStmtKind::Inc {
-                target: symbol.name.clone(),
+                target: self.variable_name(target, symbol),
                 op: IncOp::Inc,
             };
         }
         CStmtKind::Assign {
-            target: symbol.name.clone(),
+            target: self.variable_name(target, symbol),
             op: assign_op(op),
             value: self.expr(value),
         }
@@ -355,7 +357,7 @@ impl Lowerer<'_> {
         let Some(symbol) = self.variable(target) else {
             return CStmtKind::Error;
         };
-        let name = symbol.name.clone();
+        let name = self.variable_name(target, symbol);
         match mode {
             AskMode::KeepAsking => {
                 let (function, helper) = if symbol.ty == Type::String {

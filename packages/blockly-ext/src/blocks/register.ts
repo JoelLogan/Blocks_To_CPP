@@ -77,7 +77,7 @@ export function blockDefinition(def: BlockDefJson): { init: (this: Blockly.Block
       const mode = blockLabelMode();
       buildInputs(this, def, layoutIn(mode, multiModule()), mode);
       applyShownWhileTicked(this);
-      applyShape(this, def.shape);
+      applyShape(this, def.shape, def.namespaceMember === true);
       this.setStyle(blockStyleFor(def.category, def.shape));
       this.setTooltip(tooltip);
       this.setInputsInline(true);

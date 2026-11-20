@@ -121,7 +121,12 @@ export function fieldDefault(def: FieldDefJson): JsonValue {
 /** Where a block may sit, by its catalog shape. */
 export type Slot = 'top' | 'value' | 'statement';
 
-/** Whether a block of `shape` fits in `slot` (everything may sit on the canvas). */
+/**
+ * Whether a block of `shape` may be built for `slot` (everything may sit on the canvas). A
+ * definition may be built for a statement slot: those that are namespace members fit a namespace's
+ * mouth (w3-modules.md §2.12), and the connection checker refuses every other statement slot, so
+ * the block becomes a placeholder there as before.
+ */
 export function shapeFits(shape: Shape, slot: Slot): boolean {
   switch (slot) {
     case 'top':
@@ -129,6 +134,6 @@ export function shapeFits(shape: Shape, slot: Slot): boolean {
     case 'value':
       return shape === 'reporter' || shape === 'predicate';
     case 'statement':
-      return shape === 'statement';
+      return shape === 'statement' || shape === 'definition';
   }
 }

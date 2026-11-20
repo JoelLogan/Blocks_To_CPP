@@ -53,6 +53,45 @@ pub struct Spellings {
     /// For each module, the standard names its `.cpp` writes short
     /// (`cout` for `std::cout`), under a directive (06 §6.14.5).
     pub short_standard: BTreeMap<ModuleId, BTreeSet<String>>,
+    /// The directives of each module's `.cpp` (06 §6.14.3); a module
+    /// without directives is not listed.
+    pub directives: BTreeMap<ModuleId, Directives>,
+}
+
+/// The `using namespace` directives of one module's `.cpp`, which code
+/// generation writes after the includes and the helpers (06 §6.14.3).
+/// Never in a header.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Directives {
+    /// Where `using namespace std;` comes from, if it is written.
+    pub std: Option<DirectiveSource>,
+    /// The top-level user namespaces nominated, by the symbol that stands
+    /// for each (`Item::namespace`), sorted by name, each with the block
+    /// whose directive is in effect.
+    pub user: Vec<(SymbolId, BlockId)>,
+    /// The user namespaces in `user` that no header the `.cpp` includes
+    /// declares: each is first declared empty (`namespace geo {}`), sorted
+    /// by name.
+    pub declare_empty: Vec<SymbolId>,
+}
+
+/// What a directive comes from, for the source map.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DirectiveSource {
+    /// *Textbook style* (`options.usingNamespaceStd`): written only in a
+    /// `.cpp` that includes a standard header (directly, through
+    /// `b2c_support.hpp` or through a project header).
+    Setting,
+    /// A *use namespace … in this file* block: written in any case (with
+    /// `#include <cstddef>` when the file has no standard header).
+    Block(BlockId),
+}
+
+impl Directives {
+    /// Whether the `.cpp` has no directive.
+    pub fn is_empty(&self) -> bool {
+        self.std.is_none() && self.user.is_empty()
+    }
 }
 
 impl Spellings {
@@ -82,7 +121,9 @@ impl Spellings {
 
     /// Whether every reference has its default spelling.
     pub fn is_empty(&self) -> bool {
-        self.references.is_empty() && self.short_standard.values().all(BTreeSet::is_empty)
+        self.references.is_empty()
+            && self.short_standard.values().all(BTreeSet::is_empty)
+            && self.directives.values().all(Directives::is_empty)
     }
 }
 
@@ -136,6 +177,16 @@ mod tests {
         assert_eq!(spellings.standard(&main, "endl"), Spelling::Full);
         let other = ModuleId::new("mod_utils").unwrap();
         assert_eq!(spellings.standard(&other, "cout"), Spelling::Full);
+    }
+
+    #[test]
+    fn a_module_with_directives_makes_the_table_non_empty() {
+        let mut spellings = Spellings::default();
+        let main = ModuleId::new("mod_main").unwrap();
+        spellings.directives.insert(main.clone(), Directives::default());
+        assert!(spellings.is_empty());
+        spellings.directives.get_mut(&main).unwrap().std = Some(DirectiveSource::Setting);
+        assert!(!spellings.is_empty());
     }
 
     #[test]

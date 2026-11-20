@@ -268,6 +268,28 @@ pub(crate) fn is_statement_type(block_type: &str) -> bool {
     )
 }
 
+/// The block types that are namespace members (`namespace_member` in the
+/// catalog, w3-modules.md §2.12): the definitions a namespace's mouth holds.
+pub(crate) const NAMESPACE_MEMBERS: [&str; 5] = [
+    "func.define",
+    "type.struct",
+    "type.enum",
+    "var.global",
+    "program.namespace",
+];
+
+/// The statement list of a namespace that holds its definitions.
+pub(crate) const NAMESPACE_MOUTH: &str = "DEFINITIONS";
+
+/// The definitions in a *namespace* block's mouth, in order. A block of
+/// another type there is not one of them: the catalog reports it
+/// (`B2C-E0604`), and it is not part of the program.
+pub(crate) fn namespace_members(block: &Block) -> impl Iterator<Item = &Block> {
+    statements(block, NAMESPACE_MOUTH)
+        .iter()
+        .filter(|member| NAMESPACE_MEMBERS.contains(&member.block_type.as_str()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

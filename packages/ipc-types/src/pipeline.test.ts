@@ -91,6 +91,23 @@ describe('pipeline types', () => {
         module: 'm',
         declBlock: 'b_col',
       },
+      {
+        id: 'n_geo',
+        name: 'geo',
+        kind: 'namespace',
+        type: 'void',
+        module: 'm',
+        declBlock: 'b_geo',
+      },
+      {
+        id: 'n_flat',
+        name: 'flat',
+        kind: 'namespace',
+        parent: 'n_geo',
+        type: 'void',
+        module: 'm',
+        declBlock: 'b_flat',
+      },
     ];
     const details = symbols.map((symbol) => {
       switch (symbol.kind) {
@@ -110,6 +127,8 @@ describe('pipeline types', () => {
         case 'field':
         case 'enumerator':
           return `of ${symbol.owner}`;
+        case 'namespace':
+          return `in ${symbol.parent ?? '::'}`;
       }
     });
     expect(details).toEqual([
@@ -120,6 +139,8 @@ describe('pipeline types', () => {
       'of s_pt',
       'e_red',
       'of s_col',
+      'in ::',
+      'in n_geo',
     ]);
     expectTypeOf<SymbolInfoKind['kind']>().toEqualTypeOf<
       | 'variable'
@@ -131,6 +152,7 @@ describe('pipeline types', () => {
       | 'field'
       | 'enum'
       | 'enumerator'
+      | 'namespace'
     >();
   });
 

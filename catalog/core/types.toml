@@ -7,6 +7,7 @@ id = "type.struct"
 version = 1
 category = "types"
 shape = "definition"
+namespace_member = true
 label = { friendly = "struct %NAME has … comparable %COMPARABLE printable %PRINTABLE share with other modules %SHARED", cpp = "struct %NAME { … };" }
 lowering = "builtin"
 help = "Defines a struct: a new type whose values hold one value of each of its fields. Add fields with ⊕ and remove them with ⊖; each starts with its default value, or empty (0, false or empty text) without one. Tick comparable to compare and sort its values, and printable to print them."
@@ -137,6 +138,7 @@ id = "type.enum"
 version = 1
 category = "types"
 shape = "definition"
+namespace_member = true
 label = { friendly = "enum %NAME values … share with other modules %SHARED", cpp = "enum class %NAME { … };" }
 lowering = "builtin"
 help = "Defines an enum: a new type whose values are the names listed here, such as the choices of a menu. Add values with ⊕ and remove them with ⊖."

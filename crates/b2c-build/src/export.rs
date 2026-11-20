@@ -386,9 +386,19 @@ pub fn assemble(
         contents: makefile(&name, &sources, &flags, app_version),
     });
     let long_command = longest_command(&name, &sources, &flags) > CMD_EXE_COMMAND_LIMIT;
+    let directive = generated
+        .files
+        .iter()
+        .any(|file| file.kind == b2c_ir::source_map::FileKind::Source && has_directive(&file.contents));
     files.push(ExportFile {
         path: String::from("README.md"),
-        contents: readme(&document.project.name, &name, app_version, long_command),
+        contents: readme(
+            &document.project.name,
+            &name,
+            app_version,
+            long_command,
+            directive,
+        ),
     });
     Ok(Export {
         folder_name: folder_name(&document.project.name).unwrap_or_else(|| name.clone()),
@@ -889,13 +899,46 @@ fn markdown_text(text: &str) -> String {
     escaped
 }
 
+/// Whether a generated `.cpp` holds a `using namespace` directive: a line
+/// that starts with one. User text reaches a `.cpp` only in comments and
+/// string literals, which never start a line so.
+fn has_directive(contents: &str) -> bool {
+    contents
+        .lines()
+        .any(|line| line.trim_start().starts_with("using namespace "))
+}
+
+/// The GCC versions the standard-name table was made from, as a list for a
+/// sentence: `GCC 11, 13 and 14`.
+fn std_names_gccs() -> String {
+    let majors: Vec<&str> = b2c_ir::std_names::STD_NAMES_GCC
+        .iter()
+        .filter_map(|gcc| gcc.strip_prefix("GCC "))
+        .filter_map(|version| version.split('.').next())
+        .collect();
+    match majors.split_last() {
+        None => String::from("GCC"),
+        Some((last, [])) => format!("GCC {last}"),
+        Some((last, rest)) => format!("GCC {} and {last}", rest.join(", ")),
+    }
+}
+
 /// `README.md`. `long_command` adds that the build command is too long
-/// for cmd.exe ([`longest_command`]).
-fn readme(project_name: &str, name: &str, app_version: &str, long_command: bool) -> String {
+/// for cmd.exe ([`longest_command`]); `directive`, that a `.cpp` holds a
+/// `using namespace` directive and a header never does (06 §6.14.12).
+fn readme(project_name: &str, name: &str, app_version: &str, long_command: bool, directive: bool) -> String {
     let shell = if long_command {
         "\nThis project has so many modules that its build command is longer than\ncmd.exe takes (8,191 characters): on Windows, run `make` in an MSYS2 shell,\nor build with CMake.\n"
     } else {
         ""
+    };
+    let directive = if directive {
+        format!(
+            "\n## `using namespace`\n\nSome `.cpp` files in `src/` hold a `using namespace` directive, so that they\ncan write names without their namespace; a header (`.hpp`) never holds one.\nBlocks2Cpp checked those names against the standard library of {}.\nAnother standard library may declare more names, and one of them could then\nclash with a name of the program and stop the code compiling.\n",
+            std_names_gccs()
+        )
+    } else {
+        String::new()
     };
     format!(
         r"# {title}
@@ -934,7 +977,7 @@ and the like, so a change of choice always builds again.
 On Windows, run `make` in an MSYS2 shell, or with another `sh.exe` on
 `PATH`. `mingw32-make` from cmd.exe or PowerShell builds a project without
 defines, but a project with defines, and `make clean`, need a POSIX shell.
-{shell}",
+{shell}{directive}",
         title = markdown_text(project_name),
     )
 }

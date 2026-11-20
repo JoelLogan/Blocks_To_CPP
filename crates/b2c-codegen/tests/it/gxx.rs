@@ -32,7 +32,7 @@ fn warnings() -> Vec<&'static str> {
 }
 
 /// The major version of the g++ on `PATH` (0 if unknown).
-fn major_version() -> u32 {
+pub(crate) fn major_version() -> u32 {
     static MAJOR: OnceLock<u32> = OnceLock::new();
     *MAJOR.get_or_init(|| {
         command("g++")
@@ -53,7 +53,7 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(20);
 /// A command for an external program. Production code spawns processes only
 /// through b2c-process; tests drive g++ and the built programs directly.
 #[allow(clippy::disallowed_methods)]
-fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+pub(crate) fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     Command::new(program)
 }
 

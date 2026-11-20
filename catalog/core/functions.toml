@@ -5,6 +5,7 @@ id = "func.define"
 version = 1
 category = "functions"
 shape = "definition"
+namespace_member = true
 label = { friendly = "define %NAME with … returns %RETURNS share with other modules %SHARED", cpp = "%RETURNS %NAME(…) { … }" }
 # What a function gives back offers these types first and takes any type a
 # variable can hold, such as a struct (docs/plans/m3-contracts/w2.md §1.9).

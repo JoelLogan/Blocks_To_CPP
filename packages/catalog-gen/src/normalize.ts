@@ -88,6 +88,7 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
       name: statement.name,
       repeat: repeat(statement.repeat),
       when: statement.when,
+      ...(statement.definitions === true ? { definitions: true as const } : {}),
     })),
     extra: block.extra.map((extra, index) => extraDef(extra, `${path}.extra[${String(index)}]`)),
     typeVars: { ...block.typeVars },
@@ -103,6 +104,7 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
         ),
       ]),
     ),
+    ...(block.namespaceMember === true ? { namespaceMember: true as const } : {}),
   };
 }
 

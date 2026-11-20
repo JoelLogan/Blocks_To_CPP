@@ -22,8 +22,9 @@ export type PassMode = 'copy' | 'editable' | 'read_only';
 
 /**
  * The kind of a symbol, as the scope query reports it. Milestone M3 adds user types: `struct`,
- * `field`, `enum` and `enumerator` (docs/plans/m3-contracts/types.md §1.2), and globals: `global`
- * (docs/plans/m3-contracts/w2.md §2.7).
+ * `field`, `enum` and `enumerator` (docs/plans/m3-contracts/types.md §1.2), globals: `global`
+ * (docs/plans/m3-contracts/w2.md §2.7), and namespaces: `namespace`
+ * (docs/plans/m3-contracts/w3-modules.md §2.12).
  */
 export type SymbolKind =
   | 'variable'
@@ -34,7 +35,8 @@ export type SymbolKind =
   | 'struct'
   | 'field'
   | 'enum'
-  | 'enumerator';
+  | 'enumerator'
+  | 'namespace';
 
 /**
  * One symbol from the scope query (`b2c_ir::SymbolInfo` as JSON, docs/spec/06-compiler-pipeline.md
@@ -69,6 +71,8 @@ export interface SymbolInfo {
   readonly values?: readonly string[];
   /** Fields and enumerators: the symbol ID of the struct or enum they belong to. */
   readonly owner?: string;
+  /** Namespaces: the symbol ID of the namespace it is nested in; absent at global scope. */
+  readonly parent?: string;
   /**
    * The value type (a function's return type), as the wire writes it: its term (`"int"`,
    * `"std::string"`, `{"std::vector": "int"}`) or `"error"` (docs/plans/m3-contracts/types.md

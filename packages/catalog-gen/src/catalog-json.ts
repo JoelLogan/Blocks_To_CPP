@@ -136,6 +136,11 @@ export interface RustBlockDef {
   readonly members?: Readonly<Record<string, string>>;
   /** The headers a dropdown option adds, by field, then option. */
   readonly optionHeaders?: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
+  /**
+   * `namespace_member`: the definition also fits a namespace's mouth (w3-modules.md §2.12); the
+   * export writes the key only when it is true.
+   */
+  readonly namespaceMember?: boolean;
 }
 
 /** `b2c_catalog::FieldDef`. */
@@ -193,6 +198,11 @@ export interface RustStatementDef {
   readonly name: string;
   readonly repeat: RustRepeat | null;
   readonly when: string | null;
+  /**
+   * `definitions`: the list is a namespace's mouth, which holds namespace members, not statements
+   * (w3-modules.md §2.12); the export writes the key only when it is true.
+   */
+  readonly definitions?: boolean;
 }
 
 /**
@@ -309,6 +319,7 @@ const FIELD_KINDS: readonly FieldKind[] = [
   'symbol_decl',
   'symbol_ref',
   'header',
+  'namespace',
 ];
 const EXTRA_KINDS = ['count', 'flag', 'params', 'fields', 'values'] as const;
 const TOKEN_KINDS: readonly TokenKind[] = ['num', 'str', 'chr', 'ref', 'op', 'kw', 'text'];
@@ -369,6 +380,7 @@ function blockDef(value: unknown, path: string): RustBlockDef {
     'placeVar',
     'members',
     'optionHeaders',
+    'namespaceMember',
   ] as const;
   const o = object(value, path, keys);
   const label = object(o.label, `${path}.label`, ['friendly', 'cpp']);
@@ -401,6 +413,9 @@ function blockDef(value: unknown, path: string): RustBlockDef {
       optionHeaders: record(v, p, (options, q) =>
         record(options, q, (headers, r) => array(headers, r, string)),
       ),
+    })),
+    ...optional(o.namespaceMember, `${path}.namespaceMember`, (v, p) => ({
+      namespaceMember: boolean(v, p),
     })),
   };
 }
@@ -453,11 +468,12 @@ function inputDef(value: unknown, path: string): RustInputDef {
 }
 
 function statementDef(value: unknown, path: string): RustStatementDef {
-  const o = object(value, path, ['name', 'repeat', 'when']);
+  const o = object(value, path, ['name', 'repeat', 'when', 'definitions']);
   return {
     name: string(o.name, `${path}.name`),
     repeat: nullable(o.repeat, `${path}.repeat`, repeat),
     when: nullable(o.when, `${path}.when`, string),
+    ...optional(o.definitions, `${path}.definitions`, (v, p) => ({ definitions: boolean(v, p) })),
   };
 }
 

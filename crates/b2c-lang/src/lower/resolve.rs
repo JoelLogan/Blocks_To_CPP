@@ -220,7 +220,14 @@ impl Lowerer<'_> {
             return None;
         }
         if let Some(sig) = self.visible_function(sym).cloned() {
-            if let Some(hiding) = self.binding(&sig.name).cloned() {
+            // A global hides no function of a user namespace: the call is
+            // then written `geo::f(…)` (w3-modules.md §2.12).
+            let in_namespace = self.in_namespace(self.decls.get(sym).and_then(|d| d.location.block.as_ref()));
+            if let Some(hiding) = self
+                .binding(&sig.name)
+                .filter(|hiding| !(in_namespace && self.scopes.is_global(hiding)))
+                .cloned()
+            {
                 let message = format!(
                     "This calls the function {name}, but a variable called {name} hides it here, so C++ would \
                      use the variable. Rename the variable.",
@@ -245,7 +252,11 @@ impl Lowerer<'_> {
     fn check_not_hidden(&mut self, sym: &SymbolId, location: &Location) -> bool {
         let name = self.raw_name(sym);
         match self.binding(&name).cloned() {
-            Some(found) if &found != sym => {
+            // Globals of different namespaces hide each other only for
+            // lookup, which the spellings settle (`::count`, `geo::count`).
+            Some(found)
+                if &found != sym && !(self.scopes.is_global(&found) && self.scopes.is_global(sym)) =>
+            {
                 let message = format!(
                     "This refers to an outer {name}, but a newer variable also called {name} hides it here, so \
                      C++ would use the newer one. Rename one of them.",
@@ -356,6 +367,10 @@ impl Lowerer<'_> {
                     ),
                 )
             }
+            (DeclStatus::Active, DeclKind::Namespace) => (
+                codes::WRONG_KIND,
+                format!("{name} is a namespace, not a variable: choose one of the definitions it holds."),
+            ),
         };
         let diagnostic =
             b2c_ir::Diagnostic::error(code, b2c_ir::DiagSource::Analyser, location.clone(), message)

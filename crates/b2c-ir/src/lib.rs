@@ -30,6 +30,7 @@ pub mod scope_info;
 pub mod sig;
 pub mod source_map;
 pub mod spelling;
+pub mod std_names;
 pub mod text;
 pub mod types;
 

@@ -149,7 +149,7 @@ impl Lowerer<'_> {
         let Some(lib) = lib_type(&symbol.ty) else {
             return CStmtKind::Error;
         };
-        let name = symbol.name.clone();
+        let name = self.variable_name(collection, symbol);
         let ty = symbol.ty.clone();
         // The code uses the collection through its type's members.
         self.note_value_type(&ty);
@@ -302,7 +302,7 @@ impl Lowerer<'_> {
     pub(super) fn typed_list(&mut self, value: &Expr) -> CExpr {
         match &value.kind {
             ExprKind::ListOf(items) if value.ty != Type::Error => {
-                let ty = self.ctype(&value.ty);
+                let ty = self.ctype_in(&value.ty, Some(&value.origin.block));
                 self.note_type(&ty);
                 let items = self.list_items(items, &value.ty);
                 CExpr::new(CExprKind::Init {

@@ -21,7 +21,9 @@
 //! `printable`), `field` (with `owner`), `enum` (with `values`),
 //! `enumerator` (with `owner`) and `global` (with `isConst`, W2's
 //! `var.global`), and the key `shared`, written only when it is `true`
-//! (ADR-0019). No stage makes them yet.
+//! (ADR-0019). Its third wave adds `namespace` (with `parent`, the namespace
+//! it is nested in, written only for a nested one; w3-modules.md §2.12),
+//! whose type is `void`.
 
 use serde::{Deserialize, Serialize};
 
@@ -123,6 +125,13 @@ pub enum SymbolInfoKind {
         /// The enum.
         owner: SymbolId,
     },
+    /// A user namespace (`program.namespace`).
+    Namespace {
+        /// The namespace it is nested in; `None` (not written) at global
+        /// scope.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<SymbolId>,
+    },
 }
 
 impl SymbolInfo {
@@ -132,8 +141,8 @@ impl SymbolInfo {
     /// differs when the name is not a valid identifier: the table then holds a
     /// generated placeholder, while the editor must show what the user wrote.
     ///
-    /// `None` for a namespace: the editor learns of namespaces once their
-    /// kind is part of the IPC contract (w3-modules.md §7.1).
+    /// Every kind of symbol has a record; the `Option` stays for kinds a later
+    /// milestone adds before the editor knows them.
     pub fn new(id: SymbolId, name: impl Into<String>, symbol: &Symbol) -> Option<Self> {
         let kind = match &symbol.kind {
             SymbolKind::Variable { is_const } => SymbolInfoKind::Variable { is_const: *is_const },
@@ -159,7 +168,9 @@ impl SymbolInfo {
                 values: values.clone(),
             },
             SymbolKind::Enumerator { owner } => SymbolInfoKind::Enumerator { owner: owner.clone() },
-            SymbolKind::Namespace { .. } => return None,
+            SymbolKind::Namespace { parent } => SymbolInfoKind::Namespace {
+                parent: parent.clone(),
+            },
         };
         Some(Self {
             id,
@@ -324,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn namespaces_have_no_record_yet() {
+    fn namespaces_name_their_parent_when_nested() {
         let geo = symbol(
             "geo",
             SymbolKind::Namespace { parent: None },
@@ -332,7 +343,25 @@ mod tests {
             "b_ns",
             field("NAME"),
         );
-        assert_eq!(SymbolInfo::new(sym("n_geo"), "geo", &geo), None);
+        round_trip(
+            &SymbolInfo::new(sym("n_geo"), "geo", &geo).unwrap(),
+            &json!({"id": "n_geo", "name": "geo", "kind": "namespace", "type": "void",
+                    "module": "mod_main", "declBlock": "b_ns"}),
+        );
+        let shapes = symbol(
+            "shapes",
+            SymbolKind::Namespace {
+                parent: Some(sym("n_geo")),
+            },
+            Type::Void,
+            "b_ns2",
+            field("NAME"),
+        );
+        round_trip(
+            &SymbolInfo::new(sym("n_shapes"), "shapes", &shapes).unwrap(),
+            &json!({"id": "n_shapes", "name": "shapes", "kind": "namespace", "parent": "n_geo",
+                    "type": "void", "module": "mod_main", "declBlock": "b_ns2"}),
+        );
     }
 
     #[test]

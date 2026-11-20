@@ -143,6 +143,36 @@ describe('normalize', () => {
     expect(fieldsOf()?.[0]).not.toHaveProperty('omitDefault');
   });
 
+  it('marks a namespace member and a mouth for definitions (w3-modules.md §2.12)', () => {
+    const blockOf = (member?: boolean, definitions?: boolean) =>
+      model((c) =>
+        c.blocks.push(
+          rustBlock('x.space', {
+            shape: 'definition',
+            label: { friendly: 'space %INSIDE', cpp: 'space' },
+            statement: [
+              {
+                name: 'INSIDE',
+                repeat: null,
+                when: null,
+                ...(definitions === undefined ? {} : { definitions }),
+              },
+            ],
+            ...(member === undefined ? {} : { namespaceMember: member }),
+          }),
+        ),
+      ).blocks.at(-1);
+    expect(blockOf(true, true)).toMatchObject({
+      namespaceMember: true,
+      statements: [{ name: 'INSIDE', definitions: true }],
+    });
+    // Absent or false, the keys are left out of the generated definition.
+    for (const block of [blockOf(false, false), blockOf()]) {
+      expect(block).not.toHaveProperty('namespaceMember');
+      expect(block?.statements[0]).not.toHaveProperty('definitions');
+    }
+  });
+
   it('reads the row extras, repeated fields and header fields of milestone M3 (w2.md §2.1)', () => {
     const rows = model((c) =>
       c.blocks.push(

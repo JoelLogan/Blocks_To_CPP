@@ -75,8 +75,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::ids::{ModuleId, SymbolId};
 use b2c_ir::layout::Layout;
-use b2c_ir::sast::{ItemKind, Program, SymbolKind};
+use b2c_ir::sast::{ItemKind, Origin, Program, SymbolKind};
 use b2c_ir::source_map::{FileKind, FileMap, GeneratedFile, GeneratedProject, SourceMap};
+use b2c_ir::spelling::DirectiveSource;
 use b2c_ir::text::{FileStem, Ident};
 
 /// The source-map format version this crate writes.
@@ -191,9 +192,22 @@ pub fn generate_with_report(program: &Program, options: &CodegenOptions) -> Gene
             contents: file.contents,
         });
     };
-    for (module, module_files) in program.modules.iter().zip(&layout.modules) {
-        let lowered = lower::lower_module(program, layout, module, multi_module);
-        helpers_used.extend(lowered.usage.helpers.iter().copied());
+    let lowered: Vec<lower::LoweredModule> = program
+        .modules
+        .iter()
+        .map(|module| lower::lower_module(program, layout, module, multi_module))
+        .collect();
+    for module in &lowered {
+        helpers_used.extend(module.usage.helpers.iter().copied());
+    }
+    let standard_headers = StandardHeaders::of(&lowered, layout, &helpers_used, multi_module);
+    for (m, ((module, module_files), lowered)) in program
+        .modules
+        .iter()
+        .zip(&layout.modules)
+        .zip(&lowered)
+        .enumerate()
+    {
         let plan = emit::FilePlan {
             module_name: &module.name,
             multi_module,
@@ -205,12 +219,13 @@ pub fn generate_with_report(program: &Program, options: &CodegenOptions) -> Gene
                 &[]
             },
             forward: forward_declarations(program, &module_files.forward),
+            directives: directives(program, &module.id, standard_headers.source(m)),
         };
         let stem = module_files.stem.as_str();
-        let source = emit::source_file(&lowered, &plan, options);
+        let source = emit::source_file(lowered, &plan, options);
         push(format!("{stem}.cpp"), FileKind::Source, Some(&module.id), source);
         if module_files.header {
-            let header = emit::header_file(&lowered, &plan, options);
+            let header = emit::header_file(lowered, &plan, options);
             push(format!("{stem}.hpp"), FileKind::Header, Some(&module.id), header);
         }
     }
@@ -236,6 +251,128 @@ pub fn generate_with_report(program: &Program, options: &CodegenOptions) -> Gene
             },
         },
         placeholders,
+    }
+}
+
+/// Which files include a standard header, for Textbook style's directive
+/// (06 §6.14.3 rule 2): a `.cpp` directly, through `b2c_support.hpp` or
+/// through a project header it includes, directly or not.
+struct StandardHeaders {
+    /// By module: whether its `.cpp` includes a standard header itself or
+    /// through `b2c_support.hpp`.
+    own: Vec<bool>,
+    /// By module: whether its `.hpp` includes one itself.
+    header: Vec<bool>,
+    /// By module: the modules whose headers its `.cpp` includes.
+    source_includes: Vec<Vec<usize>>,
+    /// By module: the modules whose headers its `.hpp` includes.
+    header_includes: Vec<Vec<usize>>,
+}
+
+impl StandardHeaders {
+    fn of(
+        lowered: &[lower::LoweredModule],
+        layout: &Layout,
+        helpers_used: &BTreeSet<helpers::Helper>,
+        multi_module: bool,
+    ) -> Self {
+        let support = emit::support_has_standard_header(helpers_used);
+        let index = |ids: &[ModuleId]| -> Vec<usize> {
+            ids.iter()
+                .filter_map(|id| layout.modules.iter().position(|files| files.module == *id))
+                .collect()
+        };
+        StandardHeaders {
+            own: lowered
+                .iter()
+                .map(|module| {
+                    emit::source_has_standard_header(module, !multi_module)
+                        || (multi_module && support && !module.usage.helpers.is_empty())
+                })
+                .collect(),
+            header: lowered
+                .iter()
+                .zip(&layout.modules)
+                .map(|(module, files)| {
+                    files.header && !emit::header_headers(module, &files.header_order).is_empty()
+                })
+                .collect(),
+            source_includes: layout
+                .modules
+                .iter()
+                .map(|files| index(&files.source_includes))
+                .collect(),
+            header_includes: layout
+                .modules
+                .iter()
+                .map(|files| index(&files.header_includes))
+                .collect(),
+        }
+    }
+
+    /// Whether the `.cpp` of module `m` includes a standard header.
+    fn source(&self, m: usize) -> bool {
+        if self.own.get(m).copied().unwrap_or(false) {
+            return true;
+        }
+        let mut seen = BTreeSet::new();
+        let mut queue: Vec<usize> = self.source_includes.get(m).cloned().unwrap_or_default();
+        while let Some(next) = queue.pop() {
+            if !seen.insert(next) {
+                continue;
+            }
+            if self.header.get(next).copied().unwrap_or(false) {
+                return true;
+            }
+            queue.extend(self.header_includes.get(next).into_iter().flatten());
+        }
+        false
+    }
+}
+
+/// What the `.cpp` of `module` writes for its directives (w3-modules.md
+/// §2.12): the analyser's `Spellings::directives`, with Textbook style's
+/// `using namespace std;` only when the file includes a standard header
+/// (`standard`), and a block's with `<cstddef>` when it includes none.
+fn directives(program: &Program, module: &ModuleId, standard: bool) -> emit::Directives {
+    let Some(found) = program.spellings.directives.get(module) else {
+        return emit::Directives::default();
+    };
+    let origin = |block: &b2c_ir::ids::BlockId| Origin::whole(module.clone(), block.clone());
+    let name = |id: &SymbolId| program.symbols.get(id).map(|symbol| symbol.name.clone());
+    let (std, std_origin) = match &found.std {
+        Some(DirectiveSource::Setting) => (standard, None),
+        Some(DirectiveSource::Block(block)) => (true, Some(origin(block))),
+        None => (false, None),
+    };
+    let user: Vec<(Ident, Origin)> = found
+        .user
+        .iter()
+        .filter_map(|(id, block)| Some((name(id)?, origin(block))))
+        .collect();
+    let declare_empty = found
+        .declare_empty
+        .iter()
+        .filter_map(|id| {
+            let block = found
+                .user
+                .iter()
+                .find(|(user, _)| user == id)
+                .map(|(_, block)| origin(block));
+            Some((name(id)?, block))
+        })
+        .collect();
+    emit::Directives {
+        declare_empty,
+        cstddef: !standard && matches!(found.std, Some(DirectiveSource::Block(_))),
+        short_standard: if std {
+            lower::names::short_standard(program, module)
+        } else {
+            BTreeSet::new()
+        },
+        std,
+        std_origin,
+        user,
     }
 }
 

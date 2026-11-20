@@ -529,14 +529,22 @@ class CanvasParts implements BlockParts {
   }
 
   /**
-   * `result`: up the parents to the root: `int` under *when program starts*, the `RETURNS` type
-   * under *define* (`empty` for `void`), `unknown` loose on the canvas or in the toolbox.
+   * `result`: up the parents to the function: `int` under *when program starts*, the `RETURNS`
+   * type under *define* (`empty` for `void`), `unknown` loose on the canvas or in the toolbox. A
+   * *define* may sit in a namespace's mouth (w3-modules.md §2.12), so the function is the nearest
+   * one, not the root.
    */
   result(): PartType {
     if (this.block.isInFlyout) {
       return UNKNOWN;
     }
-    const block = this.block.getRootBlock();
+    let block: Blockly.Block | null = this.block;
+    while (block !== null && block.type !== 'program.main' && block.type !== 'func.define') {
+      block = block.getParent();
+    }
+    if (block === null) {
+      return UNKNOWN;
+    }
     if (block.type === 'program.main') {
       return known(prim('int'));
     }

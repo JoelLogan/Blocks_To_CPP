@@ -77,7 +77,8 @@ describe('registerB2cBlocks', () => {
     const workspace = headlessWorkspace();
     for (const blockDef of BLOCK_DEFS) {
       const block = workspace.newBlock(blockDef.id);
-      const statement = blockDef.shape === 'statement';
+      // A namespace member has a previous and a next connection too (w3-modules.md §2.12).
+      const statement = blockDef.shape === 'statement' || blockDef.namespaceMember === true;
       const value = blockDef.shape === 'reporter' || blockDef.shape === 'predicate';
       expect(block.previousConnection !== null, `${blockDef.id} previous`).toBe(statement);
       expect(block.nextConnection !== null, `${blockDef.id} next`).toBe(statement);
@@ -108,8 +109,11 @@ describe('registerB2cBlocks', () => {
     for (const id of ['program.main', 'func.define']) {
       const block = workspace.newBlock(id);
       expect(block.getInput('BODY')?.type).toBe(Blockly.inputs.inputTypes.STATEMENT);
-      expect(block.previousConnection).toBeNull();
-      expect(block.nextConnection).toBeNull();
+      // *define* is a namespace member: its two connections fit only a namespace's mouth
+      // (w3-modules.md §2.12, test/namespaces.test.ts).
+      const member = id === 'func.define';
+      expect(block.previousConnection !== null).toBe(member);
+      expect(block.nextConnection !== null).toBe(member);
       expect(block.outputConnection).toBeNull();
     }
   });

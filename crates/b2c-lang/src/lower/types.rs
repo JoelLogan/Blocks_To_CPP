@@ -117,7 +117,9 @@ impl Lowerer<'_> {
             return None;
         };
         let ident = self.ident(&decl.name, &name_loc, true);
-        if let Some(other) = names.get(&decl.name).cloned() {
+        // Unique in its namespace (`geo::Point` and `Point` may both exist).
+        let key = self.scoped(&block.id, &decl.name);
+        if let Some(other) = names.get(&key).cloned() {
             let message = format!(
                 "There is already a struct or enum called {}. Rename one of them.",
                 quoted(&decl.name)
@@ -130,12 +132,12 @@ impl Lowerer<'_> {
                 "the other definition",
             );
         } else {
-            names.insert(decl.name.clone(), decl.sym.clone());
+            names.insert(key.clone(), decl.sym.clone());
         }
         let function = self
             .module_functions
             .get(self.module_index)
-            .and_then(|functions| functions.get(&decl.name))
+            .and_then(|functions| functions.get(&key))
             .cloned();
         if let Some(function) = function {
             let message = format!(
@@ -171,7 +173,7 @@ impl Lowerer<'_> {
             return None;
         }
         if let Some(types) = self.module_types.get_mut(self.module_index) {
-            types.entry(decl.name.clone()).or_insert_with(|| decl.sym.clone());
+            types.entry(key).or_insert_with(|| decl.sym.clone());
         }
         if shared {
             self.share(block, &decl.name, &decl.sym);

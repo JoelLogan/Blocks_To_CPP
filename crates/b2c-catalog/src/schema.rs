@@ -88,6 +88,18 @@ pub struct BlockDef {
     /// Mutator state keys.
     #[serde(default)]
     pub extra: Vec<ExtraDef>,
+    /// `namespace_member = true` on a definition: besides the top level, it
+    /// fits a namespace's mouth (a statement list marked `definitions`),
+    /// with the definitions before and after it there (w3-modules.md §2.12).
+    /// In the editor it has a previous and a next connection, which only a
+    /// mouth and the definitions in one use. `namespaceMember` in
+    /// `catalog.json`, written only when set.
+    #[serde(
+        default,
+        rename(deserialize = "namespace_member", serialize = "namespaceMember"),
+        skip_serializing_if = "is_false"
+    )]
+    pub namespace_member: bool,
 }
 
 /// Toolbox categories (spec §3.7), declared (and ordered) in the order the
@@ -173,7 +185,8 @@ impl fmt::Display for Category {
 pub enum Shape {
     /// Top-level entry point (`when program starts`).
     Hat,
-    /// Top-level definition (function, type, …).
+    /// Top-level definition (function, type, …). One marked
+    /// [`BlockDef::namespace_member`] also fits a namespace's mouth.
     Definition,
     /// A statement (puzzle notch top and bottom); may have statement inputs.
     Statement,
@@ -317,6 +330,11 @@ pub enum FieldKind {
     /// A standard header from the header table, such as `<vector>`, stored
     /// as its text (*use header*, types.md §5.4).
     Header,
+    /// A namespace (*use namespace*, w3-modules.md §2.9), stored as text: a
+    /// standard namespace as its name after `::` (`::std`), which no symbol
+    /// ID can be, or a user namespace's symbol ID. Which namespaces exist is
+    /// the analyser's to check.
+    Namespace,
 }
 
 /// A value-input definition.
@@ -367,6 +385,11 @@ pub struct StatementDef {
     /// Present only when this `extra` flag is true (e.g. `ELSE` when `hasElse`).
     #[serde(default)]
     pub when: Option<String>,
+    /// `definitions = true`: the list is a namespace's mouth, which holds
+    /// the definitions marked [`BlockDef::namespace_member`] and no
+    /// statement (w3-modules.md §2.12). Written only when set.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub definitions: bool,
 }
 
 /// Repetition: parts `NAME0` … `NAME{count + plus - 1}`.
