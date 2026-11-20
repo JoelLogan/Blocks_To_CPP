@@ -148,6 +148,18 @@ pub(super) fn compile_and_run(
     input: &str,
     output: &str,
 ) {
+    compile_and_run_as("-std=c++17", project, compilers, dir, input, output);
+}
+
+/// [`compile_and_run`] with the `-std=` option `flag`.
+fn compile_and_run_as(
+    flag: &str,
+    project: &GeneratedProject,
+    compilers: &[std::path::PathBuf],
+    dir: &Path,
+    input: &str,
+    output: &str,
+) {
     use std::io::Write as _;
     let sources = dir.join("src");
     std::fs::create_dir_all(&sources).unwrap();
@@ -164,7 +176,7 @@ pub(super) fn compile_and_run(
     for (index, gxx) in compilers.iter().enumerate() {
         let program = dir.join(format!("program-{index}"));
         let built = command(gxx)
-            .arg("-std=c++17")
+            .arg(flag)
             .args(STRICT)
             .arg("-iquote")
             .arg(&sources)
@@ -175,7 +187,7 @@ pub(super) fn compile_and_run(
             .unwrap();
         assert!(
             built.status.success(),
-            "{} rejected the program:\n{}\n--- files ---\n{all}",
+            "{} {flag} rejected the program:\n{}\n--- files ---\n{all}",
             gxx.display(),
             String::from_utf8_lossy(&built.stderr)
         );
@@ -186,9 +198,9 @@ pub(super) fn compile_and_run(
             .unwrap();
         run.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
         let run = run.wait_with_output().unwrap();
-        assert!(run.status.success(), "{}: {:?}", gxx.display(), run.status);
+        assert!(run.status.success(), "{} {flag}: {:?}", gxx.display(), run.status);
         let stdout = String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n");
-        assert_eq!(stdout, output, "{}", gxx.display());
+        assert_eq!(stdout, output, "{} {flag}", gxx.display());
     }
 }
 
@@ -529,6 +541,16 @@ fn share_everything(program: &mut Program) {
 /// at the *strict* level with `-Werror`: a header declares what it needs
 /// before it uses it.
 fn headers_compile_alone(project: &GeneratedProject, compilers: &[std::path::PathBuf], dir: &Path) {
+    headers_compile_alone_as("-std=c++17", project, compilers, dir);
+}
+
+/// [`headers_compile_alone`] with the `-std=` option `flag`.
+fn headers_compile_alone_as(
+    flag: &str,
+    project: &GeneratedProject,
+    compilers: &[std::path::PathBuf],
+    dir: &Path,
+) {
     let sources = dir.join("src");
     std::fs::create_dir_all(&sources).unwrap();
     for file in &project.files {
@@ -540,7 +562,7 @@ fn headers_compile_alone(project: &GeneratedProject, compilers: &[std::path::Pat
         std::fs::write(&unit, format!("#include \"{}\"\n", header.path)).unwrap();
         for gxx in compilers {
             let checked = command(gxx)
-                .arg("-std=c++17")
+                .arg(flag)
                 .args(STRICT)
                 .arg("-fsyntax-only")
                 .arg("-iquote")
@@ -550,7 +572,7 @@ fn headers_compile_alone(project: &GeneratedProject, compilers: &[std::path::Pat
                 .unwrap();
             assert!(
                 checked.status.success(),
-                "{} rejected {} alone:\n{}\n--- files ---\n{all}",
+                "{} {flag} rejected {} alone:\n{}\n--- files ---\n{all}",
                 gxx.display(),
                 header.path,
                 String::from_utf8_lossy(&checked.stderr)
@@ -1047,4 +1069,165 @@ fn shared_types_globals_and_constants_go_into_their_headers() {
         "",
         "Tag{colour: Green, size: 3}\ncolour Green\n42 43 42\n1\n",
     );
+}
+
+// --- The every-g++ forms test's three-module program (§4.2) --------------------
+
+/// Module `cards` of [`every_row_program`]: [`cards_module`]'s definitions
+/// in the namespace `deck`, with a shared function `bump` whose second
+/// input has a default value, the non-shared `half` it calls (in
+/// `namespace deck { namespace { … } }`) and a shared variable `dealt`.
+fn deck_module() -> Value {
+    let mut definitions = cards_module().as_array().unwrap().clone();
+    let mut bump = define(
+        "s_bump",
+        "bump",
+        "int",
+        &[("s_bump_n", "n", "int"), ("s_bump_by", "by", "int")],
+        give(
+            "bump_r",
+            json!([{"ref": "s_half"}, {"op": "("}, {"ref": "s_bump_n"}, {"op": "*"}, {"ref": "s_bump_by"}, {"op": ")"}]),
+        ),
+        true,
+    );
+    bump["inputs"] = json!({"DEFAULT1": {"expr": [{"num": "2"}]}});
+    definitions.push(bump);
+    definitions.push(define(
+        "s_half",
+        "half",
+        "int",
+        &[("s_half_n", "n", "int")],
+        give("half_r", json!([{"ref": "s_half_n"}, {"op": "/"}, {"num": "2"}])),
+        false,
+    ));
+    definitions.push(global(
+        "s_dealt",
+        "dealt",
+        "variable",
+        "int",
+        json!([{"num": "1"}]),
+        true,
+    ));
+    json!([{"id": "b_deck", "type": "program.namespace", "v": 1,
+            "fields": {"NAME": {"sym": "s_deck", "name": "deck"}},
+            "statements": {"DEFINITIONS": definitions}}])
+}
+
+/// A program of three modules with every row of w3-modules.md §1.7, for
+/// the project's `standard`: `kinds` (see [`kinds_module`]) also shares the
+/// `constexpr` constant `kLimit`; `cards` is [`deck_module`]; `main` is
+/// [`shop_main`] and prints `bump` with one argument and with two,
+/// `kLimit` and `dealt`.
+fn every_row_program(standard: &str) -> GeneratedProject {
+    let mut kinds = kinds_module();
+    kinds.as_array_mut().unwrap().push(global(
+        "s_kLimit",
+        "kLimit",
+        "constant",
+        "int",
+        json!([{"num": "7"}]),
+        true,
+    ));
+    let mut main = shop_main();
+    main[0]["statements"]["BODY"].as_array_mut().unwrap().push(json!(
+        {"id": "b_print_deck", "type": "io.print", "v": 1, "extra": {"itemCount": 4},
+         "fields": {"NEWLINE": true, "SEP": "space", "STREAM": "out"},
+         "inputs": {"ITEM0": {"expr": [{"ref": "s_bump"}, {"op": "("}, {"num": "5"}, {"op": ")"}]},
+                    "ITEM1": {"expr": [{"ref": "s_bump"}, {"op": "("}, {"num": "5"}, {"op": ","},
+                                       {"num": "3"}, {"op": ")"}]},
+                    "ITEM2": {"expr": [{"ref": "s_kLimit"}]},
+                    "ITEM3": {"expr": [{"ref": "s_dealt"}]}}}
+    ));
+    let mut value = project(&[
+        ("mod_main", "main", main),
+        ("mod_kinds", "kinds", kinds),
+        ("mod_cards", "cards", deck_module()),
+    ]);
+    value["project"]["language"]["standard"] = json!(standard);
+    generate(&analyse(&value, &[]))
+}
+
+/// The every-g++ forms test's three-module program (w3-modules.md §4.2):
+/// [`every_row_program`] under C++17 and C++20 holds every row of §1.7;
+/// each header compiles alone, and the program compiles at the *strict*
+/// level with `-Werror` with each of `compilers` and runs (in folders of
+/// `dir`).
+pub(super) fn every_row_program_compiles_clean_and_runs(compilers: &[std::path::PathBuf], dir: &Path) {
+    for standard in ["c++17", "c++20"] {
+        let project = every_row_program(standard);
+        let all = render(&project);
+        for (path, rows) in [
+            (
+                "kinds.hpp",
+                &[
+                    "int count_tags();",
+                    "struct Tag {",
+                    "friend std::ostream& operator<<(",
+                    "enum class Colour { Red, Green };\n\nstd::ostream& operator<<(std::ostream& out, Colour value);",
+                    "namespace b2c {\n\nstd::string to_text(Colour value);\n\n}  // namespace b2c",
+                    "extern int made;",
+                    "inline constexpr int kLimit = 7;",
+                    "extern const int kTop;",
+                ][..],
+            ),
+            (
+                "kinds.cpp",
+                &[
+                    "int count_tags() {",
+                    "std::ostream& operator<<(std::ostream& out, Colour value) {",
+                    "namespace b2c {\n\nstd::string to_text(Colour value) {",
+                    "int made = 42;",
+                    "const int kTop = kBase + 2;",
+                    "namespace {\n\nconstexpr int kBase = 40;",
+                ][..],
+            ),
+            (
+                "cards.hpp",
+                &[
+                    "namespace deck {",
+                    "int bump(int n, int by = 2);",
+                    "extern int dealt;",
+                    "struct Card {",
+                ][..],
+            ),
+            (
+                "cards.cpp",
+                &[
+                    "namespace deck {",
+                    "int bump(int n, int by) {",
+                    "int dealt = 1;",
+                    "namespace {\n\nint half(int n)",
+                ][..],
+            ),
+        ] {
+            let contents = text(&project, path);
+            for row in rows {
+                assert!(
+                    contents.contains(row),
+                    "{standard}: {row:?} not in {path}:\n{all}"
+                );
+            }
+        }
+        for (path, absent) in [
+            ("kinds.cpp", "inline"),
+            ("kinds.cpp", "kLimit"),
+            ("cards.cpp", "= 2"),
+        ] {
+            assert!(
+                !text(&project, path).contains(absent),
+                "{standard}: {absent:?} in {path}:\n{all}"
+            );
+        }
+        let flag = format!("-std={standard}");
+        let dir = dir.join(standard);
+        headers_compile_alone_as(&flag, &project, compilers, &dir.join("alone"));
+        compile_and_run_as(
+            &flag,
+            &project,
+            compilers,
+            &dir.join("run"),
+            "",
+            "Tag{colour: Green, size: 3}\ncolour Green\n42 43 42\n1\n5 7 7 1\n",
+        );
+    }
 }

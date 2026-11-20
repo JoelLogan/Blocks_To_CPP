@@ -3,7 +3,8 @@
 //! with their generated functions, all from hand-built symbols and SAST.
 //! One program that uses them all is compiled with the `g++` on `PATH` and
 //! every `/usr/bin/g++-N`, under C++17 and C++20 with the *strict* warnings,
-//! and run.
+//! and run; so are the every-block program and a program of three modules
+//! with every row of w3-modules.md §1.7.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -1057,6 +1058,9 @@ fn the_forms_program_compiles_clean_and_runs_on_every_gxx() {
     // Every block of the catalog, W2's among them, from a project file
     // (w2.md §5.3), built and run with each compiler.
     every_block_program_compiles_clean_and_runs(&compilers, dir.path());
+    // A program of three modules with every row of w3-modules.md §1.7
+    // (§4.2), each header alone and the program built and run.
+    super::w3_tests::every_row_program_compiles_clean_and_runs(&compilers, &dir.path().join("modules"));
 }
 
 // ---- every block of the catalog, from a project file ----------------------------------
