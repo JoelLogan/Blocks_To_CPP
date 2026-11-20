@@ -662,6 +662,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `fuzz/Cargo.lock`, for RUSTSEC-2026-0486 (its extended-attribute functions mark
   bytes as written that a zero-length size query never wrote). Blocks2Cpp never
   calls those functions; the update keeps `cargo deny` and OSV-Scanner clean.
+- Dependencies on 2026-11-20: RUSTSEC-2026-0543 (`chrono` is unmaintained; no
+  vulnerability and no patched release) is a tracked exception in
+  `osv-scanner.toml` (until 2027-02-20). `chrono` 0.4.45 is in `Cargo.lock`
+  only because `serde_with` (through `tauri-utils`) names it in weak
+  dependency features, which Cargo records in the lockfile; nothing enables
+  them, so it is never built or shipped, and `cargo deny` stays clean.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
