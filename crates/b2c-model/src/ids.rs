@@ -4,7 +4,9 @@
 //! symbol declared inside the blocks a new symbol ID, rewriting the
 //! references to those symbols, or the document would fail to load with
 //! `B2C-E0114`/`B2C-E0115`. References to symbols declared outside the
-//! blocks are left alone; the paste binds them again by name.
+//! blocks are left alone; the paste binds them again by name. A paste keeps
+//! a declared symbol's ID when the document does not use it
+//! ([`remap_ids_keeping_free`]), so cut then paste keeps callers bound.
 //!
 //! A reference is a field reference (`{"ref": id}`, also a user type in a
 //! type field), an expression token, or a reference inside a type term: in
@@ -188,6 +190,34 @@ pub fn remap_ids(
     taken: &BTreeSet<String>,
     ids: &mut dyn IdSource,
 ) -> Result<BTreeMap<SymbolId, SymbolId>, RemapError> {
+    remap(blocks, taken, ids, false)
+}
+
+/// [`remap_ids`], except that a declared symbol whose ID is not in `taken`
+/// keeps it (it maps to itself); the others get fresh IDs. A paste uses
+/// this so that a cut declaration pasted where no symbol has its ID any
+/// more keeps it, and the references the document still holds to it bind
+/// to it again (w3-modules.md §6 W3M-D12 (b)). Every block still gets a
+/// fresh block ID.
+///
+/// # Errors
+/// See [`RemapError`].
+pub fn remap_ids_keeping_free(
+    blocks: &mut [Block],
+    taken: &BTreeSet<String>,
+    ids: &mut dyn IdSource,
+) -> Result<BTreeMap<SymbolId, SymbolId>, RemapError> {
+    remap(blocks, taken, ids, true)
+}
+
+/// [`remap_ids`], keeping the free symbol IDs when `keep_free` is set
+/// ([`remap_ids_keeping_free`]).
+fn remap(
+    blocks: &mut [Block],
+    taken: &BTreeSet<String>,
+    ids: &mut dyn IdSource,
+    keep_free: bool,
+) -> Result<BTreeMap<SymbolId, SymbolId>, RemapError> {
     let mut fresh = Fresh {
         taken,
         given: BTreeSet::new(),
@@ -202,7 +232,13 @@ pub fn remap_ids(
         if symbols.contains_key(&old) {
             return Err(RemapError::DuplicateSymbol(old));
         }
-        let new = SymbolId::new(&fresh.next(IdKind::Symbol)?)?;
+        // A kept ID is recorded as given, so no fresh ID repeats it.
+        let new = if keep_free && !taken.contains(old.as_str()) && fresh.given.insert(old.as_str().to_owned())
+        {
+            old.clone()
+        } else {
+            SymbolId::new(&fresh.next(IdKind::Symbol)?)?
+        };
         symbols.insert(old, new);
     }
     let mut result = Ok(());

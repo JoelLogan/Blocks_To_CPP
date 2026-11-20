@@ -154,7 +154,14 @@ fn a_paste_binds_user_types_by_name_and_members_through_their_owner() {
         for sym in expected {
             assert!(text.contains(&format!("\"{sym}\"")), "{sym}: {text}");
         }
-        assert!(!text.contains("\"s_"), "{text}");
+        // No reference is left to the source's symbols; a declaration keeps
+        // its ID, which the target does not use (W3M-D12 (b)).
+        assert!(!text.contains("{\"ref\":\"s_"), "{text}");
+        assert_eq!(
+            text.matches("\"s_").count(),
+            text.matches("\"sym\":\"s_").count(),
+            "{text}"
+        );
     }
     // The struct's type in *create* and *new … with* binds by name too.
     let pasted = paste_after(&copy(&source, &["b002"]), &target, "b006");

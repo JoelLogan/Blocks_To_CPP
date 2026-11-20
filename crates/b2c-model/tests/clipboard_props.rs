@@ -16,8 +16,8 @@ use b2c_ir::types::TypeTerm;
 use b2c_ir::{BlockId, SymbolId};
 use b2c_model::{
     Block, BlockComment, BlockInput, Clipboard, ClipboardRef, ExprInput, FieldValue, IdKind, IdSource, Input,
-    RefKind, SeededIds, SymbolDecl, SymbolRef, Token, load_clipboard, outside_refs, remap_ids, rewrite_refs,
-    to_canonical_clipboard_json,
+    RefKind, SeededIds, SymbolDecl, SymbolRef, Token, load_clipboard, outside_refs, remap_ids,
+    remap_ids_keeping_free, rewrite_refs, to_canonical_clipboard_json,
 };
 use proptest::collection::{btree_map, vec};
 use proptest::option;
@@ -490,6 +490,52 @@ proptest! {
             prop_assert_eq!(&renamed[old], new);
         }
         prop_assert_eq!(&restored, &original);
+    }
+
+    /// A paste keeps a declared symbol's ID when it is free (w3-modules.md
+    /// §6 W3M-D12 (b)): exactly the declarations whose IDs are not taken
+    /// keep them, the others get fresh, unique IDs, and references follow.
+    #[test]
+    fn free_symbol_ids_are_kept(
+        clipboard in clipboard(),
+        seed in any::<[u8; 32]>(),
+        taken_mask in any::<u64>(),
+    ) {
+        let original = clipboard.blocks.clone();
+        let old_declared: Vec<SymbolId> = all_blocks(&original).iter().flat_map(|b| declared(b)).collect();
+        // Some of the declared IDs are taken, as after a copy; the others
+        // are free, as after a cut.
+        let taken: BTreeSet<String> = old_declared
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| taken_mask >> (i % 64) & 1 == 1)
+            .map(|(_, s)| s.as_str().to_owned())
+            .collect();
+
+        let mut blocks = original.clone();
+        let renamed = remap_ids_keeping_free(&mut blocks, &taken, &mut SeededIds::new(seed)).unwrap();
+        let mut seen = BTreeSet::new();
+        for block in all_blocks(&blocks) {
+            prop_assert!(block.id.as_str().starts_with("blk_"));
+            prop_assert!(seen.insert(block.id.as_str().to_owned()));
+        }
+        for (old, new) in &renamed {
+            if taken.contains(old.as_str()) {
+                prop_assert!(new.as_str().starts_with("sym_") && !taken.contains(new.as_str()));
+            } else {
+                prop_assert_eq!(old, new);
+            }
+            prop_assert!(seen.insert(new.as_str().to_owned()), "{} given twice", new);
+        }
+        for (before, after) in all_blocks(&original).iter().zip(all_blocks(&blocks)) {
+            let expected: Vec<SymbolId> = declared(before).iter().map(|s| renamed[s].clone()).collect();
+            prop_assert_eq!(declared(after), expected);
+            let expected: Vec<SymbolId> =
+                referenced(before).iter().map(|s| renamed.get(s).unwrap_or(s).clone()).collect();
+            prop_assert_eq!(referenced(after), expected);
+        }
+        let pasted = Clipboard { blocks, ..clipboard.clone() };
+        prop_assert!(load_clipboard(to_canonical_clipboard_json(&pasted).as_bytes()).is_ok());
     }
 
     #[test]

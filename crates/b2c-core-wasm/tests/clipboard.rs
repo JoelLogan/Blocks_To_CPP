@@ -842,6 +842,120 @@ fn function_calls_bind_to_the_target_modules_function() {
     );
 }
 
+/// The payload's names of a selection of `document`: `name Kind` each.
+fn ref_names(document: &str, ids: &[&str]) -> Vec<String> {
+    let (payload, _) = copy(document, ids);
+    let clipboard = b2c_model::load_clipboard(payload.as_bytes()).unwrap();
+    clipboard
+        .refs
+        .values()
+        .map(|r| format!("{} {:?}", r.name, r.kind))
+        .collect()
+}
+
+/// The pasted references that found nothing, as `sym name`.
+fn unresolved(pasted: &Value) -> Vec<String> {
+    pasted["unresolved"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|u| {
+            format!(
+                "{} {}",
+                u["sym"].as_str().unwrap(),
+                u["name"].as_str().unwrap_or("-")
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn names_in_namespaces_are_recorded_and_bound_with_their_namespaces() {
+    let shapes = example("shapes");
+    // `geo::area` is shared by module geometry; `geo::bounded` is geometry's
+    // own and `::bounded` report's own.
+    let names = ref_names(&shapes, &["b422"]);
+    assert!(names.contains(&String::from("geo::area Function")), "{names:?}");
+    assert!(ref_names(&shapes, &["b012"]).contains(&String::from("geo::bounded Function")));
+    assert!(ref_names(&shapes, &["b215"]).contains(&String::from("::bounded Function")));
+
+    // Report's own `::bounded` is not `geo::bounded`, and geometry's
+    // `geo::bounded` is not shared, so neither binds to the other.
+    let (payload, _) = copy(&shapes, &["b012"]);
+    let pasted = paste_ok(&payload, &shapes, &target("mod_report", None, None), 20);
+    assert!(
+        unresolved(&pasted).contains(&String::from("s_g_bounded geo::bounded")),
+        "{pasted}"
+    );
+    assert!(!pasted["blocks"].to_string().contains("s_r_bounded"));
+    let (payload, _) = copy(&shapes, &["b215"]);
+    let pasted = paste_ok(&payload, &shapes, &target("mod_geometry", None, None), 21);
+    assert!(
+        unresolved(&pasted).contains(&String::from("s_r_bounded ::bounded")),
+        "{pasted}"
+    );
+    assert!(!pasted["blocks"].to_string().contains("s_g_bounded"));
+
+    // Where another symbol ID has the name, `geo::area` binds to it: here
+    // the shared function of another module.
+    let renamed = shapes.replace("\"s_area\"", "\"t_area\"");
+    let (payload, _) = copy(&shapes, &["b422"]);
+    let pasted = paste_ok(&payload, &renamed, &target("mod_main", None, None), 22);
+    let blocks = pasted["blocks"].to_string();
+    assert!(
+        blocks.contains("t_area") && !blocks.contains("\"s_area\""),
+        "{blocks}"
+    );
+    assert!(!unresolved(&pasted).iter().any(|u| u.contains("area")));
+}
+
+/// Removes the top-level block `id` from module `module`'s canvas.
+fn cut(document: &str, module: usize, id: &str) -> String {
+    let mut value: Value = serde_json::from_str(document).unwrap();
+    let canvas = value["modules"][module]["workspace"]["blocks"]
+        .as_array_mut()
+        .unwrap();
+    let at = canvas.iter().position(|block| block["id"] == id).unwrap();
+    canvas.remove(at);
+    serde_json::to_string_pretty(&value).unwrap()
+}
+
+#[test]
+fn a_cut_definition_pasted_again_keeps_its_symbols_and_its_callers() {
+    let shapes = example("shapes");
+    // `print_shapes`, shared by report and called from main.
+    let (payload, _) = copy(&shapes, &["b221"]);
+    let without = cut(&shapes, 2, "b221");
+    let cut_result = update(&without, 4);
+    assert!(codes(&cut_result["diagnostics"]).contains(&String::from("B2C-E0201")));
+
+    let pasted = paste_ok(&payload, &without, &target("mod_report", None, None), 23);
+    assert_eq!(pasted["unresolved"], json!([]));
+    let function = &pasted["blocks"][0];
+    assert_eq!(function["fields"]["NAME"]["sym"], "s_print_shapes");
+    assert_ne!(function["id"], "b221");
+    let after = insert(&without, 2, None, None, &pasted["blocks"]);
+    let result = update(&after, 4);
+    assert_eq!(result["buildable"], true, "{:?}", errors(&result));
+    assert_eq!(file(&result, "main.cpp"), file(&update(&shapes, 4), "main.cpp"));
+
+    // A second paste finds the ID in use: fresh symbols, as a copy's.
+    let again = paste_ok(&payload, &after, &target("mod_report", None, None), 24);
+    let name = again["blocks"][0]["fields"]["NAME"]["sym"].as_str().unwrap();
+    assert!(name.starts_with("sym_"), "{name}");
+
+    // A function cut in one document keeps its ID in another without it.
+    let factorial = example("factorial");
+    let (payload, _) = copy(&factorial, &["b004"]);
+    let pasted = paste_ok(
+        &payload,
+        &example("hello_world"),
+        &target("mod_main", None, None),
+        25,
+    );
+    assert_eq!(pasted["blocks"][0]["fields"]["NAME"]["sym"], "s_factorial");
+}
+
 #[test]
 fn a_pasted_function_gets_fresh_symbols_for_everything_it_declares() {
     let factorial = example("factorial");
@@ -1181,6 +1295,62 @@ proptest! {
         let after = insert(text, index, None, None, &pasted["blocks"]);
         let loaded = parse(&b2c_core_wasm::load(after.as_bytes()));
         prop_assert_eq!(&loaded["ok"], &json!(true), "{}", loaded["diagnostics"]);
+    }
+
+    /// Cutting any top-level block of any example and pasting it on its
+    /// module's canvas keeps every symbol it declares (W3M-D12 (b)), and the
+    /// program is as it was: the same diagnostics, and buildable or not as
+    /// before.
+    #[test]
+    fn cut_and_paste_keeps_the_program(
+        example_index in 0..15_usize,
+        pick in any::<Index>(),
+        seed_value in any::<u64>(),
+    ) {
+        let all = examples();
+        let text = &all[example_index % all.len()].text;
+        let value: Value = serde_json::from_str(text).unwrap();
+        let tops: Vec<(usize, String)> = value["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .flat_map(|(index, module)| {
+                module["workspace"]["blocks"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(move |block| (index, block["id"].as_str().unwrap().to_owned()))
+            })
+            .collect();
+        let (index, id) = pick.get(&tops).clone();
+        let module = value["modules"][index]["id"].as_str().unwrap();
+        let (payload, _) = copy(text, &[id.as_str()]);
+        let without = cut(text, index, &id);
+        // The symbols the cut blocks declare: the IDs gone with them that
+        // are not block IDs.
+        let mut cut_blocks = Vec::new();
+        block_ids(&serde_json::from_str::<Value>(&payload).unwrap()["blocks"], &mut cut_blocks);
+        let declared: BTreeSet<String> = used_ids(&value)
+            .difference(&used_ids(&serde_json::from_str(&without).unwrap()))
+            .filter(|id| !cut_blocks.contains(id))
+            .cloned()
+            .collect();
+        let pasted = paste(&payload, &without, &target(module, None, None), &seed(seed_value));
+        prop_assert_eq!(&pasted["ok"], &json!(true), "{}", pasted);
+        let after = insert(&without, index, None, None, &pasted["blocks"]);
+        let ids = used_ids(&serde_json::from_str(&after).unwrap());
+        for sym in &declared {
+            prop_assert!(ids.contains(sym), "{} was not kept", sym);
+        }
+        let before = update(text, 4);
+        let result = update(&after, 4);
+        prop_assert_eq!(&result["buildable"], &before["buildable"]);
+        let mut expected = codes(&before["diagnostics"]);
+        let mut found = codes(&result["diagnostics"]);
+        expected.sort();
+        found.sort();
+        prop_assert_eq!(found, expected);
     }
 
     /// Mutated payloads never panic: every result is ok or a list of loader

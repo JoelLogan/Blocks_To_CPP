@@ -213,9 +213,12 @@ impl Session {
     /// same parser, limits and codes as a project file), and its blocks are
     /// upgraded like those of a loaded project
     /// (`b2c_catalog::upgrade_clipboard`, 05 §5.7). Its blocks get
-    /// fresh block IDs and fresh IDs for the symbols they declare
-    /// ([`b2c_model::remap_ids`] with [`b2c_model::SeededIds`] from `seed`),
-    /// none of them used in the document. References to other symbols are
+    /// fresh block IDs, none of them used in the document; a symbol they
+    /// declare keeps its ID when the document declares no symbol with it
+    /// (a cut declaration pasted again, so the references the document
+    /// still holds bind to it; w3-modules.md §6 W3M-D12 (b)), and gets a
+    /// fresh one otherwise ([`b2c_model::remap_ids_keeping_free`] with
+    /// [`b2c_model::SeededIds`] from `seed`). References to other symbols are
     /// bound again by qualified name and kind among the symbols visible at
     /// `target` (see [`crate::clipboard`] for the target and binding
     /// rules); those that find nothing stay references to their original
@@ -274,7 +277,9 @@ impl Session {
                 .map(|sym| sym.as_str().to_owned()),
         );
         taken.extend(payload.refs.keys().map(|sym| sym.as_str().to_owned()));
-        b2c_model::remap_ids(&mut blocks, &taken, &mut b2c_model::SeededIds::new(seed))
+        // A declared symbol whose ID no one uses keeps it (a cut and paste,
+        // W3M-D12 (b)); the taken set holds every ID the document declares.
+        b2c_model::remap_ids_keeping_free(&mut blocks, &taken, &mut b2c_model::SeededIds::new(seed))
             .map_err(|error| FacadeError::Internal(format!("no fresh IDs for the pasted blocks: {error}")))?;
         // Upgraded after the new IDs, so its diagnostics name the pasted blocks.
         let mut copied = b2c_model::Clipboard {
@@ -293,7 +298,16 @@ impl Session {
             target.input.as_deref(),
         );
         let outside = b2c_model::outside_refs(&blocks);
-        let binding = clipboard::rebind(&outside, &payload.refs, &visible);
+        let declared = clipboard::declarations(&document);
+        let binding = clipboard::rebind(
+            &outside,
+            &payload.refs,
+            &clipboard::Target {
+                visible: &visible,
+                declared: &declared,
+                module: &target.module,
+            },
+        );
         b2c_model::rewrite_refs(&mut blocks, &binding.rebound);
         let mut diagnostics = upgrade.diagnostics;
         diagnostics.extend(clipboard::unresolved_diagnostics(

@@ -11,7 +11,8 @@
 //! * [`load_clipboard`] and [`to_canonical_clipboard_json`]: the clipboard
 //!   format (§5.12), validated exactly like a project file.
 //! * [`remap_ids`] and [`SeededIds`]: fresh block and symbol IDs for pasted
-//!   and duplicated blocks.
+//!   and duplicated blocks; [`remap_ids_keeping_free`] keeps the symbol IDs
+//!   no one uses (a cut declaration pasted again).
 //! * [`security_hash`] and [`security_summary`]: what workspace trust looks
 //!   at (spec §8.3).
 //! * [`limits`]: the validation limits.
@@ -43,7 +44,8 @@ pub use clipboard::{
 };
 pub use document::*;
 pub use ids::{
-    IdKind, IdSource, MAX_ID_ATTEMPTS, RemapError, SeededIds, outside_refs, remap_ids, rewrite_refs, used_ids,
+    IdKind, IdSource, MAX_ID_ATTEMPTS, RemapError, SeededIds, outside_refs, remap_ids,
+    remap_ids_keeping_free, rewrite_refs, used_ids,
 };
 pub use load::{LoadError, load};
 pub use save::{content_hash, to_canonical_json};

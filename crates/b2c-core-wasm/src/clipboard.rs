@@ -2,32 +2,39 @@
 //! making a payload from selected blocks, and preparing a payload's blocks
 //! for insertion into a document.
 //!
-//! # Qualified names in milestone M2
+//! # Qualified names
 //!
 //! A payload's `refs` record the qualified name and kind of each symbol the
 //! copied blocks use but do not declare, so a paste can bind them again by
-//! name (06 §6.14.11). Milestone M2 has no namespaces and no shared names,
-//! so the rule is:
+//! name (06 §6.14.11, w3-modules.md §2.1):
 //!
 //! * a variable, parameter or loop counter is recorded by its plain name
 //!   (`score`): locals are never qualified;
-//! * a function is recorded with the global-namespace qualifier (`::area`),
-//!   since every M2 function is a non-shared function of its module's global
-//!   namespace. Pasting binds it to the target module's own function of that
-//!   name (functions of other modules are not visible, `B2C-E0206`); a
-//!   recorded plain `area` is read the same way.
+//! * a function is recorded with its namespaces in front of its name,
+//!   outermost first (`geo::area`, `geo::shapes::area`), or with the
+//!   global-namespace qualifier when it is in none (`::area`). A recorded
+//!   name without a qualifier (`area`, from milestone M2's payloads, which
+//!   had no namespaces) is read as `::area`, and so is a recorded
+//!   `::geo::area` as `geo::area`. Modules are never part of the name.
 //!
-//! A name qualified with a namespace (`geo::area`, from a later version)
-//! never matches in M2 and stays unresolved.
+//! A recorded name binds to a visible symbol of that kind whose name and
+//! namespaces are the same, by the names of its namespaces: one namespace
+//! opened in several modules is one namespace (w3-modules.md §2.12). What
+//! is visible is the scope query's answer, which lists the module's own
+//! definitions and the definitions other modules share; when both have the
+//! name, the module's own one wins (precedence, §2.1): `::area` binds to the
+//! target module's own `area` when it has one, otherwise to the one shared
+//! `area` of another module, and `geo::area` the same within `geo`.
 //!
 //! # User types and their members (clipboard format version 2)
 //!
 //! Milestone M3 adds structs and enums (types.md §2.4):
 //!
-//! * a struct or an enum is recorded with the global-namespace qualifier,
-//!   as a function is (`::Student`), and binds again by the same rule;
+//! * a struct or an enum is recorded with its namespaces or the
+//!   global-namespace qualifier, as a function is (`::Student`,
+//!   `geo::Shape`), and binds again by the same rule;
 //! * a field or an enumerator is recorded with its owner's qualified name in
-//!   front of its own (`::Student::mark`, `::Action::Deposit`), and binds
+//!   front of its own (`::Student::mark`, `geo::Colour::Red`), and binds
 //!   again through its owner: the owner binds by its name, as a struct or
 //!   enum would; when it is the member's own owner (the struct the field
 //!   belongs to at the target), the member keeps its ID; when it is another
@@ -49,7 +56,9 @@
 //! and the arguments of *when program starts with arguments* (variables). A
 //! global (`var.global`) is recorded as a variable by its plain name too, as
 //! the clipboard format has no kind for it: it binds to the visible global
-//! of that name, whose kind reads as a variable.
+//! of that name, whose kind reads as a variable. A namespace has no kind in
+//! the format either: a pasted *use namespace* keeps the namespace's symbol
+//! ID it holds (w3-modules.md §2.9).
 //!
 //! # What is visible at the paste target
 //!
@@ -81,7 +90,8 @@
 //!
 //! * if the payload names it (`refs`), it binds to the visible symbol with
 //!   that qualified name and kind: itself, if it is one of them (a paste next
-//!   to the original), otherwise the only one. With none, it keeps its
+//!   to the original), otherwise the only one of the target module, or,
+//!   when the module has none, the only one. With none, it keeps its
 //!   original symbol if that is visible and of that kind (renamed since the
 //!   copy); with none or several otherwise, it is unresolved;
 //! * if the payload does not name it, it stays as it is and is unresolved
@@ -94,6 +104,16 @@
 //! them (`s_guess`), so a block pasted from one into another keeps a
 //! reference whose ID the target declares with the same kind, silently,
 //! whatever that symbol is called there.
+//!
+//! # The symbols the pasted blocks declare
+//!
+//! The pasted blocks get fresh block IDs. A symbol they declare keeps its ID
+//! when the document declares no symbol with it, and gets a fresh one
+//! otherwise (w3-modules.md §6 W3M-D12 (b)): a declaration that was cut and
+//! is pasted again, in its module or another, keeps the references the
+//! document still holds to it, so the calls of other modules stay bound.
+//! A copy pasted next to its original, or a second paste of a cut, gets
+//! fresh IDs.
 //!
 //! An unresolved reference still refers to its original symbol ID, so the
 //! analyser reports it once the blocks are in place (`B2C-E0201`, or
@@ -197,6 +217,43 @@ pub(crate) struct Declared {
     pub(crate) kind: RefKind,
     /// For a field or an enumerator, the struct or enum it belongs to.
     pub(crate) owner: Option<SymbolId>,
+    /// For a definition in a user namespace, the names of its namespaces,
+    /// outermost first; empty otherwise.
+    pub(crate) namespace: Vec<String>,
+}
+
+/// The block type of a user namespace, and the statement list that holds
+/// its definitions (w3-modules.md §2.12).
+const NAMESPACE_BLOCK: &str = "program.namespace";
+const NAMESPACE_MOUTH: &str = "DEFINITIONS";
+
+/// The names of the namespaces each definition of a document is in,
+/// outermost first, by the definition's block: the blocks in the mouth of a
+/// *namespace* block, at any depth of nesting. Definitions at the top of a
+/// canvas are not listed.
+fn namespaces_of(document: &Document) -> BTreeMap<&BlockId, Vec<&str>> {
+    let mut found = BTreeMap::new();
+    let mut pending: Vec<(&Block, Vec<&str>)> = document
+        .modules
+        .iter()
+        .flat_map(|module| &module.workspace.blocks)
+        .filter(|block| block.block_type == NAMESPACE_BLOCK)
+        .map(|block| (block, Vec::new()))
+        .collect();
+    while let Some((namespace, mut path)) = pending.pop() {
+        let Some(FieldValue::Decl(decl)) = namespace.fields.get("NAME") else {
+            continue;
+        };
+        path.push(decl.name.as_str());
+        for member in namespace.statements.get(NAMESPACE_MOUTH).into_iter().flatten() {
+            if member.block_type == NAMESPACE_BLOCK {
+                pending.push((member, path.clone()));
+            } else {
+                found.insert(&member.id, path.clone());
+            }
+        }
+    }
+    found
 }
 
 /// Every symbol declared in a document (also in disabled and loose blocks),
@@ -209,19 +266,33 @@ pub(crate) struct Declared {
 /// first declaration of an ID wins.
 #[allow(clippy::too_many_lines, reason = "one arm per declaring block")]
 pub(crate) fn declarations(document: &Document) -> BTreeMap<SymbolId, Declared> {
+    let namespaces = namespaces_of(document);
     let mut found: BTreeMap<SymbolId, Declared> = BTreeMap::new();
-    let mut record = |sym: &SymbolId, name: &str, kind: RefKind, owner: Option<&SymbolId>| {
-        found.entry(sym.clone()).or_insert_with(|| Declared {
-            name: name.to_owned(),
-            kind,
-            owner: owner.cloned(),
-        });
-    };
+    let mut record =
+        |sym: &SymbolId, name: &str, kind: RefKind, owner: Option<&SymbolId>, namespace: &[&str]| {
+            found.entry(sym.clone()).or_insert_with(|| Declared {
+                name: name.to_owned(),
+                kind,
+                owner: owner.cloned(),
+                namespace: namespace.iter().map(|&name| name.to_owned()).collect(),
+            });
+        };
     let roots = document
         .modules
         .iter()
         .flat_map(|module| &module.workspace.blocks);
     tree::walk(roots, |block| {
+        // Only a definition's own name is qualified: its parameters and a
+        // type's members are not (members are qualified through the type).
+        let in_namespace = namespaces.get(&block.id).map_or(&[][..], Vec::as_slice);
+        let mut record = |sym: &SymbolId, name: &str, kind: RefKind, owner: Option<&SymbolId>| {
+            let namespace = if matches!(kind, RefKind::Function | RefKind::Struct | RefKind::Enum) {
+                in_namespace
+            } else {
+                &[]
+            };
+            record(sym, name, kind, owner, namespace);
+        };
         let decl = |field: &str| match block.fields.get(field) {
             Some(FieldValue::Decl(decl)) => Some(decl),
             _ => None,
@@ -328,16 +399,31 @@ pub(crate) fn declarations(document: &Document) -> BTreeMap<SymbolId, Declared> 
 pub(crate) fn qualified_name(declared: &BTreeMap<SymbolId, Declared>, sym: &SymbolId) -> Option<String> {
     let symbol = declared.get(sym)?;
     Some(match symbol.kind {
-        RefKind::Function | RefKind::Struct | RefKind::Enum => format!("::{}", symbol.name),
+        RefKind::Function | RefKind::Struct | RefKind::Enum => definition_name(symbol),
         RefKind::Field | RefKind::Enumerator => {
             let owner = declared.get(symbol.owner.as_ref()?)?;
             if owner.kind != owner_kind(symbol.kind) {
                 return None;
             }
-            format!("::{}::{}", owner.name, symbol.name)
+            format!("{}::{}", definition_name(owner), symbol.name)
         }
         RefKind::Variable | RefKind::Parameter | RefKind::LoopVariable => symbol.name.clone(),
     })
+}
+
+/// The qualified name of a function, struct or enum: `geo::area` in a
+/// namespace, `::area` in none.
+fn definition_name(symbol: &Declared) -> String {
+    let mut name = String::new();
+    for namespace in &symbol.namespace {
+        name.push_str(namespace);
+        name.push_str("::");
+    }
+    if name.is_empty() {
+        name.push_str("::");
+    }
+    name.push_str(&symbol.name);
+    name
 }
 
 /// The kind of the type a member belongs to: a struct for a field, an enum
@@ -399,9 +485,8 @@ pub(crate) struct Binding {
 }
 
 /// The kind of a visible symbol, as a payload names it; `None` for a
-/// namespace, which no payload names yet: a pasted *use namespace* keeps the
-/// namespace's symbol ID it holds (w3-modules.md §2.9), and package N2 adds
-/// namespace-qualified names (§3.3).
+/// namespace, which the clipboard format has no kind for: a pasted *use
+/// namespace* keeps the namespace's symbol ID it holds (w3-modules.md §2.9).
 fn ref_kind(info: &SymbolInfo) -> Option<RefKind> {
     Some(match info.kind {
         // A global reads as a variable (see the module docs).
@@ -417,25 +502,62 @@ fn ref_kind(info: &SymbolInfo) -> Option<RefKind> {
     })
 }
 
-/// Whether a visible symbol is the one a payload's `refs` entry names: the
-/// same kind and the same qualified name (see the module docs).
-fn names(reference: &ClipboardRef, info: &SymbolInfo) -> bool {
-    named(&reference.name, reference.kind, info)
+/// The symbols visible at a paste target, with what decides which one a
+/// recorded name binds to: the namespaces of each (from the target
+/// document's [`declarations`]) and the target's module.
+pub(crate) struct Target<'a> {
+    /// What the scope query lists there.
+    pub(crate) visible: &'a [SymbolInfo],
+    /// The target document's declarations.
+    pub(crate) declared: &'a BTreeMap<SymbolId, Declared>,
+    /// The module pasted into.
+    pub(crate) module: &'a ModuleId,
 }
 
-/// Whether a visible symbol has the qualified name `name` and the kind
-/// `kind`. A field or an enumerator is never matched by name alone: it is
-/// bound again through its owner ([`bind_member`]).
-fn named(name: &str, kind: RefKind, info: &SymbolInfo) -> bool {
-    if ref_kind(info) != Some(kind) {
-        return false;
+impl Target<'_> {
+    /// Whether a visible symbol is the one a payload's `refs` entry names:
+    /// the same kind and the same qualified name (see the module docs).
+    fn names(&self, reference: &ClipboardRef, info: &SymbolInfo) -> bool {
+        self.named(&reference.name, reference.kind, info)
     }
-    match kind {
-        RefKind::Function | RefKind::Struct | RefKind::Enum => {
-            name.strip_prefix("::").unwrap_or(name) == info.name
+
+    /// Whether a visible symbol has the qualified name `name` and the kind
+    /// `kind`. A field or an enumerator is never matched by name alone: it
+    /// is bound again through its owner ([`bind_member`]).
+    fn named(&self, name: &str, kind: RefKind, info: &SymbolInfo) -> bool {
+        if ref_kind(info) != Some(kind) {
+            return false;
         }
-        RefKind::Variable | RefKind::Parameter | RefKind::LoopVariable => name == info.name,
-        RefKind::Field | RefKind::Enumerator => false,
+        match kind {
+            RefKind::Function | RefKind::Struct | RefKind::Enum => {
+                let name = name.strip_prefix("::").unwrap_or(name);
+                let (path, own) = name.rsplit_once("::").unwrap_or(("", name));
+                let namespace = self
+                    .declared
+                    .get(&info.id)
+                    .map_or(&[][..], |symbol| symbol.namespace.as_slice());
+                own == info.name
+                    && (path.is_empty() && namespace.is_empty()
+                        || !path.is_empty() && path.split("::").eq(namespace.iter().map(String::as_str)))
+            }
+            RefKind::Variable | RefKind::Parameter | RefKind::LoopVariable => name == info.name,
+            RefKind::Field | RefKind::Enumerator => false,
+        }
+    }
+
+    /// The one symbol of `found` a name binds to (precedence, w3-modules.md
+    /// §2.1): the only one of the target's module, or, when the module has
+    /// none, the only one.
+    fn pick<'s>(&self, found: &[&'s SymbolInfo]) -> Option<&'s SymbolInfo> {
+        let own: Vec<&SymbolInfo> = found
+            .iter()
+            .copied()
+            .filter(|info| info.module == *self.module)
+            .collect();
+        match (own.as_slice(), found) {
+            ([only], _) | ([], [only]) => Some(*only),
+            _ => None,
+        }
     }
 }
 
@@ -464,14 +586,16 @@ enum Member {
 ///
 /// * the owner binds to the visible struct (or enum) with that name, by the
 ///   rule of the other names: the original member's own owner if it is one
-///   of them, otherwise the only one; with none, the original member's own
+///   of them, otherwise the only one of the target's module, or the only
+///   one when the module has none; with none, the original member's own
 ///   owner when the original member is visible (the type was renamed since
 ///   the copy);
 /// * when that is the original member's own owner, the member keeps its ID;
 /// * when it is another type, the member binds to that type's visible
 ///   member of the same name and kind;
 /// * otherwise, and with several, it is unresolved.
-fn bind_member(sym: &SymbolId, reference: &ClipboardRef, visible: &[SymbolInfo]) -> Member {
+fn bind_member(sym: &SymbolId, reference: &ClipboardRef, target: &Target<'_>) -> Member {
+    let visible = target.visible;
     let Some((owner_name, member)) = reference.name.rsplit_once("::") else {
         return Member::Unresolved;
     };
@@ -479,15 +603,14 @@ fn bind_member(sym: &SymbolId, reference: &ClipboardRef, visible: &[SymbolInfo])
         .iter()
         .find(|info| info.id == *sym && ref_kind(info) == Some(reference.kind))
         .and_then(member_owner);
-    let owners: Vec<&SymbolId> = visible
+    let owners: Vec<&SymbolInfo> = visible
         .iter()
-        .filter(|info| named(owner_name, owner_kind(reference.kind), info))
-        .map(|info| &info.id)
+        .filter(|info| target.named(owner_name, owner_kind(reference.kind), info))
         .collect();
-    let owner = match (own_owner, owners.as_slice()) {
-        (Some(own), _) if owners.contains(&own) => own,
-        (_, [only]) => *only,
-        (Some(own), []) => own,
+    let owner = match (own_owner, target.pick(&owners)) {
+        (Some(own), _) if owners.iter().any(|info| info.id == *own) => own,
+        (_, Some(only)) => &only.id,
+        (Some(own), None) if owners.is_empty() => own,
         _ => return Member::Unresolved,
     };
     if own_owner == Some(owner) {
@@ -510,7 +633,8 @@ fn bind_member(sym: &SymbolId, reference: &ClipboardRef, visible: &[SymbolInfo])
 ///
 /// * a reference the payload names (`refs`) binds to the visible symbol
 ///   with that qualified name and kind: itself, if it is one of them (a
-///   paste next to the original), otherwise the only one. With none, it
+///   paste next to the original), otherwise the only one of the target's
+///   module, or the only one when the module has none. With none, it
 ///   keeps its original symbol if that is visible and of that kind (renamed
 ///   since the copy); otherwise, and with several, it is unresolved;
 /// * a reference the payload does not name stays as it is, and is
@@ -519,8 +643,9 @@ fn bind_member(sym: &SymbolId, reference: &ClipboardRef, visible: &[SymbolInfo])
 pub(crate) fn rebind(
     outside: &BTreeSet<SymbolId>,
     refs: &BTreeMap<SymbolId, ClipboardRef>,
-    visible: &[SymbolInfo],
+    target: &Target<'_>,
 ) -> Binding {
+    let visible = target.visible;
     let mut binding = Binding::default();
     for sym in outside {
         let itself = visible.iter().find(|info| info.id == *sym);
@@ -534,7 +659,7 @@ pub(crate) fn rebind(
             continue;
         };
         if matches!(reference.kind, RefKind::Field | RefKind::Enumerator) {
-            match bind_member(sym, reference, visible) {
+            match bind_member(sym, reference, target) {
                 Member::Keep => {}
                 Member::Rebind(id) => {
                     binding.rebound.insert(sym.clone(), id);
@@ -546,16 +671,20 @@ pub(crate) fn rebind(
             }
             continue;
         }
-        let named: Vec<&SymbolInfo> = visible.iter().filter(|info| names(reference, info)).collect();
+        let named: Vec<&SymbolInfo> = visible
+            .iter()
+            .filter(|info| target.names(reference, info))
+            .collect();
         if named.iter().any(|info| info.id == *sym) {
             continue;
         }
-        match named.as_slice() {
-            [only] => {
+        match target.pick(&named) {
+            Some(only) => {
                 binding.rebound.insert(sym.clone(), only.id.clone());
             }
-            [] if itself.is_some_and(|info| ref_kind(info) == Some(reference.kind)) => {}
-            _ => binding.unresolved.push(Unresolved {
+            None if named.is_empty() && itself.is_some_and(|info| ref_kind(info) == Some(reference.kind)) => {
+            }
+            None => binding.unresolved.push(Unresolved {
                 sym: sym.clone(),
                 name: Some(reference.name.clone()),
             }),
@@ -753,7 +882,44 @@ mod tests {
             name: name.to_owned(),
             kind,
             owner: owner.map(sym),
+            namespace: Vec::new(),
         }
+    }
+
+    /// The module of [`info`]'s symbols.
+    fn module() -> ModuleId {
+        ModuleId::new("m").unwrap()
+    }
+
+    /// Whether a visible symbol at global scope is the one a reference names.
+    fn names(reference: &ClipboardRef, info: &SymbolInfo) -> bool {
+        let declared = BTreeMap::new();
+        let module = module();
+        let target = Target {
+            visible: &[],
+            declared: &declared,
+            module: &module,
+        };
+        target.names(reference, info)
+    }
+
+    /// [`rebind`] in module `m`, every symbol at global scope.
+    fn rebind_at(
+        outside: &BTreeSet<SymbolId>,
+        refs: &BTreeMap<SymbolId, ClipboardRef>,
+        visible: &[SymbolInfo],
+    ) -> Binding {
+        let declared = BTreeMap::new();
+        let module = module();
+        rebind(
+            outside,
+            refs,
+            &Target {
+                visible,
+                declared: &declared,
+                module: &module,
+            },
+        )
     }
 
     #[test]
@@ -816,6 +982,104 @@ mod tests {
     }
 
     #[test]
+    fn namespaces_qualify_definitions_and_their_members() {
+        let in_namespace = |name: &str, kind: RefKind, owner: Option<&str>, path: &[&str]| Declared {
+            namespace: path.iter().map(|&n| n.to_owned()).collect(),
+            ..declared(name, kind, owner)
+        };
+        let table: BTreeMap<SymbolId, Declared> = [
+            ("f", declared("area", RefKind::Function, None)),
+            ("g", in_namespace("area", RefKind::Function, None, &["geo"])),
+            (
+                "gs",
+                in_namespace("area", RefKind::Function, None, &["geo", "shapes"]),
+            ),
+            ("sh", in_namespace("Shape", RefKind::Struct, None, &["geo"])),
+            ("w", declared("width", RefKind::Field, Some("sh"))),
+            ("col", in_namespace("Colour", RefKind::Enum, None, &["geo"])),
+            ("red", declared("Red", RefKind::Enumerator, Some("col"))),
+        ]
+        .into_iter()
+        .map(|(id, d)| (sym(id), d))
+        .collect();
+        let name = |id: &str| qualified_name(&table, &sym(id));
+        assert_eq!(name("f").as_deref(), Some("::area"));
+        assert_eq!(name("g").as_deref(), Some("geo::area"));
+        assert_eq!(name("gs").as_deref(), Some("geo::shapes::area"));
+        assert_eq!(name("sh").as_deref(), Some("geo::Shape"));
+        assert_eq!(name("w").as_deref(), Some("geo::Shape::width"));
+        assert_eq!(name("red").as_deref(), Some("geo::Colour::Red"));
+
+        let module = module();
+        let target = Target {
+            visible: &[],
+            declared: &table,
+            module: &module,
+        };
+        let matches = |recorded: &str, id: &str| {
+            target.names(&reference(recorded, RefKind::Function), &function(id, "area"))
+        };
+        for (recorded, expected) in [
+            ("::area", "f"),
+            ("area", "f"),
+            ("geo::area", "g"),
+            ("::geo::area", "g"),
+            ("geo::shapes::area", "gs"),
+        ] {
+            for id in ["f", "g", "gs"] {
+                assert_eq!(matches(recorded, id), id == expected, "{recorded} and {id}");
+            }
+        }
+        assert!(!matches("shapes::area", "gs"));
+        assert!(!matches("geo::", "g"));
+
+        // A member binds through its namespaced owner.
+        let visible = [user_type("sh", "Shape"), field("w", "width", "sh")];
+        let target = Target {
+            visible: &visible,
+            declared: &table,
+            module: &module,
+        };
+        let refs = BTreeMap::from([(sym("s_w"), reference("geo::Shape::width", RefKind::Field))]);
+        let binding = rebind(&BTreeSet::from([sym("s_w")]), &refs, &target);
+        assert_eq!(binding.rebound, BTreeMap::from([(sym("s_w"), sym("w"))]));
+        let refs = BTreeMap::from([(sym("s_w"), reference("::Shape::width", RefKind::Field))]);
+        let binding = rebind(&BTreeSet::from([sym("s_w")]), &refs, &target);
+        assert_eq!(binding.unresolved.len(), 1);
+    }
+
+    #[test]
+    fn the_target_modules_own_definition_comes_first() {
+        let elsewhere = |id: &str| SymbolInfo {
+            module: ModuleId::new("other").unwrap(),
+            shared: true,
+            ..function(id, "area")
+        };
+        let outside = BTreeSet::from([sym("s_area")]);
+        let refs = BTreeMap::from([(sym("s_area"), reference("::area", RefKind::Function))]);
+        let bound = |visible: &[SymbolInfo]| {
+            let binding = rebind_at(&outside, &refs, visible);
+            (
+                binding.rebound.get(&sym("s_area")).cloned(),
+                binding.unresolved.len(),
+            )
+        };
+        // The module's own `area` wins over another module's shared one.
+        assert_eq!(
+            bound(&[elsewhere("theirs"), function("own", "area")]),
+            (Some(sym("own")), 0)
+        );
+        // Without one, the one shared `area`.
+        assert_eq!(bound(&[elsewhere("theirs")]), (Some(sym("theirs")), 0));
+        // Two shared ones (`B2C-E0211`) and two of the module: unresolved.
+        assert_eq!(bound(&[elsewhere("a"), elsewhere("b")]), (None, 1));
+        assert_eq!(
+            bound(&[function("a", "area"), function("b", "area"), elsewhere("c")]),
+            (None, 1)
+        );
+    }
+
+    #[test]
     fn rebinding_rules() {
         let outside: BTreeSet<SymbolId> = ["s_same", "s_moved", "s_gone", "s_twice", "s_unnamed", "s_seen"]
             .into_iter()
@@ -838,7 +1102,7 @@ mod tests {
             variable("s_seen", "seen"),
             variable("t_missing", "missing_not"),
         ];
-        let binding = rebind(&outside, &refs, &visible);
+        let binding = rebind_at(&outside, &refs, &visible);
         assert_eq!(binding.rebound, BTreeMap::from([(sym("s_moved"), sym("t_area"))]));
         assert_eq!(
             binding.unresolved,
@@ -864,16 +1128,16 @@ mod tests {
         let outside = BTreeSet::from([sym("s_x")]);
         let refs = BTreeMap::from([(sym("s_x"), reference("x", RefKind::Variable))]);
         // Renamed since the copy, and nothing else is called `x`: it stays.
-        let binding = rebind(&outside, &refs, &[variable("s_x", "renamed")]);
+        let binding = rebind_at(&outside, &refs, &[variable("s_x", "renamed")]);
         assert!(binding.rebound.is_empty());
         assert!(binding.unresolved.is_empty());
         // The name decides when another visible symbol has it.
         let visible = [variable("s_x", "renamed"), variable("t_x", "x")];
-        let binding = rebind(&outside, &refs, &visible);
+        let binding = rebind_at(&outside, &refs, &visible);
         assert_eq!(binding.rebound, BTreeMap::from([(sym("s_x"), sym("t_x"))]));
         assert!(binding.unresolved.is_empty());
         // Visible, but not of the recorded kind: unresolved.
-        let binding = rebind(&outside, &refs, &[function("s_x", "x")]);
+        let binding = rebind_at(&outside, &refs, &[function("s_x", "x")]);
         assert_eq!(binding.unresolved.len(), 1);
     }
 
@@ -914,7 +1178,7 @@ mod tests {
             // A function of the same name is not a struct.
             function("t_f", "Student"),
         ];
-        let binding = rebind(&outside, &refs, &visible);
+        let binding = rebind_at(&outside, &refs, &visible);
         assert_eq!(
             binding.rebound,
             BTreeMap::from([(sym("s_st"), sym("t_st")), (sym("s_en"), sym("t_en"))])
@@ -941,13 +1205,13 @@ mod tests {
             user_enum("s_en", "Action"),
             enumerator("s_dep", "Deposit", "s_en"),
         ];
-        let binding = rebind(&outside, &refs, &original);
+        let binding = rebind_at(&outside, &refs, &original);
         assert!(binding.rebound.is_empty());
         assert!(binding.unresolved.is_empty());
         // The owner was renamed too: no type has the name, but the member's
         // own owner is visible, so it still keeps its ID.
         let renamed = [user_type("s_st", "Pupil"), field("s_mark", "mark", "s_st")];
-        let binding = rebind(&BTreeSet::from([sym("s_mark")]), &refs, &renamed);
+        let binding = rebind_at(&BTreeSet::from([sym("s_mark")]), &refs, &renamed);
         assert!(binding.rebound.is_empty() && binding.unresolved.is_empty());
         // In another project: the owner binds to that project's type by name,
         // and the member to that type's member of the same name.
@@ -962,7 +1226,7 @@ mod tests {
             enumerator("t_dep", "Deposit", "t_en"),
             enumerator("t_wd", "Withdraw", "t_en"),
         ];
-        let binding = rebind(&outside, &refs, &other);
+        let binding = rebind_at(&outside, &refs, &other);
         assert_eq!(
             binding.rebound,
             BTreeMap::from([(sym("s_dep"), sym("t_dep")), (sym("s_mark"), sym("t_mark"))])
@@ -976,7 +1240,7 @@ mod tests {
             field("t_mark", "mark", "t_a"),
         ];
         for visible in [&missing[..], &[], &twice[..]] {
-            let binding = rebind(&BTreeSet::from([sym("s_mark")]), &refs, visible);
+            let binding = rebind_at(&BTreeSet::from([sym("s_mark")]), &refs, visible);
             assert!(binding.rebound.is_empty());
             assert_eq!(
                 binding.unresolved,
@@ -988,11 +1252,11 @@ mod tests {
         }
         // A field is not an enumerator, and a struct no enum.
         let wrong = [user_enum("t_st", "Student"), enumerator("t_mark", "mark", "t_st")];
-        let binding = rebind(&BTreeSet::from([sym("s_mark")]), &refs, &wrong);
+        let binding = rebind_at(&BTreeSet::from([sym("s_mark")]), &refs, &wrong);
         assert_eq!(binding.unresolved.len(), 1);
         // A recorded name without an owner binds nothing.
         let bare = BTreeMap::from([(sym("s_mark"), reference("mark", RefKind::Field))]);
-        let binding = rebind(&BTreeSet::from([sym("s_mark")]), &bare, &other);
+        let binding = rebind_at(&BTreeSet::from([sym("s_mark")]), &bare, &other);
         assert_eq!(binding.unresolved.len(), 1);
     }
 
@@ -1005,7 +1269,7 @@ mod tests {
             field("s_mark", "mark", "s_st"),
             field("t_mark", "mark", "t_st"),
         ];
-        let binding = rebind(&BTreeSet::from([sym("s_mark")]), &refs, &visible);
+        let binding = rebind_at(&BTreeSet::from([sym("s_mark")]), &refs, &visible);
         assert!(binding.rebound.is_empty() && binding.unresolved.is_empty());
         assert_eq!(member_owner(&visible[2]), Some(&sym("s_st")));
         assert_eq!(member_owner(&visible[0]), None);
