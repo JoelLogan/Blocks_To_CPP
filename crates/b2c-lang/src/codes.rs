@@ -29,19 +29,15 @@ pub(crate) const DUPLICATE_FUNCTION: &str = "B2C-E0211";
 pub(crate) const DUPLICATE_SYMBOL_ID: &str = "B2C-E0212";
 /// A non-shared name that is also a shared name of the same namespace, of
 /// any module (w3-modules.md §2.1 with W3M-D10's program-wide rule).
-#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's packages F, T and N"))]
 pub(crate) const SHARED_NAME_CLASH: &str = "B2C-E0213";
 /// A shared definition whose header part names a non-shared definition of
 /// its module (w3-modules.md §1.9).
-#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's packages F and T"))]
 pub(crate) const NOT_SHARED_IN_HEADER: &str = "B2C-E0214";
 /// A type or user namespace whose name a nominated namespace declares where
 /// it is referred to (`list`, `pair`, `chrono`; 06 §6.14.7).
-#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's package N"))]
 pub(crate) const NOMINATED_NAME: &str = "B2C-E0215";
 /// *namespace* blocks nested more deeply than `MAX_NAMESPACE_DEPTH`
 /// (w3-modules.md §2.10).
-#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's package N"))]
 pub(crate) const NAMESPACE_TOO_DEEP: &str = "B2C-E0219";
 /// A name that is not a valid C++ identifier for user code.
 pub(crate) const INVALID_NAME: &str = "B2C-E0220";
@@ -110,11 +106,9 @@ pub(crate) const STRUCT_CYCLE: &str = "B2C-E0420";
 pub(crate) const DECLARATION_CYCLE: &str = "B2C-E0421";
 /// Modules whose headers would include each other when no cycle of
 /// definitions explains it (w3-modules.md §2.2).
-#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's packages F and T"))]
 pub(crate) const HEADER_CYCLE: &str = "B2C-E0422";
 /// A global set before the program starts from another module's global
 /// that C++ may not have set yet (modules.md §4.4).
-#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's package T"))]
 pub(crate) const INIT_ACROSS_MODULES: &str = "B2C-E0423";
 /// A value that must be fixed when the program is built is not: a `case`
 /// label, or the condition of *check at compile time* (w2.md §2.9).
@@ -181,16 +175,15 @@ pub(crate) const COMMENT_DROPPED: &str = "B2C-W0521";
 pub(crate) const BAD_STEP: &str = "B2C-W0522";
 /// A *use namespace* block that another source already covers
 /// (06 §6.14.3 rule 5).
-#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's package N"))]
 pub(crate) const NAMESPACE_IN_USE: &str = "B2C-I0523";
 
 // --- Generating C++ (E07xx), reported by the analyser ----------------------
-
-/// A C++20 standard sub-namespace (`std::ranges`, `std::views`,
-/// `std::numbers`) in a project for an older standard (06 §6.4, §6.14.3).
-/// Documented in `generator.md`, beside `B2C-E0701` and `B2C-E0702`.
-#[cfg_attr(not(test), allow(dead_code, reason = "emitted by W3's package S"))]
-pub(crate) const NEEDS_CPP20: &str = "B2C-E0703";
+//
+// None yet. `B2C-E0703`, a C++20 standard sub-namespace (`std::ranges`,
+// `std::views`, `std::numbers`) in a project for an older standard (06 §6.4,
+// §6.14.3), comes with the blocks that name those namespaces (W3's package S,
+// w3-modules.md §1.4, not done), and is documented in `generator.md` beside
+// `B2C-E0701` and `B2C-E0702`.
 
 #[cfg(test)]
 pub(crate) const ALL: &[&str] = &[
@@ -264,7 +257,6 @@ pub(crate) const ALL: &[&str] = &[
     COMMENT_DROPPED,
     BAD_STEP,
     NAMESPACE_IN_USE,
-    NEEDS_CPP20,
 ];
 
 #[cfg(test)]
@@ -276,7 +268,7 @@ mod tests {
     const REFERENCE: &str = include_str!("../../../docs/reference/diagnostics/analyser.md");
     /// The reference of the codes of generating C++ (`B2C-E07xx`), which the
     /// analyser reports too when it can tell before generating
-    /// (`B2C-E0703`). Read when the test runs, so that the WebAssembly
+    /// (`B2C-E0703`, none yet). Read when the test runs, so that the WebAssembly
     /// core's build inputs need not list it.
     fn generator_reference() -> String {
         let path = concat!(
