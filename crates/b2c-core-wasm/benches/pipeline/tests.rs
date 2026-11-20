@@ -20,8 +20,8 @@ use b2c_ir::Severity;
 use serde_json::Value;
 
 use crate::document::{
-    DEFINITION_BLOCKS, GenerateError, HANDLE_BLOCKS, MAX_BLOCKS, Shape, UNIT_BLOCKS, Units, count_blocks,
-    generate, parity_digest,
+    DEFINITION_BLOCKS, GenerateError, HANDLE_BLOCKS, MAX_BLOCKS, MODULES, Shape, UNIT_BLOCKS, Units,
+    count_blocks, generate, generate_modules, parity_digest,
 };
 
 /// The parity digests the TypeScript generator must also give
@@ -306,5 +306,47 @@ fn the_language_document_has_the_size_every_kind_of_unit_and_no_diagnostics_at_a
         "int area(int width, int height = 2);",
     ] {
         assert!(cpp.contains(line), "{line}\n{cpp:.6000}");
+    }
+}
+
+/// The 8-module document (modules.md §12): the size asked for at every
+/// count, eight modules, `main` calling each other module's shared
+/// function, and no diagnostics at all.
+#[test]
+fn the_eight_module_document_has_the_size_and_no_diagnostics_at_all() {
+    for blocks in [15, 16, 23, 24, 1_000] {
+        let generated = generate_modules(blocks).unwrap();
+        assert_eq!(count_blocks(&generated), blocks, "{blocks} blocks");
+    }
+    assert_eq!(
+        generate_modules(14),
+        Err(GenerateError::TooFew { blocks: 14, min: 15 })
+    );
+    assert_eq!(
+        generate_modules(MAX_BLOCKS + 1),
+        Err(GenerateError::TooMany {
+            blocks: MAX_BLOCKS + 1
+        })
+    );
+    let generated = generate_modules(1_000).unwrap();
+    let modules = generated["modules"].as_array().unwrap();
+    assert_eq!(modules.len(), MODULES);
+    // Every module has units.
+    for module in modules {
+        assert!(module.to_string().contains("s_value_"), "{}", module["name"]);
+    }
+    let loaded = b2c_model::load(generated.to_string().as_bytes()).unwrap();
+    let text = b2c_model::to_canonical_json(&loaded);
+    let preview = preview_document(&text, &PreviewOptions::default());
+    assert!(preview.diagnostics.is_empty(), "{:?}", preview.diagnostics);
+    assert!(preview.buildable);
+    let paths: Vec<&str> = preview.files.iter().map(|file| file.path.as_str()).collect();
+    assert!(
+        paths.contains(&"part7.cpp") && paths.contains(&"part7.hpp"),
+        "{paths:?}"
+    );
+    let main = preview.files.iter().find(|file| file.path == "main.cpp").unwrap();
+    for k in 1..MODULES {
+        assert!(main.contents.contains(&format!("work_{k}();")), "work_{k}");
     }
 }

@@ -54,6 +54,9 @@
 //!   block the benchmark can drag back and forth without changing the
 //!   program.
 //!
+//! * [`generate_modules`] spreads the plain units over eight modules
+//!   (modules.md §12; native only): see there.
+//!
 //! Block IDs are `b<n>` in document order, symbol IDs `s_value_<u>`,
 //! `s_i_<u>` and `s_drag` (`s_scores_<u>`, `s_i_<u>` and `s_item_<u>` in
 //! collection units; `s_n_<u>`, `s_e_<u>`, `s_p_<u>` and `s_word_<u>` in
@@ -746,6 +749,100 @@ pub(crate) fn generate(shape: Shape) -> Result<Value, GenerateError> {
             "name": "main",
             "workspace": { "blocks": top },
         }],
+    }))
+}
+
+/// The modules of [`generate_modules`]: `main` and seven others.
+pub(crate) const MODULES: usize = 8;
+
+/// The benchmark document of `blocks` blocks in [`MODULES`] modules
+/// (docs/plans/m3-contracts/modules.md §12; native only): module `main`
+/// (`mod_main`) has `program.main`, and module `part<k>` (`mod_part<k>`,
+/// `k` from 1 to 7) a shared `void work_<k>()` (`s_work_<k>`) that `main`
+/// calls first, in order. The plain units of [`generate`] go round the
+/// eight bodies, unit `u` into body `u % 8` (main's, then `work_1`'s, …),
+/// and the fillers end main's body; symbol IDs are as in [`generate`],
+/// block IDs `b<n>` in the order they are made. The fewest blocks are
+/// `1 + 7 × 2` (main, the calls and the definitions).
+///
+/// # Errors
+/// [`GenerateError`] when the shape has too few or too many blocks.
+pub(crate) fn generate_modules(blocks: usize) -> Result<Value, GenerateError> {
+    let others = MODULES - 1;
+    let min = 1 + 2 * others;
+    if blocks < min {
+        return Err(GenerateError::TooFew { blocks, min });
+    }
+    if blocks > MAX_BLOCKS {
+        return Err(GenerateError::TooMany { blocks });
+    }
+    let units = (blocks - min) / UNIT_BLOCKS;
+    let fillers = (blocks - min) % UNIT_BLOCKS;
+    let mut ids = Ids(0);
+    let main_id = ids.next();
+    let mut bodies: Vec<Vec<Value>> = vec![Vec::new(); MODULES];
+    if let Some(main) = bodies.first_mut() {
+        for k in 1..=others {
+            main.push(json!({
+                "id": ids.next(),
+                "type": "func.call_stmt",
+                "v": 1,
+                "extra": { "argCount": 0 },
+                "fields": { "FUNC": { "ref": format!("s_work_{k}") } },
+            }));
+        }
+    }
+    for index in 0..units {
+        if let Some(body) = bodies.get_mut(index % MODULES) {
+            body.extend(unit(&mut ids, index));
+        }
+    }
+    for index in 0..fillers {
+        let filler = print(&mut ids, &format!("filler {index}"));
+        if let Some(main) = bodies.first_mut() {
+            main.push(filler);
+        }
+    }
+    let mut bodies = bodies.into_iter();
+    let first = json!({
+        "id": "mod_main",
+        "name": "main",
+        "workspace": { "blocks": [{
+            "id": main_id,
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": { "BODY": bodies.next().unwrap_or_default() },
+        }] },
+    });
+    let mut modules = vec![first];
+    for (k, body) in (1..=others).zip(bodies) {
+        modules.push(json!({
+            "id": format!("mod_part{k}"),
+            "name": format!("part{k}"),
+            "workspace": { "blocks": [{
+                "id": ids.next(),
+                "type": "func.define",
+                "v": 1,
+                "x": 40,
+                "y": 40,
+                "extra": { "params": [] },
+                "fields": {
+                    "NAME": { "sym": format!("s_work_{k}"), "name": format!("work_{k}") },
+                    "RETURNS": "void",
+                    "SHARED": true,
+                },
+                "statements": { "BODY": body },
+            }] },
+        }));
+    }
+    Ok(json!({
+        "format": "blocks2cpp/project",
+        "formatVersion": 2,
+        "generator": { "app": "0.1.0", "catalog": "1.3.0" },
+        "project": project(blocks),
+        "modules": modules,
     }))
 }
 

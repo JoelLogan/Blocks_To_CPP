@@ -19,12 +19,17 @@
 //! * `preview-language`: the same on the document of W2's blocks of every
 //!   kind (collections, text, math, errors, structs and enums, globals,
 //!   control, functions and files; w2.md §5.3), reported and not gated
-//!   until it has its baselines.
+//!   until it has its baselines;
+//! * `preview-modules`: the same on the 1,000 plain blocks spread over 8
+//!   modules, `main` calling a shared function of each other one
+//!   (`document::generate_modules`, docs/plans/m3-contracts/modules.md
+//!   §12), reported next to `preview` and not gated until it has its
+//!   baselines.
 //!
 //! Run it with `cargo bench -p b2c-core-wasm --bench pipeline` (add
 //! `-- --quick` for a short run). Criterion writes each benchmark's samples
 //! to `<target>/criterion/pipeline/<name>/new/sample.json`, which
-//! `tools/bench-compare.py criterion` reads. Before measuring, the document
+//! `tools/bench-compare.py criterion` reads. Before measuring, each document
 //! is checked: it must load, have exactly 1,000 blocks and preview without
 //! errors, so a broken generator cannot pass for a fast pipeline.
 
@@ -42,7 +47,7 @@ use b2c_codegen::CodegenOptions;
 use b2c_core_wasm::{APP_VERSION, PreviewOptions, Session, preview_document};
 use criterion::{Criterion, SamplingMode};
 
-use crate::document::{Shape, Units, count_blocks, generate};
+use crate::document::{Shape, Units, count_blocks, generate, generate_modules};
 
 /// The document the editor's preview must handle within N4 (01 §1.4).
 const SHAPE: Shape = Shape {
@@ -70,11 +75,16 @@ const SAMPLES: usize = 50;
 /// why it cannot be benchmarked.
 fn prepared_document(shape: Shape) -> Result<String, String> {
     let generated = generate(shape).map_err(|error| error.to_string())?;
-    let blocks = count_blocks(&generated);
-    if blocks != shape.blocks {
+    checked(&generated, shape.blocks)
+}
+
+/// A generated document as a saved file has it, once it has `expected`
+/// blocks, loads and previews cleanly; or why it cannot be benchmarked.
+fn checked(generated: &serde_json::Value, expected: usize) -> Result<String, String> {
+    let blocks = count_blocks(generated);
+    if blocks != expected {
         return Err(format!(
-            "the generated document has {blocks} blocks, not {}",
-            shape.blocks
+            "the generated document has {blocks} blocks, not {expected}"
         ));
     }
     let loaded = b2c_model::load(generated.to_string().as_bytes()).map_err(|error| {
@@ -111,6 +121,8 @@ struct Documents {
     collections: String,
     /// W2's blocks of every kind.
     language: String,
+    /// The plain blocks in 8 modules.
+    modules: String,
 }
 
 /// The `pipeline` group on the plain document, and the previews of the
@@ -144,6 +156,9 @@ fn bench_pipeline(criterion: &mut Criterion, documents: &Documents) -> Result<()
     group.bench_function("preview", |b| {
         b.iter(|| preview_document(black_box(text), &preview_options));
     });
+    group.bench_function("preview-modules", |b| {
+        b.iter(|| preview_document(black_box(&documents.modules), &preview_options));
+    });
     group.bench_function("preview-collections", |b| {
         b.iter(|| preview_document(black_box(&documents.collections), &preview_options));
     });
@@ -164,6 +179,10 @@ fn main() -> ExitCode {
             plain,
             collections: prepared_document(COLLECTIONS)?,
             language: prepared_document(LANGUAGE)?,
+            modules: checked(
+                &generate_modules(SHAPE.blocks).map_err(|error| error.to_string())?,
+                SHAPE.blocks,
+            )?,
         })
     });
     let outcome = documents.and_then(|documents| {
