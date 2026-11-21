@@ -39,6 +39,11 @@ pub enum Spelling {
     /// `geo::area`: a member of a user namespace, named with its enclosing
     /// namespaces.
     Qualified,
+    /// `::geo::area`: as [`Spelling::Qualified`], from the global
+    /// namespace, where a namespace or type nearer the reference has the
+    /// name of its outermost namespace (06 §6.14.2: `geo` itself is
+    /// contested).
+    GlobalQualified,
     /// A standard name in full (`std::max`). The default for standard
     /// names.
     Full,

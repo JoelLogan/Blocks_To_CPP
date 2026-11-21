@@ -567,6 +567,57 @@ fn a_header_is_spelled_for_every_file_that_includes_it() {
     runs(&generated, "3 7\n");
 }
 
+/// 06 §6.14.2: `::geo::area` when `geo` itself is contested. Inside
+/// `shapes`, which has a `geo` of its own, the top-level `geo::area` is
+/// `::geo::area`; `geo::area` would call `shapes::geo::area`.
+#[test]
+fn a_contested_namespace_is_written_from_the_global_namespace() {
+    let program = project(
+        &[(
+            "mod_main",
+            "main",
+            json!([
+                main_block(vec![print(
+                    "b_print",
+                    vec![
+                        tokens(json!([{"ref": "s_g"}, {"op": "("}, {"op": ")"}])),
+                        tokens(json!([{"ref": "s_area"}, {"op": "("}, {"op": ")"}])),
+                    ],
+                )]),
+                namespace(
+                    "geo",
+                    vec![define("g_area", "area", &[], tokens(json!([{"num": "1"}])))]
+                ),
+                namespace(
+                    "shapes",
+                    vec![
+                        json!({"id": "b_geo_in", "type": "program.namespace", "v": 1,
+                        "fields": {"NAME": {"sym": "ns_geo_in", "name": "geo"}},
+                        "statements": {"DEFINITIONS": [
+                            define("s_area", "area", &[], tokens(json!([{"num": "2"}])))
+                        ]}}),
+                        define(
+                            "s_g",
+                            "g",
+                            &[],
+                            tokens(json!([{"ref": "g_area"}, {"op": "("}, {"op": ")"}]))
+                        ),
+                    ],
+                ),
+            ]),
+        )],
+        false,
+    );
+    let generated = generate(&analyse(&program, &[]));
+    let main = text(&generated, "main.cpp");
+    assert!(main.contains("return ::geo::area();"), "{main}");
+    assert!(
+        main.contains("shapes::g() << \" \" << shapes::geo::area()"),
+        "{main}"
+    );
+    runs(&generated, "1 2\n");
+}
+
 /// A shared global that is not `constexpr` gets its starting value in its
 /// module's `.cpp`, after the directives, so the value is spelled with
 /// them: `calc.cpp` uses `geo`, which `places` shares a `limit` of, so

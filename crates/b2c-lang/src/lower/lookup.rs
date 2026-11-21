@@ -19,7 +19,9 @@
 //!   written plainly only when that finds exactly the intended entity (for
 //!   a function, exactly its overload set); otherwise `::name` for an
 //!   entity of the global or the anonymous namespace and `geo::name` for a
-//!   member of a user namespace. A user function is qualified also when a
+//!   member of a user namespace (`::geo::name` when a namespace or type of
+//!   an enclosing user namespace is called `geo` too, 06 §6.14.2: `geo` is
+//!   contested). A user function is qualified also when a
 //!   nominated namespace declares its name, and for argument-dependent
 //!   lookup when the namespace of an argument's struct or enum (also inside
 //!   a collection) other than its own declares a function of its name.
@@ -154,6 +156,9 @@ struct Model<'p> {
     /// The namespaces by their enclosing namespace and name (the symbols
     /// that stand for them).
     children: BTreeMap<(Option<&'p SymbolId>, &'p str), &'p SymbolId>,
+    /// By namespace (the symbol that stands for it): the name of its
+    /// outermost namespace, which a qualified name starts with.
+    outermost: BTreeMap<&'p SymbolId, &'p str>,
     /// By module: the modules whose headers its `.cpp` includes, directly or
     /// through other headers (its own among them when it has one).
     reach: Vec<BTreeSet<usize>>,
@@ -231,6 +236,26 @@ impl<'p> Model<'p> {
                         .iter()
                         .any(|def| !def.same_entity(target))
             })
+    }
+
+    /// Whether the outermost namespace of `target`, which a qualified
+    /// reference to it starts with, is contested at a place in the
+    /// namespaces `ctx` (06 §6.14.2): one of those declares a namespace or
+    /// type of its name, which lookup of the name before `::` finds first.
+    fn contested(&self, ctx: &[&'p SymbolId], target: &Def<'p>) -> bool {
+        let Some(first) = target.ns.and_then(|ns| self.outermost.get(ns)) else {
+            return false;
+        };
+        ctx.iter().any(|scope| {
+            self.children.contains_key(&(Some(*scope), *first))
+                || self
+                    .by_name
+                    .get(&(Some(*scope), *first))
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|sym| self.defs.get(sym))
+                    .any(|def| def.kind == DefKind::Type)
+        })
     }
 
     /// The user namespaces associated with a value of type `ty` (06
@@ -583,17 +608,27 @@ impl Lowerer<'_> {
             }
         }
         let mut children = BTreeMap::new();
+        let mut outermost = BTreeMap::new();
         for standing in self.namespaces.blocks.keys() {
             if let Some(symbol) = self.symbols.get(standing)
                 && let SymbolKind::Namespace { parent } = &symbol.kind
             {
                 children.insert((parent.as_ref(), symbol.name.as_str()), standing);
             }
+            if let Some(first) = self
+                .symbols
+                .namespace_path(Some(standing))
+                .first()
+                .and_then(|id| self.symbols.get(id))
+            {
+                outermost.insert(standing, first.name.as_str());
+            }
         }
         Model {
             defs,
             by_name,
             children,
+            outermost,
             reach: reach(layout),
             year: year(self.document.project.language.standard),
         }
@@ -1016,6 +1051,7 @@ fn spelling<'p>(
     match (plain, target.ns) {
         (true, _) => Spelling::Plain,
         (false, None) => Spelling::Global,
+        (false, Some(_)) if model.contested(ctx, target) => Spelling::GlobalQualified,
         (false, Some(_)) => Spelling::Qualified,
     }
 }
