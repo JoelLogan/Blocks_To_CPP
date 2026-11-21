@@ -15,6 +15,8 @@
 mod common;
 
 use std::collections::BTreeSet;
+use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use b2c_ir::{BlockId, SymbolId};
 use b2c_lang::Analysis;
@@ -189,7 +191,7 @@ fn block_pointers(value: &Value) -> Vec<String> {
 }
 
 /// Damages the block at a JSON pointer of a document.
-type Mutation = Box<dyn Fn(&mut Value, &str)>;
+type Mutation = Box<dyn Fn(&mut Value, &str) + Send + Sync>;
 
 /// The ways one block of a document is damaged, with labels for messages.
 fn mutations() -> Vec<(String, Mutation)> {
@@ -271,24 +273,72 @@ fn mutations() -> Vec<(String, Mutation)> {
     all
 }
 
+/// Sets its flag if the thread unwinds from a panic, so the other workers stop.
+struct StopOnPanic<'a>(&'a AtomicBool);
+
+impl Drop for StopOnPanic<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Every block of every example with every mutation: tens of thousands of
+/// documents, each analysed four times. The blocks are shared out among one
+/// worker per core, so the test takes minutes rather than a quarter of an
+/// hour in a debug build (it was most of the Windows test job's time).
 #[test]
 fn examples_with_a_damaged_block() {
     let mutations = mutations();
-    let mut loaded = 0;
-    let mut variants = 0;
-    for (name, value) in example_values() {
-        for pointer in block_pointers(&value) {
-            for (label, mutate) in &mutations {
-                let mut damaged = value.clone();
-                mutate(&mut damaged, &pointer);
-                variants += 1;
-                let bytes = serde_json::to_vec(&damaged).expect("json");
-                if exercise_loaded(&bytes, &format!("{name} {pointer} {label}")).is_some() {
-                    loaded += 1;
-                }
-            }
-        }
-    }
+    let examples = example_values();
+    let blocks: Vec<(usize, String)> = examples
+        .iter()
+        .enumerate()
+        .flat_map(|(index, (_, value))| {
+            block_pointers(value)
+                .into_iter()
+                .map(move |pointer| (index, pointer))
+        })
+        .collect();
+    let next = AtomicUsize::new(0);
+    let stop = AtomicBool::new(false);
+    let workers = std::thread::available_parallelism().map_or(1, NonZeroUsize::get);
+    let (loaded, variants) = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                let (mutations, examples, blocks, next, stop) =
+                    (&mutations, &examples, &blocks, &next, &stop);
+                scope.spawn(move || {
+                    let _stop = StopOnPanic(stop);
+                    let (mut loaded, mut variants) = (0_usize, 0_usize);
+                    while !stop.load(Ordering::Relaxed) {
+                        let Some((index, pointer)) = blocks.get(next.fetch_add(1, Ordering::Relaxed)) else {
+                            break;
+                        };
+                        let (name, value) = &examples[*index];
+                        for (label, mutate) in mutations {
+                            let mut damaged = value.clone();
+                            mutate(&mut damaged, pointer);
+                            variants += 1;
+                            let bytes = serde_json::to_vec(&damaged).expect("json");
+                            if exercise_loaded(&bytes, &format!("{name} {pointer} {label}")).is_some() {
+                                loaded += 1;
+                            }
+                        }
+                    }
+                    (loaded, variants)
+                })
+            })
+            .collect();
+        handles.into_iter().fold((0, 0), |(loaded, variants), handle| {
+            let (l, v) = handle
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+            (loaded + l, variants + v)
+        })
+    });
+    assert_eq!(variants, blocks.len() * mutations.len(), "every variant was made");
     // Most variants load; resolve then rejects many of them.
     assert!(loaded * 2 > variants, "only {loaded} of {variants} variants load");
 }
