@@ -21,6 +21,7 @@ import {
   STD_NAMESPACE_VALUE,
   writeB2cField,
 } from '../src';
+import { flushEvents } from '../src/mutators/test-fixtures';
 import { fakeSymbols, setUpBlocks } from './helpers';
 
 const FAR = 1e9;
@@ -262,5 +263,66 @@ describe('use namespace', () => {
     expect(writeB2cField(field, 'sym_gone')).toBe(true);
     expect(field.getText()).toBe('sym_gone');
     expect(readB2cField(field)).toBe('sym_gone');
+  });
+
+  /** A *namespace* block with block ID `id` declaring `sym` as `name`. */
+  function namespaceBlock(id: string, sym: string, name: string): Blockly.BlockSvg {
+    const block = workspace.newBlock('program.namespace', id);
+    block.initSvg();
+    block.render();
+    named(block, sym, name);
+    return block;
+  }
+
+  /** A *use namespace* block naming `value`, and its field. */
+  function useOf(value: string): B2cNamespaceField {
+    const field = rendered('program.use_namespace').getField('NS');
+    if (!(field instanceof B2cNamespaceField)) {
+      throw new Error('NS is not a namespace field');
+    }
+    expect(writeB2cField(field, value)).toBe(true);
+    return field;
+  }
+
+  it('lists a namespace once when it names a block other than the first of its name', () => {
+    namespaceBlock('blk_m', 'sym_m', 'geo');
+    const field = useOf('sym_m');
+    // A pasted block of the name with a lower ID does not list the name twice.
+    namespaceBlock('blk_a', 'sym_a', 'geo');
+    expect(field.getOptions(false)).toEqual([
+      ['std', '::std'],
+      ['geo', 'sym_m'],
+    ]);
+    expect(field.getText()).toBe('geo');
+  });
+
+  it('follows its namespace to another block of the name when the block it names is deleted', async () => {
+    const first = namespaceBlock('blk_a', 'sym_a', 'geo');
+    namespaceBlock('blk_m', 'sym_m', 'geo');
+    namespaceBlock('blk_z', 'sym_z', 'shapes');
+    const field = useOf('sym_a');
+    const other = useOf('sym_z');
+    await flushEvents();
+    Blockly.Events.setGroup(true);
+    first.dispose(false);
+    Blockly.Events.setGroup(false);
+    // The listener follows once Blockly delivers the deletion; Blockly delivers its change next.
+    await flushEvents();
+    await flushEvents();
+    expect(readB2cField(field)).toBe('sym_m');
+    expect(field.getText()).toBe('geo');
+    expect(readB2cField(other)).toBe('sym_z');
+    // One undo step brings the block back, and the block's value with it.
+    workspace.undo(false);
+    await flushEvents();
+    expect(workspace.getBlockById('blk_a')).not.toBeNull();
+    expect(readB2cField(field)).toBe('sym_a');
+    // With no other block of the name, the value stays as it is.
+    namespaceBlock('blk_y', 'sym_y', 'flat');
+    const flat = useOf('sym_y');
+    await flushEvents();
+    workspace.getBlockById('blk_y')?.dispose(false);
+    await flushEvents();
+    expect(readB2cField(flat)).toBe('sym_y');
   });
 });
