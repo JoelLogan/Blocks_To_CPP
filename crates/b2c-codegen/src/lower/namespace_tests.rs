@@ -508,3 +508,102 @@ fn a_header_spells_without_the_directives_of_its_cpp() {
     );
     runs(&generated, "6\n");
 }
+
+/// A shared `int` global `<kind> <name> = <value>` (block `b_<sym>`).
+fn shared_global(sym: &str, name: &str, kind: &str, value: Value) -> Value {
+    json!({"id": format!("b_{sym}"), "type": "var.global", "v": 1,
+           "fields": {"KIND": kind, "TYPE": "int", "NAME": {"sym": sym, "name": name}, "SHARED": true},
+           "inputs": {"VALUE": {"expr": value}}})
+}
+
+/// A header is spelled for every `.cpp` that includes it, which may have
+/// included any module's header before it (w3-modules.md §7.1): in
+/// `zeta.hpp`, inside `geo`, the default value of `geo::f` reads the
+/// global `limit` as `::limit`, because `main.cpp` includes `alpha.hpp`,
+/// which shares `geo::limit`, first, although `zeta.cpp` does not.
+#[test]
+fn a_header_is_spelled_for_every_file_that_includes_it() {
+    let alpha = json!([namespace(
+        "geo",
+        vec![shared_global(
+            "g_limit",
+            "limit",
+            "constant",
+            json!([{"num": "7"}])
+        )],
+    )]);
+    let zeta = json!([
+        shared_global("t_limit", "limit", "constant", json!([{"num": "3"}])),
+        {"id": "b_geo2", "type": "program.namespace", "v": 1,
+         "fields": {"NAME": {"sym": "ns_geo2", "name": "geo"}},
+         "statements": {"DEFINITIONS": [
+            {"id": "fn_g_f", "type": "func.define", "v": 1,
+             "fields": {"NAME": {"sym": "g_f", "name": "f"}, "RETURNS": "int", "SHARED": true},
+             "extra": {"params": [{"mode": "copy", "name": "x", "sym": "p_x", "type": "int"}]},
+             "inputs": {"DEFAULT0": {"expr": [{"ref": "t_limit"}]}},
+             "statements": {"BODY": [
+                {"id": "ret_g_f", "type": "func.return", "v": 1, "inputs": {"VALUE": {"expr": [{"ref": "p_x"}]}}}
+             ]}}
+         ]}}
+    ]);
+    let main = json!([main_block(vec![print(
+        "b_print",
+        vec![
+            tokens(json!([{"ref": "g_f"}, {"op": "("}, {"op": ")"}])),
+            tokens(json!([{"ref": "g_limit"}])),
+        ],
+    )])]);
+    let program = project(
+        &[
+            ("mod_main", "main", main),
+            ("mod_alpha", "alpha", alpha),
+            ("mod_zeta", "zeta", zeta),
+        ],
+        false,
+    );
+    let generated = generate(&analyse(&program, &[]));
+    let header = text(&generated, "zeta.hpp");
+    assert!(header.contains("int f(int x = ::limit);"), "{header}");
+    runs(&generated, "3 7\n");
+}
+
+/// A shared global that is not `constexpr` gets its starting value in its
+/// module's `.cpp`, after the directives, so the value is spelled with
+/// them: `calc.cpp` uses `geo`, which `places` shares a `limit` of, so
+/// `start` starts at `::limit`.
+#[test]
+fn a_shared_globals_starting_value_is_spelled_with_the_directives() {
+    let places = json!([namespace(
+        "geo",
+        vec![shared_global(
+            "g_limit",
+            "limit",
+            "variable",
+            json!([{"num": "7"}])
+        )],
+    )]);
+    let calc = json!([
+        uses("b_use_geo", "ns_geo"),
+        shared_global("t_limit", "limit", "variable", json!([{"num": "3"}])),
+        shared_global("t_start", "start", "variable", json!([{"ref": "t_limit"}])),
+    ]);
+    let main = json!([main_block(vec![print(
+        "b_print",
+        vec![
+            tokens(json!([{"ref": "t_start"}])),
+            tokens(json!([{"ref": "g_limit"}])),
+        ],
+    )])]);
+    let program = project(
+        &[
+            ("mod_main", "main", main),
+            ("mod_calc", "calc", calc),
+            ("mod_places", "places", places),
+        ],
+        false,
+    );
+    let generated = generate(&analyse(&program, &[]));
+    let source = text(&generated, "calc.cpp");
+    assert!(source.contains("int start = ::limit;"), "{source}");
+    runs(&generated, "3 7\n");
+}
