@@ -129,13 +129,17 @@ impl Lowerer<'_> {
     /// `block` writes it.
     pub(super) fn reference(&self, block: Option<&BlockId>, symbol: &SymbolId, name: &Ident) -> CName {
         let spelling = block.map_or(Spelling::Plain, |block| self.spellings.reference(block, symbol));
-        let scope = match spelling {
+        let (scope, global) = match spelling {
             Spelling::Plain | Spelling::Full => return CName::plain(name.clone()),
-            Spelling::Global => Vec::new(),
-            Spelling::Qualified => self.scopes_of.get(symbol).cloned().unwrap_or_default(),
+            Spelling::Global => (Vec::new(), true),
+            Spelling::Qualified | Spelling::GlobalQualified => {
+                let scope = self.scopes_of.get(symbol).cloned().unwrap_or_default();
+                let global = spelling == Spelling::GlobalQualified || scope.is_empty();
+                (scope, global)
+            }
         };
         CName {
-            global: scope.is_empty(),
+            global,
             scope,
             name: name.clone(),
         }

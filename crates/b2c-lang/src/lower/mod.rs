@@ -385,9 +385,10 @@ fn holds_value(block: &Block, name: &str) -> bool {
 /// The definitions of a module in a deterministic order (by block ID): its
 /// top-level blocks, and the definitions in its enabled namespaces' mouths
 /// (w3-modules.md §2.12), which are definitions of the module as top-level
-/// ones are.
-fn sorted_blocks(module: &b2c_model::Module) -> Vec<&Block> {
-    namespaces::with_namespace_members(module.workspace.blocks.iter().collect())
+/// ones are; not those of the namespace blocks in `undeclared`, which have
+/// no namespace to be in.
+fn sorted_blocks<'m>(module: &'m b2c_model::Module, undeclared: &BTreeSet<BlockId>) -> Vec<&'m Block> {
+    namespaces::with_namespace_members(module.workspace.blocks.iter().collect(), undeclared)
 }
 
 /// Block types the analyser lowers as values (`Lowerer::value_block`): the
@@ -536,7 +537,7 @@ impl<'d> Lowerer<'d> {
         let mut names = BTreeMap::new();
         for (index, module) in document.modules.iter().enumerate() {
             self.enter_module(index, &module.id);
-            for block in sorted_blocks(module) {
+            for block in sorted_blocks(module, &self.namespaces.undeclared) {
                 if block.block_type == "func.define" && !block.disabled {
                     self.declare_function(block, &mut names);
                 }
@@ -546,7 +547,7 @@ impl<'d> Lowerer<'d> {
         // lowered once every signature is known.
         for (index, module) in document.modules.iter().enumerate() {
             self.enter_module(index, &module.id);
-            for block in sorted_blocks(module) {
+            for block in sorted_blocks(module, &self.namespaces.undeclared) {
                 if block.block_type == "func.define" && !block.disabled {
                     self.function_defaults(block);
                 }
@@ -561,7 +562,7 @@ impl<'d> Lowerer<'d> {
         for (index, module) in document.modules.iter().enumerate() {
             self.enter_module(index, &module.id);
             let mut items = Vec::new();
-            for block in sorted_blocks(module) {
+            for block in sorted_blocks(module, &self.namespaces.undeclared) {
                 if block.disabled {
                     continue;
                 }
@@ -757,7 +758,7 @@ impl<'d> Lowerer<'d> {
         let mut disabled: Option<(&ModuleId, &BlockId)> = None;
         let document = self.document;
         for module in &document.modules {
-            for block in sorted_blocks(module) {
+            for block in sorted_blocks(module, &self.namespaces.undeclared) {
                 if block.block_type == "program.main" {
                     if block.disabled {
                         disabled.get_or_insert((&module.id, &block.id));

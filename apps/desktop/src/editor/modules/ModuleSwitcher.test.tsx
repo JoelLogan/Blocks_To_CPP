@@ -369,6 +369,29 @@ describe('the module strip', () => {
     expect(document.activeElement).toBe(button('utils.cpp'));
   });
 
+  it('gives the focus to the restored module’s button after Undo delete', async () => {
+    openWith(['main', 'utils', 'extra']);
+    renderStrip();
+    const extra = screen.getByRole('button', { name: 'extra.cpp' });
+    extra.focus();
+    fireEvent.keyDown(extra, { key: 'F10', shiftKey: true });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Delete…' }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(statusText()).toBe('Module “extra” deleted.');
+    });
+    // Undo delete goes with the deletion it undoes: its button is gone, so the module it puts
+    // back gets the focus.
+    const undo = screen.getByRole('button', { name: 'Undo delete' });
+    undo.focus();
+    fireEvent.click(undo);
+    expect(statusText()).toBe('Module “extra” is back.');
+    expect(screen.queryByRole('button', { name: 'Undo delete' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'extra.cpp' }));
+  });
+
   it('acts on the shown module from Module actions; Delete… is disabled on the only module', async () => {
     openWith(['main']);
     renderStrip();

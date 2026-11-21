@@ -7,10 +7,12 @@
  */
 import type { BdmBlock, BdmDocument } from '@blocks2cpp/b2c-core-wasm';
 import { B2C_CHECKER_NAME, isPlaceholder } from '@blocks2cpp/blockly-ext';
+import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { documentFixture } from '../../app/testing/fixtures';
 import { loadModule } from './bdmToWorkspace';
+import { B2cBlockDragStrategy } from './drag';
 import { disposeWorkspaces, renderedWorkspace } from './testing';
 import { readModule } from './workspaceToBdm';
 
@@ -123,5 +125,40 @@ describe('definitions in a namespace’s mouth', () => {
     expect(ids('blk_print')).toBe(false);
     expect(ids('blk_top')).toBe(false);
     expect(read).toEqual(misplaced);
+  });
+});
+
+describe('dragging a definition out of a mouth', () => {
+  it('leaves the definitions below it in the mouth, without a modifier key', () => {
+    const workspace = renderedWorkspace({ plugins: { connectionChecker: B2C_CHECKER_NAME } });
+    const doc = docWith([
+      {
+        ...namespace('blk_geo', 's_geo', 'geo', [
+          define('blk_area', 's_area', 'area'),
+          define('blk_size', 's_size', 'size'),
+          define('blk_half', 's_half', 'half'),
+        ]),
+        x: 40,
+        y: 40,
+      },
+    ]);
+    loadModule(workspace, doc, 'mod_main');
+    const size = workspace.getBlockById('blk_size');
+    expect(size).not.toBeNull();
+    if (size === null) {
+      return;
+    }
+    const drag = new B2cBlockDragStrategy(size);
+    drag.startDrag(new PointerEvent('pointerdown'));
+    drag.drag(new Blockly.utils.Coordinate(600, 600), new PointerEvent('pointermove'));
+    drag.endDrag(new PointerEvent('pointerup'));
+    const read = readModule(workspace, doc, 'mod_main').modules[0]?.workspace.blocks ?? [];
+    const geo = read.find((block) => block.id === 'blk_geo');
+    expect(geo?.statements?.['DEFINITIONS']?.map((block) => block.id)).toEqual([
+      'blk_area',
+      'blk_half',
+    ]);
+    const dragged = read.find((block) => block.id === 'blk_size');
+    expect(dragged?.stack).toBeUndefined();
   });
 });

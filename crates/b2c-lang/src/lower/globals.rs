@@ -66,7 +66,7 @@ impl<'d> Lowerer<'d> {
         for (index, module) in document.modules.iter().enumerate() {
             self.enter_module(index, &module.id);
             let mut names: BTreeMap<String, SymbolId> = BTreeMap::new();
-            for block in sorted_blocks(module) {
+            for block in sorted_blocks(module, &self.namespaces.undeclared) {
                 if block.disabled || block.block_type != "var.global" {
                     continue;
                 }

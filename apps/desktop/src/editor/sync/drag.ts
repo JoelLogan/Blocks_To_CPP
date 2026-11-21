@@ -55,6 +55,7 @@ import {
   beginSlotGesture,
   completeWrap,
   endSlotGesture,
+  isInMouth,
   previewedWrap,
   type WrapPlace,
 } from '@blocks2cpp/blockly-ext';
@@ -266,7 +267,9 @@ export const EDITOR_REACH: SnapReach = Object.freeze({
  *   Blockly snaps from 28 canvas units whatever the zoom;
  * - while a statement is dragged, a previewed place keeps the preview until another is
  *   {@link PREVIEW_PREFERENCE} units nearer; for a dragged value the nearest slot wins
- *   ({@link VALUE_PREVIEW_PREFERENCE}).
+ *   ({@link VALUE_PREVIEW_PREFERENCE});
+ * - a definition dragged out of a namespace's mouth leaves the definitions below it there, as
+ *   Blockly does only with Alt, Ctrl or ⌘ held ({@link B2cBlockDragStrategy.shouldHealStack}).
  *
  * Bumping, which moves a loose block away from a connection it is not connected to, keeps
  * Blockly's 28 units (`Blockly.config.snapRadius` is not changed): a larger bump would push loose
@@ -276,6 +279,9 @@ export const EDITOR_REACH: SnapReach = Object.freeze({
 export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
   /** The canvas the block is dragged on, whose delete areas and zoom count. */
   private readonly canvas: Blockly.WorkspaceSvg;
+
+  /** The dragged block. */
+  private readonly dragged: Blockly.BlockSvg;
 
   /** Whether the pointer of the latest move was over a delete area. */
   private overDeleteArea = false;
@@ -292,6 +298,7 @@ export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
   constructor(block: Blockly.BlockSvg, reach: SnapReach = EDITOR_REACH) {
     super(block);
     this.canvas = block.workspace;
+    this.dragged = block;
     this.radiusAt = reach.radius;
     // `BlockSvg` types its output as always there; a statement has none (`Block`'s type says so).
     const dragged: Blockly.Block = block;
@@ -333,6 +340,17 @@ export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
    */
   protected override getSearchRadius(): number {
     return this.overDeleteArea ? -1 : this.radiusAt(this.canvas.scale);
+  }
+
+  /**
+   * Whether the blocks below the dragged one stay where they are: with Alt, Ctrl or ⌘ held, as in
+   * Blockly, and always for a definition in a namespace's mouth. The definitions below it stay in
+   * the mouth: taken along, they would land under it wherever it lands, and outside a mouth no
+   * definition stacks under another (the analyser reports it, `B2C-E0604`, and a reload makes it
+   * a placeholder). Blockly asks before it takes the block out of its place.
+   */
+  protected override shouldHealStack(e: PointerEvent | undefined): boolean {
+    return isInMouth(this.dragged) || super.shouldHealStack(e);
   }
 }
 

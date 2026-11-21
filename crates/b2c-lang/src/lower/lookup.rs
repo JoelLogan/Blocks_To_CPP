@@ -19,14 +19,20 @@
 //!   written plainly only when that finds exactly the intended entity (for
 //!   a function, exactly its overload set); otherwise `::name` for an
 //!   entity of the global or the anonymous namespace and `geo::name` for a
-//!   member of a user namespace. A user function is qualified also when a
+//!   member of a user namespace (`::geo::name` when a namespace or type of
+//!   an enclosing user namespace is called `geo` too, 06 §6.14.2: `geo` is
+//!   contested). A user function is qualified also when a
 //!   nominated namespace declares its name, and for argument-dependent
 //!   lookup when the namespace of an argument's struct or enum (also inside
 //!   a collection) other than its own declares a function of its name.
 //!   `std` as an associated namespace qualifies nothing in M3 (w3-modules.md
 //!   §7.1): a user function's parameters match its arguments exactly, so it
 //!   wins over `std`'s templates, and the functions of `std` that are no
-//!   templates and take text are `B2C-E0220`. Blocks and functions are not scopes
+//!   templates and take text are `B2C-E0220`. What a shared item's header
+//!   prints is looked up as a header sees it: with no directive, and with
+//!   every module's shared definitions, since a `.cpp` may include any other
+//!   header before it; what its `.cpp` prints too is written plainly only
+//!   when it is plain in both. Blocks and functions are not scopes
 //!   here: a local that hides a definition is still `B2C-E0205`. M3 has no
 //!   classes, library packs or Raw C++, so their rules wait for M4.
 //! * **Standard names** are written short in a `.cpp` that nominates `std`
@@ -103,11 +109,37 @@ impl Def<'_> {
 }
 
 /// A reference found in an item: the block that holds it, what it names,
-/// and for a call the arguments' types.
+/// for a call the arguments' types, and where it is printed.
 struct Reference<'p> {
     block: &'p BlockId,
     target: &'p SymbolId,
     args: Vec<&'p Type>,
+    printed: Printed,
+}
+
+/// Where a part of an item is printed, which decides the lookups that
+/// spell its references.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Printed {
+    /// In its module's `.cpp`, after the directives.
+    Source,
+    /// In its module's header only (a shared function's default values, a
+    /// shared struct's fields, a shared `constexpr` global's value).
+    Header,
+    /// In both (a shared function's result and parameter types, a shared
+    /// global's type): the spelling must be right in each.
+    Both,
+}
+
+/// Where lookup at a reference happens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reach {
+    /// In module `.0`'s `.cpp`, which sees its own definitions and those
+    /// other modules share in a header it includes.
+    Source(usize),
+    /// In a header, where no directive is. A `.cpp` may include it after
+    /// any other module's header, so it may see every shared definition.
+    Header,
 }
 
 /// The namespaces a module's `.cpp` nominates.
@@ -124,6 +156,9 @@ struct Model<'p> {
     /// The namespaces by their enclosing namespace and name (the symbols
     /// that stand for them).
     children: BTreeMap<(Option<&'p SymbolId>, &'p str), &'p SymbolId>,
+    /// By namespace (the symbol that stands for it): the name of its
+    /// outermost namespace, which a qualified name starts with.
+    outermost: BTreeMap<&'p SymbolId, &'p str>,
     /// By module: the modules whose headers its `.cpp` includes, directly or
     /// through other headers (its own among them when it has one).
     reach: Vec<BTreeSet<usize>>,
@@ -132,16 +167,19 @@ struct Model<'p> {
 }
 
 impl<'p> Model<'p> {
-    /// The definitions called `name` in namespace `ns` that module `m`'s
-    /// `.cpp` sees: its own, and those other modules share in a header it
-    /// includes.
-    fn visible(&self, m: usize, ns: Option<&'p SymbolId>, name: &str) -> Vec<Def<'p>> {
+    /// The definitions called `name` in namespace `ns` that lookup at
+    /// `reach` may see: in module `m`'s `.cpp`, its own and those other
+    /// modules share in a header it includes; in a header, every shared one.
+    fn visible(&self, reach: Reach, ns: Option<&'p SymbolId>, name: &str) -> Vec<Def<'p>> {
         self.by_name
             .get(&(ns, name))
             .into_iter()
             .flatten()
             .filter_map(|sym| self.defs.get(sym))
-            .filter(|def| def.module == m || (def.shared && self.reach[m].contains(&def.module)))
+            .filter(|def| match reach {
+                Reach::Source(m) => def.module == m || (def.shared && self.reach[m].contains(&def.module)),
+                Reach::Header => def.shared,
+            })
             .copied()
             .collect()
     }
@@ -154,13 +192,13 @@ impl<'p> Model<'p> {
     }
 
     /// Whether plain lookup of `target`'s name at a place in namespace
-    /// `ctx` of module `m`, with the namespaces `nominated`, finds exactly
+    /// `ctx`, seeing `reach`, with the namespaces `nominated`, finds exactly
     /// it (for a function, exactly its overload set). When it finds nothing
     /// (a header the file lacks, reported elsewhere), a definition of the
     /// global namespace keeps its plain spelling.
     fn plain_finds(
         &self,
-        m: usize,
+        reach: Reach,
         ctx: &[&'p SymbolId],
         nominated: &Nominated<'p>,
         target: &Def<'p>,
@@ -169,12 +207,12 @@ impl<'p> Model<'p> {
         let mut scopes: Vec<Option<&'p SymbolId>> = ctx.iter().rev().map(|ns| Some(*ns)).collect();
         scopes.push(None);
         for scope in scopes {
-            let mut found = self.visible(m, scope, name);
+            let mut found = self.visible(reach, scope, name);
             let mut other = self.children.contains_key(&(scope, name));
             if scope.is_none() {
                 other |= nominated.std && self.std_has(name).is_some();
                 for user in &nominated.user {
-                    found.extend(self.visible(m, Some(*user), name));
+                    found.extend(self.visible(reach, Some(*user), name));
                     other |= self.children.contains_key(&(Some(*user), name));
                 }
             }
@@ -189,15 +227,35 @@ impl<'p> Model<'p> {
     /// Whether a nominated namespace declares `target`'s name as something
     /// other than `target` (06 §6.14.2: a user function whose name is a
     /// nominated name is always qualified).
-    fn nominated_name(&self, m: usize, nominated: &Nominated<'p>, target: &Def<'p>) -> bool {
+    fn nominated_name(&self, reach: Reach, nominated: &Nominated<'p>, target: &Def<'p>) -> bool {
         (nominated.std && self.std_has(target.name).is_some())
             || nominated.user.iter().any(|user| {
                 self.children.contains_key(&(Some(*user), target.name))
                     || self
-                        .visible(m, Some(*user), target.name)
+                        .visible(reach, Some(*user), target.name)
                         .iter()
                         .any(|def| !def.same_entity(target))
             })
+    }
+
+    /// Whether the outermost namespace of `target`, which a qualified
+    /// reference to it starts with, is contested at a place in the
+    /// namespaces `ctx` (06 §6.14.2): one of those declares a namespace or
+    /// type of its name, which lookup of the name before `::` finds first.
+    fn contested(&self, ctx: &[&'p SymbolId], target: &Def<'p>) -> bool {
+        let Some(first) = target.ns.and_then(|ns| self.outermost.get(ns)) else {
+            return false;
+        };
+        ctx.iter().any(|scope| {
+            self.children.contains_key(&(Some(*scope), *first))
+                || self
+                    .by_name
+                    .get(&(Some(*scope), *first))
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|sym| self.defs.get(sym))
+                    .any(|def| def.kind == DefKind::Type)
+        })
     }
 
     /// The user namespaces associated with a value of type `ty` (06
@@ -246,7 +304,7 @@ fn year(standard: CppStandard) -> u8 {
 /// The references an expression tree makes: calls, globals read, each
 /// enum value's enum, each struct value's struct, and the user types of its
 /// values.
-fn expr_references<'p>(root: &'p Expr, out: &mut Vec<Reference<'p>>) {
+fn expr_references<'p>(root: &'p Expr, printed: Printed, out: &mut Vec<Reference<'p>>) {
     let mut stack = vec![root];
     while let Some(expr) = stack.pop() {
         let block = &expr.origin.block;
@@ -255,12 +313,14 @@ fn expr_references<'p>(root: &'p Expr, out: &mut Vec<Reference<'p>>) {
                 block,
                 target: function,
                 args: args.iter().map(|arg| &arg.ty).collect(),
+                printed,
             }),
             ExprKind::Var(sym) | ExprKind::Enumerator(sym) | ExprKind::New { ty: sym, .. } => {
                 out.push(Reference {
                     block,
                     target: sym,
                     args: Vec::new(),
+                    printed,
                 });
             }
             _ => {}
@@ -270,19 +330,26 @@ fn expr_references<'p>(root: &'p Expr, out: &mut Vec<Reference<'p>>) {
                 block,
                 target: id,
                 args: Vec::new(),
+                printed,
             });
         }
         stack.extend(crate::flow::children(expr));
     }
 }
 
-/// The references an item makes, and the blocks it holds. The first
-/// `.1` references are those of the item's declaration part, which a
-/// shared item's header prints (a function's result type and default
-/// values, a struct's field defaults, a global's starting value).
-fn item_references<'p>(item: &'p Item, blocks: &mut BTreeSet<&'p BlockId>) -> (Vec<Reference<'p>>, usize) {
+/// The references an item makes, each with where it is printed, and the
+/// blocks it holds. A shared item's header prints its declaration part (a
+/// function's result type and default values, a struct's fields, a
+/// global's type, and a `constexpr` global's starting value); its `.cpp`
+/// prints the rest, and a function's result type and a global's type again.
+fn item_references<'p>(item: &'p Item, blocks: &mut BTreeSet<&'p BlockId>) -> Vec<Reference<'p>> {
+    let (head, value) = if item.shared {
+        (Printed::Both, Printed::Header)
+    } else {
+        (Printed::Source, Printed::Source)
+    };
     let mut out = Vec::new();
-    let mut exprs: Vec<&'p Expr> = Vec::new();
+    let mut exprs: Vec<(&'p Expr, Printed)> = Vec::new();
     let mut bodies = Vec::new();
     match &item.kind {
         ItemKind::Main(main) => bodies.push(&main.body),
@@ -292,19 +359,28 @@ fn item_references<'p>(item: &'p Item, blocks: &mut BTreeSet<&'p BlockId>) -> (V
                     block: &item.origin.block,
                     target: id,
                     args: Vec::new(),
+                    printed: head,
                 });
             }
-            exprs.extend(def.params.iter().filter_map(|param| param.default.as_ref()));
+            let defaults = def.params.iter().filter_map(|param| param.default.as_ref());
+            exprs.extend(defaults.map(|expr| (expr, value)));
             bodies.push(&def.body);
         }
-        ItemKind::Struct(def) => exprs.extend(def.defaults.values()),
-        ItemKind::Global(def) => exprs.extend(def.init.iter()),
+        ItemKind::Struct(def) => exprs.extend(def.defaults.values().map(|expr| (expr, value))),
+        // A shared global that is not `constexpr` gets its starting value
+        // in its `.cpp`, after the directives.
+        ItemKind::Global(def) => {
+            let printed = if def.constexpr { value } else { Printed::Source };
+            exprs.extend(def.init.iter().map(|expr| (expr, printed)));
+        }
         ItemKind::Enum(_) | ItemKind::UseHeader { .. } => {}
     }
     blocks.insert(&item.origin.block);
-    let mut body_exprs = Vec::new();
-    let head = std::mem::take(&mut out);
+    for (expr, printed) in exprs {
+        expr_references(expr, printed, &mut out);
+    }
     for body in bodies {
+        let mut body_exprs = Vec::new();
         for stmt in body_stmts(body) {
             blocks.insert(&stmt.origin.block);
             for target in stmt_symbols(stmt) {
@@ -312,21 +388,16 @@ fn item_references<'p>(item: &'p Item, blocks: &mut BTreeSet<&'p BlockId>) -> (V
                     block: &stmt.origin.block,
                     target,
                     args: Vec::new(),
+                    printed: Printed::Source,
                 });
             }
             body_exprs.extend(crate::nesting::parts(stmt).0);
         }
+        for expr in body_exprs {
+            expr_references(expr, Printed::Source, &mut out);
+        }
     }
-    let body_refs = std::mem::replace(&mut out, head);
-    for expr in exprs {
-        expr_references(expr, &mut out);
-    }
-    let declaration = out.len();
-    out.extend(body_refs);
-    for expr in body_exprs {
-        expr_references(expr, &mut out);
-    }
-    (out, declaration)
+    out
 }
 
 impl Lowerer<'_> {
@@ -537,17 +608,27 @@ impl Lowerer<'_> {
             }
         }
         let mut children = BTreeMap::new();
+        let mut outermost = BTreeMap::new();
         for standing in self.namespaces.blocks.keys() {
             if let Some(symbol) = self.symbols.get(standing)
                 && let SymbolKind::Namespace { parent } = &symbol.kind
             {
                 children.insert((parent.as_ref(), symbol.name.as_str()), standing);
             }
+            if let Some(first) = self
+                .symbols
+                .namespace_path(Some(standing))
+                .first()
+                .and_then(|id| self.symbols.get(id))
+            {
+                outermost.insert(standing, first.name.as_str());
+            }
         }
         Model {
             defs,
             by_name,
             children,
+            outermost,
             reach: reach(layout),
             year: year(self.document.project.language.standard),
         }
@@ -702,6 +783,13 @@ impl Lowerer<'_> {
         // The blocks of the shared items, whose parameters', fields' and
         // globals' types their headers print.
         let mut header_blocks: BTreeSet<&BlockId> = BTreeSet::new();
+        let mut record = |block: &BlockId, target: &Def<'p>, spelling: Spelling| {
+            if spelling != Spelling::Plain {
+                spellings
+                    .references
+                    .insert((block.clone(), target.sym.clone()), spelling);
+            }
+        };
         for (m, module) in modules.iter().enumerate() {
             let nominated = nominated.get(m).unwrap_or(&none);
             for item in &module.items {
@@ -709,7 +797,7 @@ impl Lowerer<'_> {
                     referred[m].insert(sym);
                 }
                 let mut blocks = BTreeSet::new();
-                let (references, declaration) = item_references(item, &mut blocks);
+                let references = item_references(item, &mut blocks);
                 for block in blocks {
                     place.insert(block, (m, item.namespace.as_ref()));
                 }
@@ -717,24 +805,14 @@ impl Lowerer<'_> {
                     header_blocks.insert(&item.origin.block);
                 }
                 let ctx = self.symbols.namespace_path(item.namespace.as_ref());
-                for (index, reference) in references.into_iter().enumerate() {
+                for reference in references {
                     let Some(target) = model.defs.get(reference.target) else {
                         continue;
                     };
                     referred[m].insert(target.sym);
-                    // A shared item's declaration part is printed in its
-                    // header too, where no directive is.
-                    let nominated = if item.shared && index < declaration {
-                        &none
-                    } else {
-                        nominated
-                    };
-                    let spelling = spelling(model, m, &ctx, nominated, target, &reference.args);
-                    if spelling != Spelling::Plain {
-                        spellings
-                            .references
-                            .insert((reference.block.clone(), target.sym.clone()), spelling);
-                    }
+                    let at = (m, ctx.as_slice(), nominated);
+                    let spelling = spelling_where(model, reference.printed, at, target, &reference.args);
+                    record(reference.block, target, spelling);
                 }
             }
         }
@@ -753,22 +831,21 @@ impl Lowerer<'_> {
                 continue;
             };
             let ctx = self.symbols.namespace_path(ns);
-            let nominated = if header_blocks.contains(&symbol.origin.block) {
-                &none
-            } else {
-                nominated.get(m).unwrap_or(&none)
+            // A shared struct's fields are printed in its header only; a
+            // shared function's parameters and a shared global in both.
+            let printed = match symbol.kind {
+                _ if !header_blocks.contains(&symbol.origin.block) => Printed::Source,
+                SymbolKind::Field { .. } => Printed::Header,
+                _ => Printed::Both,
             };
+            let at = (m, ctx.as_slice(), nominated.get(m).unwrap_or(&none));
             for id in user_types(&symbol.ty) {
                 let Some(target) = model.defs.get(id) else {
                     continue;
                 };
                 referred[m].insert(target.sym);
-                let spelling = spelling(model, m, &ctx, nominated, target, &[]);
-                if spelling != Spelling::Plain {
-                    spellings
-                        .references
-                        .insert((symbol.origin.block.clone(), target.sym.clone()), spelling);
-                }
+                let spelling = spelling_where(model, printed, at, target, &[]);
+                record(&symbol.origin.block, target, spelling);
             }
         }
         referred
@@ -798,7 +875,7 @@ impl Lowerer<'_> {
                 nominated.user.iter().find_map(|user| {
                     let declares = model.children.contains_key(&(Some(*user), name))
                         || model
-                            .visible(m, Some(*user), name)
+                            .visible(Reach::Source(m), Some(*user), name)
                             .iter()
                             .any(|def| def.kind == DefKind::Type);
                     (declares && own != Some(*user)).then(|| {
@@ -933,23 +1010,48 @@ impl Lowerer<'_> {
     }
 }
 
-/// How a reference to `target` from a place in the namespaces `ctx` of
-/// module `m` is written.
+/// How a reference to `target` printed where `printed` says, from a place
+/// in the namespaces `ctx` of module `m` whose `.cpp` nominates
+/// `nominated`, is written: plainly only when it is plain wherever it is
+/// printed.
+fn spelling_where<'p>(
+    model: &Model<'p>,
+    printed: Printed,
+    (m, ctx, nominated): (usize, &[&'p SymbolId], &Nominated<'p>),
+    target: &Def<'p>,
+    args: &[&'p Type],
+) -> Spelling {
+    let none = Nominated::default();
+    let header = || spelling(model, Reach::Header, ctx, &none, target, args);
+    let source = || spelling(model, Reach::Source(m), ctx, nominated, target, args);
+    match printed {
+        Printed::Source => source(),
+        Printed::Header => header(),
+        Printed::Both => match header() {
+            Spelling::Plain => source(),
+            other => other,
+        },
+    }
+}
+
+/// How a reference to `target` from a place in the namespaces `ctx`,
+/// seeing `reach`, with the namespaces `nominated`, is written.
 fn spelling<'p>(
     model: &Model<'p>,
-    m: usize,
+    reach: Reach,
     ctx: &[&'p SymbolId],
     nominated: &Nominated<'p>,
     target: &Def<'p>,
     args: &[&'p Type],
 ) -> Spelling {
-    let mut plain = model.plain_finds(m, ctx, nominated, target);
+    let mut plain = model.plain_finds(reach, ctx, nominated, target);
     if plain && target.kind == DefKind::Function {
-        plain = !model.nominated_name(m, nominated, target) && !model.adl_finds_another(target, args);
+        plain = !model.nominated_name(reach, nominated, target) && !model.adl_finds_another(target, args);
     }
     match (plain, target.ns) {
         (true, _) => Spelling::Plain,
         (false, None) => Spelling::Global,
+        (false, Some(_)) if model.contested(ctx, target) => Spelling::GlobalQualified,
         (false, Some(_)) => Spelling::Qualified,
     }
 }

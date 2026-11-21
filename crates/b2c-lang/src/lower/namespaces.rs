@@ -22,7 +22,7 @@
 //! lowering keys a module's definitions by [`Lowerer::scoped`], so `count`
 //! and `geo::count` never clash (`B2C-E0210`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::diag::Part;
 use b2c_ir::ids::{BlockId, SymbolId};
@@ -50,6 +50,11 @@ pub(super) struct Namespaces {
     /// The blocks of each namespace, by the symbol that stands for it: the
     /// module's index and the block, in declaration order.
     pub(super) blocks: BTreeMap<SymbolId, Vec<(usize, BlockId)>>,
+    /// The enabled *namespace* blocks that declare no namespace (no name,
+    /// or a symbol ID that is taken; reported): the definitions in their
+    /// mouths are left out of the program, rather than taken as top-level
+    /// ones, which would meet the top-level definitions' names.
+    pub(super) undeclared: BTreeSet<BlockId>,
 }
 
 /// The scope query's namespaces: each module's own top-level ones, and
@@ -87,6 +92,7 @@ impl Lowerer<'_> {
                 let Some((stands_for, name, own)) =
                     self.declare_namespace(block, parent.as_ref(), depth, &mut standing)
                 else {
+                    self.namespaces.undeclared.insert(block.id.clone());
                     continue;
                 };
                 self.namespaces.standing.insert(own, stands_for.clone());
@@ -317,12 +323,16 @@ impl Lowerer<'_> {
 
 /// The top-level blocks of a module and the definitions in its enabled
 /// namespaces' mouths, at any depth, by block ID (`sorted_blocks` uses
-/// it). A disabled namespace's definitions are left out with it.
-pub(super) fn with_namespace_members(top_level: Vec<&Block>) -> Vec<&Block> {
+/// it). A disabled namespace's definitions are left out with it, and those
+/// of a namespace block in `undeclared`.
+pub(super) fn with_namespace_members<'m>(
+    top_level: Vec<&'m Block>,
+    undeclared: &BTreeSet<BlockId>,
+) -> Vec<&'m Block> {
     let mut blocks = Vec::with_capacity(top_level.len());
     let mut pending = top_level;
     while let Some(block) = pending.pop() {
-        if block.block_type == "program.namespace" && !block.disabled {
+        if block.block_type == "program.namespace" && !block.disabled && !undeclared.contains(&block.id) {
             pending.extend(namespace_members(block));
         }
         blocks.push(block);
@@ -352,7 +362,10 @@ mod tests {
             ]}
         }))
         .expect("module");
-        let ids: Vec<&str> = sorted_blocks(&module).iter().map(|b| b.id.as_str()).collect();
+        let ids: Vec<&str> = sorted_blocks(&module, &std::collections::BTreeSet::new())
+            .iter()
+            .map(|b| b.id.as_str())
+            .collect();
         // Not the statement in a mouth, nor what a disabled namespace holds.
         assert_eq!(ids, ["b1", "b2", "b3", "b4", "b6"]);
     }

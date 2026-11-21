@@ -1037,8 +1037,8 @@ user namespaces, the module's anonymous namespace, the global namespace,
 the nominated namespaces and, for calls, argument-dependent lookup through
 user namespaces (`std` as an argument's associated namespace qualifies no
 call yet). The analyser records each reference's spelling (`Plain`,
-`Global` for `::n`, `Qualified` for `geo::n`, `Full` for a standard name in
-full) in `Program::spellings`, beside the SAST and keyed by the referring
+`Global` for `::n`, `Qualified` for `geo::n`, `GlobalQualified` for
+`::geo::n` when `geo` is contested, `Full` for a standard name in full) in `Program::spellings`, beside the SAST and keyed by the referring
 block and the symbol, with each `.cpp`'s directives and empty namespace
 declarations, and the generator prints them. Textbook style counts as
 nominating `std` in every file. Block scopes are not modelled, so `E0205`

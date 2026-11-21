@@ -804,6 +804,53 @@ fn e0213_per_namespace() {
     assert_clean(&a);
 }
 
+/// A namespace that cannot be declared (it has no name, or its symbol ID
+/// is taken) leaves the definitions in its mouth out of the program: they
+/// meet no top-level definition (`B2C-E0210`, `B2C-E0211`) and no other
+/// module's shared function (`B2C-E0213`).
+#[test]
+fn an_undeclared_namespace_leaves_its_definitions_out() {
+    let members = || {
+        vec![
+            giving("g_area", "area", common::num("2")),
+            int_global("g_count", "count"),
+        ]
+    };
+    let nameless = json!({"id": "b_none", "type": "program.namespace", "v": 1,
+                          "statements": {"DEFINITIONS": members()}});
+    let a = analyze(&doc(vec![
+        main(vec![]),
+        giving("t_area", "area", common::num("1")),
+        int_global("t_count", "count"),
+        nameless.clone(),
+    ]));
+    assert_codes(&a, &["B2C-E0430"]);
+    assert_eq!(a.program.modules[0].items.len(), 3);
+    let a = analyze(&doc_modules(vec![
+        ("main", vec![main(vec![]), nameless]),
+        ("utils", vec![shared(giving("u_area", "area", common::num("1")))]),
+    ]));
+    assert_codes(&a, &["B2C-E0430"]);
+    // The namespace's symbol ID is the function's.
+    let taken = json!({"id": "b_taken", "type": "program.namespace", "v": 1,
+                       "fields": {"NAME": {"sym": "t_area", "name": "geo"}},
+                       "statements": {"DEFINITIONS": members()}});
+    let a = analyze(&doc(vec![
+        main(vec![]),
+        giving("t_area", "area", common::num("1")),
+        int_global("t_count", "count"),
+        taken,
+    ]));
+    let found = codes(&a);
+    assert!(
+        !found
+            .iter()
+            .any(|code| ["B2C-E0210", "B2C-E0211", "B2C-E0213"].contains(&code.as_str())),
+        "{:?}",
+        a.diagnostics
+    );
+}
+
 /// The scope query lists a namespace's members and the top-level
 /// namespaces: the module's own, and another module's that shares a
 /// member.
