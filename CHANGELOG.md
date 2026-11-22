@@ -732,6 +732,15 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `Cargo.lock`, for RUSTSEC-2026-0592 (`Url::origin()` overflows the stack on
   deeply nested `blob:` URLs). `url` comes in through Tauri, `reqwest` and
   `schemars`. The update keeps `cargo deny` and OSV-Scanner clean.
+- Dependencies on 2026-11-22, the rest of Dependabot's #35, all at least 7
+  days old: `@codemirror/view` 6.43.15 (C++ panel fixes: the selection after a
+  scroll during typing, scrolling inside clipped parents, scroll stabilisation
+  and Home/End beside bidi text), `zustand` 5.0.16 (fixes in the `devtools`
+  middleware, which the app does not use, and in the server snapshot, which
+  client rendering never reads) and `vite` 8.3.5 (build, dev-server and
+  dependency-optimiser fixes, with rolldown 1.2.19 and postcss 8.5.33; vitest
+  uses it too). The editor builds and its tests pass unchanged, and the
+  core's size check is unaffected.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
