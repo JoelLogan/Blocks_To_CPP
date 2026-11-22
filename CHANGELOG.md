@@ -728,6 +728,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   only because `serde_with` (through `tauri-utils`) names it in weak
   dependency features, which Cargo records in the lockfile; nothing enables
   them, so it is never built or shipped, and `cargo deny` stays clean.
+- Dependencies on 2026-11-22: `url` 2.5.9 (with `form_urlencoded` 1.2.3) in
+  `Cargo.lock`, for RUSTSEC-2026-0592 (`Url::origin()` overflows the stack on
+  deeply nested `blob:` URLs). `url` comes in through Tauri, `reqwest` and
+  `schemars`. The update keeps `cargo deny` and OSV-Scanner clean.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
