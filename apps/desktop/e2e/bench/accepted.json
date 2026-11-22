@@ -15,6 +15,20 @@
       "commit": "bd3dbaae72e3c8af389205a95bbfbee5a20ab42e",
       "kind": "redefined",
       "reason": "Redefined (W2-1): C++ panel shown, timed until the page settles; was until the C++ was in the state"
+    },
+    {
+      "metric": "webview.preview-1000.p95",
+      "system": "linux",
+      "commit": "a5f1af82a3f3efb632770dfd3e8e24c65ba32fc1",
+      "kind": "redefined",
+      "reason": "Redefined (W5, worker.md §9): the b2c:preview span, from the run's start until its answer is applied; was the long task that brought the preview"
+    },
+    {
+      "metric": "webview.preview-1000.p95",
+      "system": "windows",
+      "commit": "a5f1af82a3f3efb632770dfd3e8e24c65ba32fc1",
+      "kind": "redefined",
+      "reason": "Redefined (W5, worker.md §9): the b2c:preview span, from the run's start until its answer is applied; was the long task that brought the preview"
     }
   ]
 }
