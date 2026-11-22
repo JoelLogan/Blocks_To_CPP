@@ -342,9 +342,17 @@ Details of each level as M2 sets them up:
 * **Benchmarks.** `criterion` measures the native pipeline (load, resolve,
   analyse, generate, and the whole preview) on a generated 1,000-block
   module. Through the E2E harness, the webview benchmarks measure cold start
-  to the editor's readiness marker, the p95 of the preview pipeline's task at
-  1,000 blocks (reading the canvas, `update()` in WebAssembly and storing
-  the result, found by an in-page heartbeat) and the frame times while
+  to the editor's readiness marker, the preview at 1,000 blocks from the
+  app's spans of each edit (the p95 of 10 edits per sample, with the C++
+  panel folded; [worker.md §9](../plans/m3-contracts/worker.md#9-benchmarks)):
+  `webview.preview-1000.p95`, the `b2c:preview` span from the run's start
+  until its answer is applied (gated; redefined in `accepted.json` when the
+  preview moved into the Web Worker, whose main-thread share is often
+  shorter than the long task the in-page heartbeat found before),
+  `webview.preview-1000.update-p95`, `update()` alone where it runs, from
+  the `b2c:preview:update` span (gated, N4's metric), and
+  `webview.preview-1000.main-p95`, the sum of the main-thread phases
+  (`read`, `receive`, `commit`, `publish`; reported), and the frame times while
   dragging in a 5,000-block workspace: the gated metric is the p95 over
   every frame of a run's timed drags away and back (about 1,200 in a
   nightly run), and the p95 of each drag away and back is reported. The

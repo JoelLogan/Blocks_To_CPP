@@ -7,10 +7,13 @@
  * same 1,000 blocks. Two phases of {@link EDITS} edits per sample, whose metrics preview-metrics.ts
  * takes:
  *
- * - with the C++ panel folded, `webview.preview-1000.p95` (gated; each sample's p95 is one sample
- *   of it): the preview pipeline's own task, found as the long task after which the edit is in the
- *   C++: reading the canvas, `update()` in WebAssembly (N4's update, as the editor runs it), and
- *   storing the result;
+ * - with the C++ panel folded, the preview, from the app's User Timing spans of each edit
+ *   (src/lib/timing.ts; the preview runs in a Web Worker, so the page's long tasks no longer
+ *   find it, docs/plans/m3-contracts/worker.md §9): `webview.preview-1000.p95` (gated), the span
+ *   `b2c:preview` from the run's start until its answer is applied;
+ *   `webview.preview-1000.update-p95` (gated, N4), `update()` alone where it runs (the span
+ *   `b2c:preview:update`); and `webview.preview-1000.main-p95` (reported), the sum of the
+ *   main-thread phases. Each sample's p95 is one sample of each;
  * - with the C++ panel shown, as the editor starts, from the edit until the page has finished what
  *   it started (Blockly's re-rendering of the edited stack, the preview, the C++ panel's update;
  *   the page has then run no long task for 300 ms), less the pipeline's 50 ms debounce. After each
@@ -35,14 +38,13 @@ import { MAIN_ID, writeBenchProject } from './document';
 import {
   deleteBlock,
   editSummary,
-  LONG_TASK_MS,
   SETTLE_MS,
   type SpanTimes,
   spanSummary,
   timedEdit,
   type TimedEdit,
 } from './interaction';
-import { EDITS, previewMetrics } from './preview-metrics';
+import { EDITS, previewEdit, previewMetrics } from './preview-metrics';
 import { openProjectFile } from './project';
 import { benchSamples, metricValue, writeMetric } from './results';
 import { median, rounded } from './stats';
@@ -62,9 +64,9 @@ afterAll(() => {
 });
 
 /** What {@link rounds} measured: what was taken from each edit, and every edit with its spans. */
-interface Rounds {
+interface Rounds<T> {
   /** What `measure` took from each edit, one list of {@link EDITS} per round (sample). */
-  readonly values: number[][];
+  readonly values: T[][];
   readonly spans: SpanTimes[];
   readonly edits: TimedEdit[];
 }
@@ -73,17 +75,17 @@ interface Rounds {
  * Makes `samples` rounds of {@link EDITS} edits, each deleted again, and returns what `measure`
  * takes from each edit, per round, with the spans of the edits.
  */
-async function rounds(
+async function rounds<T>(
   app: App,
   phase: { readonly name: string; readonly settleMs: number; readonly samples: number },
-  measure: (edit: TimedEdit) => number,
-): Promise<Rounds> {
+  measure: (edit: TimedEdit) => T,
+): Promise<Rounds<T>> {
   const ids = new NodeIds(phase.name);
-  const result: number[][] = [];
+  const result: T[][] = [];
   const spans: SpanTimes[] = [];
   const edits: TimedEdit[] = [];
   for (let round = 0; round < phase.samples; round += 1) {
-    const values: number[] = [];
+    const values: T[] = [];
     for (let edit = 0; edit < EDITS; edit += 1) {
       const marker = `bench ${phase.name} ${String(round)}-${String(edit)}`;
       const timed = await timedEdit(app, print(ids, marker), {
@@ -114,16 +116,11 @@ describe('webview benchmark: the live preview and edits at 1,000 blocks', () => 
       await requireHookMethods(context, app, 'preview');
       await openProjectFile(app, { blockId: MAIN_ID, code: 'value_0', timeout: OPEN_TIMEOUT_MS });
 
-      // The preview pipeline's own task: folded, the C++ panel's rendering is not part of it.
+      // The preview's spans: folded, the C++ panel's rendering is not part of the run.
       await foldCodePanel(app);
-      const preview = await rounds(app, { name: 'preview', settleMs: 0, samples }, (timed) => {
-        if (timed.previewMs === null) {
-          throw new Error(
-            `No task of at least ${String(LONG_TASK_MS)} ms brought the edit's preview`,
-          );
-        }
-        return timed.previewMs;
-      });
+      const preview = await rounds(app, { name: 'preview', settleMs: 0, samples }, (timed) =>
+        previewEdit(timed.spans),
+      );
 
       // The whole edit as a person sees it, with the C++ panel shown.
       await showCodePanel(app);
@@ -136,12 +133,17 @@ describe('webview benchmark: the live preview and edits at 1,000 blocks', () => 
       // D19: gated on the p95 of every edit of the run; each sample's p95 is still reported.
       const metrics = previewMetrics(preview.values, edit.values);
       writeMetric(metrics.preview);
+      writeMetric(metrics.update);
+      writeMetric(metrics.main);
       writeMetric(metrics.edit);
       writeMetric(metrics.editPerRound);
       const previewSamples = metrics.preview.samples;
       const editSamples = metrics.editPerRound.samples;
+      const p95 = (metric: { readonly samples: readonly number[] }) =>
+        `${String(rounded(median(metric.samples), 1))} ms`;
       process.stdout.write(
-        `At 1,000 blocks: preview task p95 median ${String(rounded(median(previewSamples), 1))} ms, ` +
+        `At 1,000 blocks: p95 medians of the preview ${p95(metrics.preview)}, its update() ` +
+          `${p95(metrics.update)}, its main-thread phases ${p95(metrics.main)}; ` +
           `edit until settled p95 of all ${String(metrics.edit.samples.length)} edits ` +
           `${String(rounded(metricValue(metrics.edit), 1))} ms (p95 per sample, median ` +
           `${String(rounded(median(editSamples), 1))} ms)\n` +
@@ -150,6 +152,8 @@ describe('webview benchmark: the live preview and edits at 1,000 blocks', () => 
           `  per edit, C++ panel shown (median): ${editSummary(edit.edits)}\n`,
       );
       expect(previewSamples).toHaveLength(samples);
+      expect(metrics.update.samples).toHaveLength(samples);
+      expect(metrics.main.samples).toHaveLength(samples);
       expect(editSamples).toHaveLength(samples);
       expect(metrics.edit.samples).toHaveLength(samples * EDITS);
     },

@@ -731,6 +731,14 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
+- The preview benchmark takes its metrics from the app's spans, as the
+  preview runs in a Web Worker and its main-thread share is often shorter
+  than the long task the benchmark looked for (which failed it):
+  `webview.preview-1000.p95` is now the `b2c:preview` span, from a run's
+  start until its answer is applied, and is redefined in `accepted.json`;
+  the new `webview.preview-1000.update-p95` (`update()` alone, where it
+  runs) is gated and carries N4; the new `webview.preview-1000.main-p95`
+  (the main-thread phases) is reported.
 - Each edit does less work in the editor: call blocks are labelled from the
   preview's symbols instead of one scope query each, the preview stores an
   edit in two store updates, autosave no longer compares the saved text on
