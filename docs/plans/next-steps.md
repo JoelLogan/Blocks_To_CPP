@@ -521,6 +521,28 @@ M3. The specification describes what W3 built, and w3-modules.md §7.1
 records each place where the code differs from the contract, with its
 reason.
 
+**After the docs step** (2026-11-21): the wave review's three lenses and
+its challenger confirmed seven findings and refuted one (B1: keeping
+`obj/` through a failed build is the contract's choice). The fixes, each
+with a test that failed first, merged in `ef151aa`: a shared item's header
+parts spelled as the header sees them and a shared global's starting value
+as its `.cpp` does (C1, C3; a header default argument had bound to another
+module's variable), `::geo::area` when the first qualifier is contested
+(C2), an undeclared namespace's members left out (C4), a definition dragged
+out of a namespace's mouth leaving those below it (E1), _Undo delete_
+focusing the restored module (E2) and _use namespace_ following the
+namespace rather than one of its blocks (E3). The golden C++ of the
+examples did not change. CI also needed `resolve_failed`'s damaged-block
+test spread over every core (it had pushed the Windows job past its
+40-minute limit; `e19b2a0`) and the module strip's visual baselines
+(`e69e36a`). The wave's bench A/B (`62f5b9f` against `3fbad30`) found no
+gated regression: on Linux the preview's p95 fell from 53.5 to 7.5 ms. On
+Windows the preview benchmark could not run, since with the worker the
+main thread's preview task is often shorter than the 4 ms it looked for;
+`webview.preview-1000.p95` is now the `b2c:preview` span, with the new
+`update-p95` (gated, N4) and `main-p95` (reported), as worker.md §9 planned
+(`a5f1af8`, `0e328eb`).
+
 **Moved to M4:**
 
 - **Package S**, the if-time sweep: _use namespace … here_, the standard
@@ -545,17 +567,15 @@ reason.
   see both. Fixing it changes `ScopeIndex::visible` and both lookups (Rust
   and TypeScript), so it was left as it is and is put to the owner
   (w3-modules.md §7.1).
-- **WebAssembly size:** the core is 1,985,234 bytes after `wasm-opt`,
+- **WebAssembly size:** the core is 1,988,376 bytes after `wasm-opt`,
   against the 2,000,000-byte budget of ADR-0003; the next wave's growth
   will need a saving or a decision on the budget.
 - **Analysis time:** it grows faster than linearly with the module count
   when every module has globals: 128 modules take 0.56 s and 256 take
   1.5 s (the layout of 64 modules sharing structs, functions and globals is
   about linear, `c4ecb92`).
-- **Visual baselines:** `chrome-modules-two` and `chrome-modules-five` wait
-  for CI candidates.
-- **Bench A/B:** the run on the wave's range `62f5b9f..HEAD` is in progress;
-  `pipeline/preview-modules` is gated once it has its baselines.
+- **Bench A/B:** `pipeline/preview-modules` and the two new preview
+  metrics are gated once they have five baselines each.
 - **Dependabot #35:** `@codemirror/view` 6.43.15, `zustand` 5.0.16 and
   `vite` 8.3.5 are still to review.
 - The spec sections of w3-export-run.md §10 (W3's export and run slice)
