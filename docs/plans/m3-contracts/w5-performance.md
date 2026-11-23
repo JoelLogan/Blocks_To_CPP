@@ -423,7 +423,7 @@ panel hidden through three previews and shown again shows the third, with
 one CodeMirror transaction; a highlight set while hidden is scrolled to when
 shown.
 
-## 5. M3-4: lowering parked stacks (proposal)
+## 5. M3-4: lowering parked stacks (proposal; done, §10.1)
 
 ADR-0012 parks loose stacks: they are never generated, their declarations
 declare nothing, and every block in them answers the scope query with its
@@ -611,6 +611,24 @@ second part, which edits the same functions). References are to `8a3d8ec`.
   snaps into a parked `int` _set_ (an E2E check, the editor's). This
   branch's `tests/scope_index.rs` passes unchanged: the sandbox's positions
   are trail nodes like any other.
+
+**Done (M3-4, 2026-11-23, from `1738b2a`).** The sandbox is
+`Lowerer::lower_parked` in `crates/b2c-lang/src/lower/parked.rs`, called in
+`run` before `record_unlowered`; the golden C++ of every example is
+unchanged. Where the code had moved since `8a3d8ec` (W3's modules and
+namespaces), or the proposal left a choice, the change differs as follows:
+
+| Correction | Reason | Where |
+| --- | --- | --- |
+| The sandbox inserts its declarations into the program's table as any body does, and moves the symbols it added out, into `Parked::symbols`, once every stack is lowered; `insert_symbol` does not choose a table by `ItemCtx` | the lowering reads `self.symbols` in about a hundred places (a reference's type, a type's class, messages); a side table would need each read to look in two tables, or a parked variable read below its `create` would have no type | `lower/parked.rs` |
+| One field, `Analysis.parked: query::Parked { symbols, stmts, values }`, instead of `parked_symbols` and `parked_stmts`; a parked reporter or predicate on its own is lowered as a value (`value_block`, no place) into `values`, so `block_types` has it too (`record_types` takes an optional owner) | the M2 polish plan's test asks for the parked reporters, and a loose reporter is no statement | `lib.rs`, `query.rs` |
+| `with_members` and `ScopeIndexParts::members` are unchanged; `infos`, `scope_after`, `created` and `symbol_infos` read both tables | a parked stack declares variables only, never a struct or an enum | `query.rs` |
+| `ItemCtx::Parked` types a `return`'s value against `PartType::Unknown` and reports nothing for it, rather than as in `main` | where the stack will be attached is not known; `main`'s `int` would type a parked `return`'s place-typed value (`list of`) in `block_types` and `slot_types`, and an unknown result is how the editor already reads parked slots (ADR-0018 §6) | `lower/typed.rs`, `lower/stmt.rs` |
+| The stack is lowered in a frame of its own (`#parked`) above the seeded one (`#seed`), by a loop like `body_and_end`'s (a disabled block is recorded with `record_skipped`), not by a shared `lower_list` | there is no `lower_list`: a stack is not a statement input of a block. In its own frame, a parked `create` of a name `main` has shadows it rather than redeclaring it (the sandbox's diagnostics are dropped either way) | `lower/parked.rs`, `scope.rs` |
+| The parked lists are taken from each module's `workspace.blocks` with `query.rs`'s `DEFINITION_TYPES` (now `pub(crate)`), as `record_unlowered` takes them, not from `program()`'s catch-all arm | `program()` walks `sorted_blocks`, which since W3 also reaches into namespaces' mouths; a block in a mouth that is not a definition is not parked, is not in `sorted_blocks`, and keeps the module's definitions | `lower/parked.rs` |
+| `slot_types` written by the sandbox are kept; `constants` are not touched | the slot types of parked blocks are what their expressions are, as `block_types` is (the proposal left them open); `consts::check_item` runs on items only | `lower/parked.rs` |
+| The diagnostics are taken once around all the stacks and given back after, not per stack | the same result with one swap; `begin_item` resets `too_deep_reported` per stack | `lower/parked.rs` |
+| `tests/scope.rs`'s cases that a parked declaration declares nothing now expect it below its `create`, and its property test compares a parked probe with the same block with the stack attached at the end of `main`'s body in an `if` of its own; `resolve_failed.rs` checks a parked head's own lists and inputs no more against the parked scope; the `props` snapshot's hashes change for 87 documents with parked blocks, its codes do not (it hashes `block_types` and `slot_types`); `query.rs`'s linear-index test counts the parked `create`s' trail nodes; `tests/scope_index.rs` passes unchanged and gains a parked case (a namespace's module and a second module); the E2E check of a text value into a parked `int` *set* is not added | the behaviour the proposal changes; the E2E check is the editor's, and the TypeScript side needs no change: the index's symbols are indexes into the update's `symbols`, which now list the parked declarations, and `created` has them | `crates/b2c-lang/tests/`, `crates/b2c-core-wasm/tests/scope_index.rs` |
 
 ### 10.2 The clipboard arguments (W4's `editor/clipboard/`, this branch's core)
 
@@ -826,7 +844,8 @@ As of 2026-10-30, branch `m3/w5-performance`, from `8a3d8ec`.
 * **M3-7** (§8, `fb41735`): `.github/workflows/building.yml` and
   `tools/building-steps.py` (zizmor clean, `--self-test` passes). It has not
   run yet: it runs weekly and on dispatch, which is the coordinator's.
-* **M3-4** (§5, §10.1): an exact proposal for the coordinator.
+* **M3-4** (§5, §10.1): an exact proposal for the coordinator; done by
+  the coordinator on 2026-11-23 (§10.1, *Done*).
 * **W3's boundary rows** (§10.6): all five agreed.
 
 **Not done, and why:**

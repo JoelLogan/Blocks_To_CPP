@@ -1530,7 +1530,7 @@ package that takes each:
     matches, `Scopes::seed`, a side symbol table that five queries and
     `symbol_infos` read, the sandbox's statements for `block_types`, and
     four tests, one of them an E2E check); it stays M3-4, for a change of
-    its own.
+    its own. *Done as M3-4 on 2026-11-23* (w5-performance.md §10.1).
   * W5 §10.2, the clipboard arguments of worker.md §5: only if the
     `copy-1000`, `paste-1000` or `duplicate-1000` benchmarks are over
     100 ms with the worker on; with the `clipboard.rs` row of §3.3.

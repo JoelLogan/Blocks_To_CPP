@@ -220,9 +220,15 @@ function is declared, before any body, with no parameter in scope.
   declared for diagnostics.
 * **Parked blocks** (top-level statements, reporters and predicates with
   their stacks, [05 §5.4](05-project-format.md#54-block-nodes)) are not
-  lowered. The analyser reports `W0505` on each enabled parked head (warning
-  by default; a project can raise it to an error from M5) and records the
-  parked scope (§6.5).
+  part of the program. The analyser reports `W0505` on each enabled parked
+  head (warning by default; a project can raise it to an error from M5) and
+  records the parked scope (§6.5). For the editor's questions only, each
+  parked stack is then lowered in a **sandbox** (M3-4): from the parked
+  scope, as a statement list of its own. The sandbox records scope
+  positions like any body; its diagnostics are dropped, its declarations
+  are kept in a table of their own beside the program's, and its lowered
+  statements serve `block_types()` alone, so the program, its C++ and its
+  diagnostics are the same with or without parked blocks.
 
 ## 6.5 Stage ④ Names and scopes
 
@@ -289,10 +295,14 @@ left to the analyser
   disabled declaration declares nothing, the same symbols are visible at it
   and after it. A block nested in a disabled statement answers like that
   statement.
-* A parked block (loose, in a parked stack, or nested in one) answers with
-  the **parked scope**: what is visible at the end of its module's `main`
-  body, or the module's functions alone when there is no `main`;
-  declarations inside parked blocks declare nothing. That `main` is the one
+* A parked block (loose, in a parked stack, or nested in one) answers as if
+  its stack were a statement list starting with the **parked scope**: what
+  is visible at the end of its module's `main` body, or the module's
+  functions alone when there is no `main`. A parked `create` is visible
+  below it in its stack (and in the lists nested there), never in `main`, a
+  function, another stack or the parked scope itself (§6.4's sandbox, M3-4).
+  A block in a namespace's mouth that is not a definition is not parked: it
+  answers with the module's definitions. That `main` is the one
   the analyser lowers first: the enabled one with the smallest block ID (a
   disabled one is skipped, and a second enabled one is `E0406`). The
   editor's own fallback picks the same one. A `when program
@@ -328,9 +338,10 @@ left to the analyser
   `for` loop's counter, are not), and `parked_scope(module)` is what
   a block placed on the module's canvas sees. Paste re-binding uses them
   ([05 §5.12](05-project-format.md#512-clipboard-format)).
-* `symbol_infos()` lists every symbol, `block_types()` gives the static
-  type of each value block, and `slot_types()` the static type of each
-  expression slot that was lowered, by block and input. `update()` returns
+* `symbol_infos()` lists every symbol, the parked stacks' declarations
+  among them, `block_types()` gives the static type of each value block,
+  parked ones included, and `slot_types()` the static type of each
+  expression slot that was lowered (the sandbox's too), by block and input. `update()` returns
   them as `blockTypes` and `slotTypes` (always present; `{}` when nothing
   loads). The editor's connection checker uses them together with
   `conversion(from, to)`, the analyser's own conversion rule (`same`,

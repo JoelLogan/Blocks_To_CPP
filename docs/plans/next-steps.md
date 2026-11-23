@@ -559,7 +559,8 @@ main thread's preview task is often shorter than the 4 ms it looked for;
 
 - **W5 §10.1**, lowering parked stacks (M3-4): not done by the integration
   step, since it is well defined but not small (w3-modules.md §7.1, _From
-  the W4 and W5 merges_); a change of its own.
+  the W4 and W5 merges_); a change of its own. _Done on 2026-11-23_
+  (§3.10, w5-performance.md §10.1).
 - **Lookup (owner decision):** the scope query hides another module's
   shared definition behind the module's own definition of the same plain
   name, whatever their namespaces (an own `::count` hides a shared
@@ -595,7 +596,10 @@ agent and a review):
 
 1. **M3-4, parked stacks in the scope query** (W5 §5, §10.1): the exact
    proposal is written; it lowers a parked stack so the menus see its
-   declarations.
+   declarations. _Done on 2026-11-23:_ a parked stack is lowered in a
+   sandbox (`lower/parked.rs`), its declarations are visible below them in
+   its stack and its reporters typed, and the generated C++ is unchanged;
+   the corrections to the proposal are in w5-performance.md §10.1.
 2. **W4's coordinator pieces** (w4-editor-tools.md §7, §12): the ⚙ popover
    (`constexpr`, `static`), _format … with_ and the unchecked `[]` index
    from a block's context menu, and the catalog's `advanced` and `requires`

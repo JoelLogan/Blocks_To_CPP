@@ -1114,8 +1114,9 @@ Codes by area:
   catalog's checks (an unknown block type, for example, is still an error).
   A variable or name that is not chosen yet is not an error while the block
   is parked (`B2C-E0430` asks for it once the block is attached).
-  A variable created inside a parked stack cannot be chosen in the blocks
-  below it until the stack is attached (until M3).
+  A variable created inside a parked stack can be chosen in the blocks below
+  it in that stack; it is not part of the program until the stack is
+  attached.
 * **Example:** a `print ("Hello")` dropped next to `when program starts`
   instead of inside it.
 * **Message:** one of:

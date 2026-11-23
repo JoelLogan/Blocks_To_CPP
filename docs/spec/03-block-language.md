@@ -94,7 +94,7 @@ wrong. The keyboard mover offers no place the checker would refuse, and
 lists places with the moved block counted as absent from its current
 input. Loading, undo, redo and paste are never checked. A parked block's
 slots are typed from its own parts, so a wrong drop into a parked parent is
-refused although parked blocks are not analysed. What only the analysis
+refused although parked blocks are not checked. What only the analysis
 knows is one preview old, as for every editor answer; a refusal in that
 window ends with the next preview and never changes the document.
 
@@ -133,13 +133,16 @@ equivalent of wrapping comes in M5.
 them, can be left anywhere on the canvas. Only statements attached to *when
 program starts* or to a function run; definitions are never parked. Parked
 blocks are saved, show the ⚠ badge of `B2C-W0505` (*not attached*), are not
-analysed until they are attached and never stop Run
+checked until they are attached and never stop Run
 ([ADR-0012](../adr/0012-parked-blocks.md)). The block catalog still checks
 them, so an unknown or damaged block is an error wherever it is. A block in
 which nothing is chosen yet (an *ask* without its variable, straight from
 the toolbox) is not damaged: it asks for the choice only once it is
-attached. Until M3, a variable created inside a parked stack can be chosen
-in the blocks below it only once the stack is attached.
+attached. A variable created inside a parked stack can be chosen in the
+blocks below it in that stack, and the stack's reporters are typed, as if
+the stack followed the end of `main`'s body
+([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes)); the
+program is the same without it.
 
 ## 3.4 Expression slots
 
@@ -385,7 +388,8 @@ The analyser implements a **gradual** type system that approximates C++:
   [06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes). A parked
   block's dropdowns list what is visible at the end of `main`'s body (of the
   enabled *when program starts*, never a disabled one; the module's
-  functions when there is no `main`); a block inside a disabled statement
+  functions when there is no `main`), and the variables created above it in
+  its stack; a block inside a disabled statement
   lists what is visible at that statement. A block the analysis has not seen
   yet (just dropped or pasted) lists what its place gives it: what the
   statement before it, or the list or input around it, sees, or, on the

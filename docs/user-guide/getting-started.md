@@ -197,7 +197,8 @@ function_), and ► Run still works: the program runs without it, also when
 you have not chosen its variable yet. Attach the block to run it, delete it,
 or disable it (_Disable Block_ in its right-click menu) to keep it without
 the warning. A variable created in a loose stack can be chosen in the blocks
-below it once the stack is attached.
+below it in that stack, so you can build a stack on the side and attach it
+when it is ready.
 
 ## Save it
 

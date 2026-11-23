@@ -1040,6 +1040,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   longer uses, so cutting a function and pasting it into another module
   keeps the calls from other modules bound, and pasted references bind
   namespace-qualified names (`geo::area`), a module's own definition first.
+- Parked stacks are lowered for the editor's menus (M3-4): a variable
+  created in a loose stack can be chosen in the blocks below it in that
+  stack, and the stack's reporters are typed, in every module and beside
+  namespaces. The sandbox leaves the program, its C++ and its diagnostics as
+  they were (only `B2C-W0505`); the update's `symbols` and `blockTypes` and
+  the worker's scope index list what it found.
 
 ### Removed
 

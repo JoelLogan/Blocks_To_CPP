@@ -6,6 +6,9 @@
   decision. ADR-0011's `stack` key and clipboard shape stay in force.
 * Amended on 2026-10-13 (review of the M2 polish wave W4a): point 4 leaves
   an absent name or reference field to the analyser.
+* Amended on 2026-11-23 (M3-4): parked stacks are lowered for the scope
+  query and block types, in a sandbox that leaves the program, its C++ and
+  its diagnostics unchanged (point 5, *Consequences*).
 
 ## Context
 
@@ -94,7 +97,11 @@ Three further questions were decided with option 1:
    answers parked blocks with the parked scope
    ([06 §6.5](../spec/06-compiler-pipeline.md#65-stage--names-and-scopes)):
    what is visible at the end of the module's `main` body, or the module's
-   functions alone when it has no `main`.
+   functions alone when it has no `main`. Since M3-4 a parked stack is
+   lowered in a sandbox from there, for the editor's questions only: a
+   variable created in it is visible below it in its stack, and its
+   reporters are typed; its diagnostics are dropped
+   ([06 §6.4](../spec/06-compiler-pipeline.md#64-stage--lowering-to-the-semantic-ast)).
 6. **`B2C-E0406` stays** for a second *when program starts*, whether it is
    loose or not.
 
@@ -106,7 +113,8 @@ Three further questions were decided with option 1:
   inside a parked stack is not offered by the menus of the blocks below it,
   and is not listed in Variables. A parked reporter also has no known type,
   so the connection checker accepts any value in its slots. Both resolve when
-  the stack is attached. Once parked blocks are implemented,
+  the stack is attached. *M3-4 lowers parked stacks for the scope query and
+  block types (2026-11-23), so both now hold in the parked stack too.* Once parked blocks are implemented,
   [03 §3.3](../spec/03-block-language.md#33-block-shapes) and the
   getting-started guide state this limitation.
 * Editing a parked block changes the project's content hash, so the next Run
