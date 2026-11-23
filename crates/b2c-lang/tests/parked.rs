@@ -2,6 +2,11 @@
 //! predicate left on the canvas outside `when program starts` and every
 //! function is not lowered and does not run. The analyser reports each
 //! enabled parked head once, as the warning `B2C-W0505`.
+//!
+//! For the editor's menus only, a parked stack is lowered in a sandbox
+//! (M3-4, w5-performance.md §5, §10.1): a parked `create` is visible below
+//! it in its stack, and its reporters are typed, while the program, its C++
+//! and its diagnostics stay as they were.
 
 // Test code: unwrap/expect/panic and printing to stderr (the shared helpers) are fine here.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::print_stderr)]
@@ -11,7 +16,8 @@ mod common;
 use b2c_catalog::{FieldKind, Shape};
 use b2c_codegen::{CodegenOptions, generate};
 use b2c_ir::diag::{DiagSource, Diagnostic, Part, Severity};
-use b2c_ir::ids::BlockId;
+use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
+use b2c_ir::types::Type;
 use b2c_lang::Analysis;
 use common::*;
 use serde_json::{Value, json};
@@ -41,6 +47,50 @@ fn on_canvas(mut block: Value, id: &str) -> Value {
 /// helpers return ready to plug in.
 fn bare(mut input: Value) -> Value {
     input["block"].take()
+}
+
+/// A statement with this ID.
+fn at(mut block: Value, id: &str) -> Value {
+    block["id"] = json!(id);
+    block
+}
+
+/// A value block, ready to plug in, with this ID.
+fn named(mut input: Value, id: &str) -> Value {
+    input["block"]["id"] = json!(id);
+    input
+}
+
+/// The names the scope query lists at a block (`input` `None`: at the
+/// block), in its order.
+fn visible(a: &Analysis, block: &str, input: Option<&str>) -> Vec<String> {
+    a.scope_at(&BlockId::new(block).unwrap(), input)
+        .unwrap_or_else(|| panic!("no answer at {block} {input:?}"))
+        .into_iter()
+        .map(|info| info.name)
+        .collect()
+}
+
+/// The names the scope query lists directly after a block.
+fn after(a: &Analysis, block: &str) -> Vec<String> {
+    a.scope_after(&BlockId::new(block).unwrap())
+        .unwrap_or_else(|| panic!("no answer after {block}"))
+        .into_iter()
+        .map(|info| info.name)
+        .collect()
+}
+
+/// The names of a module's parked scope.
+fn parked_scope(a: &Analysis, module: &str) -> Vec<String> {
+    a.parked_scope(&ModuleId::new(module).unwrap())
+        .into_iter()
+        .map(|info| info.name)
+        .collect()
+}
+
+/// Whether the program-wide symbol list has a symbol of this name.
+fn listed(a: &Analysis, name: &str) -> bool {
+    a.symbol_infos().iter().any(|info| info.name == name)
 }
 
 #[test]
@@ -189,17 +239,208 @@ fn parked_blocks_never_change_the_program() {
     // changes and reads main's `n`.
     let mut stack_head = on_canvas(declare("int", "m", Some(num("7"))), "p2");
     stack_head["stack"] = json!([set("n", get("m")), print(vec![get("n")])]);
+    // One whose blocks would each be an error attached: an unknown
+    // variable, a text into an `int`, a `return` and a `leave loop` with
+    // nowhere to go, an `auto` without a value, and a name declared twice.
+    let mut broken = on_canvas(set("ghost", num("1")), "p4");
+    broken["stack"] = json!([
+        declare("int", "k", Some(text("seven"))),
+        ret(Some(text("no"))),
+        brk(),
+        declare("auto", "nothing", None),
+        declare("int", "m", Some(num("1"))),
+        exit(text("bad")),
+    ]);
     let with = analyse(&doc(vec![
         attached,
         on_canvas(print(vec![text("never")]), "p1"),
         stack_head,
         on_canvas(bare(arith("add", get("n"), num("1"))), "p3"),
+        broken,
     ]));
-    assert_eq!(parked(&with).len(), 3, "{}", render_all(&with));
+    assert_eq!(parked(&with).len(), 4, "{}", render_all(&with));
+    assert!(
+        with.diagnostics.iter().all(|d| d.code.0 == PARKED),
+        "{}",
+        render_all(&with)
+    );
     assert_eq!(with.program, without.program);
     assert_eq!(
         generate(&with.program, &options),
         generate(&without.program, &options)
+    );
+    // The sandbox ran: `m` is visible below its `create`.
+    assert!(listed(&with, "m"));
+}
+
+/// A parked `create` is visible below it in its stack, and nowhere else:
+/// not to `main`, a function, another stack or the module's parked scope
+/// (M3-4). Above it, and inside its own starting value, the stack sees the
+/// parked scope.
+#[test]
+fn a_parked_create_is_visible_below_it_in_its_stack_only() {
+    let mut stack = on_canvas(declare("int", "m", Some(num("7"))), "p1");
+    stack["stack"] = json!([
+        at(print(vec![named(get("m"), "g1")]), "p2"),
+        at(repeat(num("2"), vec![at(print(vec![get("m")]), "p4")]), "p3"),
+        at(declare("double", "late", None), "p5"),
+    ]);
+    let a = run(vec![
+        main(vec![
+            declare("int", "n", Some(num("3"))),
+            at(print(vec![get("n")]), "m1"),
+        ]),
+        func("helper", "void", &[], vec![at(print(vec![text("f")]), "f1")]),
+        stack,
+        on_canvas(print(vec![text("other")]), "q1"),
+    ]);
+    assert_codes(&a, &[PARKED, PARKED]);
+    let end = ["helper", "n"];
+    let below = ["helper", "m", "n"];
+    assert_eq!(visible(&a, "p1", None), end, "at the create: the parked scope");
+    assert_eq!(visible(&a, "p1", Some("VALUE")), end, "in its own starting value");
+    assert_eq!(after(&a, "p1"), below);
+    assert_eq!(visible(&a, "p2", None), below);
+    assert_eq!(visible(&a, "g1", None), below, "a reporter in the stack");
+    assert_eq!(visible(&a, "p3", Some("BODY")), below);
+    assert_eq!(visible(&a, "p4", None), below);
+    assert_eq!(visible(&a, "p5", None), below);
+    assert_eq!(after(&a, "p5"), ["helper", "late", "m", "n"]);
+    for elsewhere in ["m1", "q1"] {
+        assert_eq!(visible(&a, elsewhere, None), end, "{elsewhere}");
+    }
+    assert_eq!(visible(&a, "f1", None), ["helper"]);
+    assert_eq!(parked_scope(&a, "mod_0"), end);
+    // The update's symbols list them, typed, and the index's `created`.
+    let m = a
+        .symbol_infos()
+        .into_iter()
+        .find(|info| info.name == "m")
+        .unwrap();
+    assert_eq!(m.ty, Type::Int);
+    assert_eq!(m.decl_block.as_str(), "p1");
+    let created: Vec<(String, String)> = a
+        .scope_index_parts()
+        .created()
+        .into_iter()
+        .map(|(block, sym)| (block.to_string(), sym.to_string()))
+        .collect();
+    for pair in [("p1", "sym_m"), ("p5", "sym_late")] {
+        assert!(
+            created.contains(&(pair.0.to_owned(), pair.1.to_owned())),
+            "{created:?}"
+        );
+    }
+}
+
+/// `block_types` has the reporters of parked stacks, typed as they would be
+/// in the stack's place, and a parked reporter on its own (M3-4).
+#[test]
+fn block_types_has_the_parked_reporters() {
+    let mut stack = on_canvas(declare("int", "m", Some(num("7"))), "p1");
+    stack["stack"] = json!([print(vec![named(
+        arith("add", named(get("m"), "g1"), num("1")),
+        "r1"
+    )])]);
+    let a = run(vec![
+        main(vec![declare("bool", "ready", Some(boolean(true)))]),
+        stack,
+        on_canvas(
+            bare(named(compare("lt", named(get("m"), "g2"), num("2")), "r2")),
+            "r2",
+        ),
+        on_canvas(
+            bare(named(logic("and", vec![get("ready"), boolean(false)]), "r3")),
+            "r3",
+        ),
+    ]);
+    let types = a.block_types();
+    let ty = |id: &str| types.get(&BlockId::new(id).unwrap()).cloned();
+    assert_eq!(ty("g1"), Some(Type::Int));
+    assert_eq!(ty("r1"), Some(Type::Int));
+    assert_eq!(ty("r3"), Some(Type::Bool), "a parked reporter reads main's end");
+    // Another stack's `m` is not visible to a reporter on its own, and a
+    // comparison with an error is one too.
+    assert_eq!(ty("g2"), Some(Type::Error));
+    assert_eq!(ty("r2"), Some(Type::Error));
+    assert_codes(&a, &[PARKED, PARKED, PARKED]);
+}
+
+/// In a project of several modules, with namespaces: a parked stack sees
+/// its module's definitions, those in namespaces among them, and its own
+/// declarations below them; a stack in another module (which has no
+/// `main`) sees that module's definitions and its own declarations, and
+/// neither module sees the other's. A statement in a namespace's mouth is
+/// not parked, and stays out of the sandbox (M3-4).
+#[test]
+fn parked_stacks_in_a_namespace_s_module_and_a_second_module() {
+    let area = json!({"id": "fn_area", "type": "func.define", "v": 1,
+        "fields": {"NAME": {"sym": "sym_area", "name": "area"}, "RETURNS": "int"},
+        "extra": {"params": []},
+        "statements": {"BODY": [ret(Some(num("2")))]}});
+    let geo = json!({"id": "ns_block", "type": "program.namespace", "v": 1,
+        "fields": {"NAME": {"sym": "ns_geo", "name": "geo"}},
+        "statements": {"DEFINITIONS": [area, at(declare("int", "in_mouth", None), "mouth")]}});
+    let call_area = json!({"block": {"id": "c1", "type": "func.call", "v": 1,
+        "fields": {"FUNC": {"ref": "sym_area"}}, "extra": {"argCount": 0}}});
+    let mut first = on_canvas(declare("auto", "a", Some(call_area)), "p1");
+    first["stack"] = json!([at(print(vec![get("a")]), "p2")]);
+    let mut second = on_canvas(declare("int", "k", Some(num("1"))), "s1");
+    second["stack"] = json!([at(print(vec![named(get("k"), "g2")]), "s2")]);
+    let a = analyse(&doc_modules(vec![
+        (
+            "main",
+            vec![main(vec![at(print(vec![text("hi")]), "m1")]), geo, first],
+        ),
+        (
+            "second",
+            vec![
+                func("tally", "void", &[], vec![at(print(vec![text("t")]), "t1")]),
+                second,
+            ],
+        ),
+    ]));
+    assert!(
+        a.diagnostics.iter().all(|d| d.code.0 == PARKED),
+        "{}",
+        render_all(&a)
+    );
+    assert_eq!(visible(&a, "p1", None), ["area", "geo"]);
+    assert_eq!(visible(&a, "p2", None), ["a", "area", "geo"]);
+    let a_info = a
+        .symbol_infos()
+        .into_iter()
+        .find(|info| info.name == "a")
+        .unwrap();
+    assert_eq!(a_info.ty, Type::Int, "`auto` from the call of geo::area");
+    assert_eq!(
+        a.block_types().get(&BlockId::new("c1").unwrap()),
+        Some(&Type::Int)
+    );
+    assert_eq!(visible(&a, "s2", None), ["k", "tally"]);
+    assert_eq!(visible(&a, "g2", None), ["k", "tally"]);
+    assert_eq!(
+        a.symbol_infos()
+            .into_iter()
+            .find(|i| i.name == "k")
+            .unwrap()
+            .module
+            .as_str(),
+        "mod_1"
+    );
+    // Neither module sees the other's, and neither parked scope has them.
+    assert_eq!(visible(&a, "m1", None), ["area", "geo"]);
+    assert_eq!(visible(&a, "t1", None), ["tally"]);
+    assert_eq!(parked_scope(&a, "mod_0"), ["area", "geo"]);
+    assert_eq!(parked_scope(&a, "mod_1"), ["tally"]);
+    // The statement in the mouth answers with the module's definitions, and
+    // declares nothing.
+    assert_eq!(visible(&a, "mouth", None), ["area", "geo"]);
+    assert!(!listed(&a, "in_mouth"));
+    let sym = SymbolId::new("sym_k").unwrap();
+    assert!(
+        a.program.symbols.get(&sym).is_none(),
+        "the program has no parked symbol"
     );
 }
 

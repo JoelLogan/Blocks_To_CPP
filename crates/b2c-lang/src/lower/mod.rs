@@ -15,6 +15,7 @@ mod files;
 mod globals;
 mod lookup;
 mod namespaces;
+mod parked;
 mod resolve;
 mod stmt;
 mod text;
@@ -81,6 +82,7 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
             index: ScopeIndex::default(),
             slot_types: BTreeMap::new(),
             constants: BTreeMap::new(),
+            parked: crate::query::Parked::default(),
         };
     };
     let mut lowerer = Lowerer::new(document, first.id.clone(), sigs, unchecked);
@@ -89,8 +91,12 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
     for item in modules.iter_mut().flat_map(|module| module.items.iter_mut()) {
         item.namespace = lowerer.namespaces.member_of.get(&item.origin.block).cloned();
     }
-    // Parked blocks and skipped definitions answer the scope query too; the
-    // parked scope is known once every `main` is lowered.
+    // Parked stacks are lowered for the editor's menus, in a sandbox that
+    // leaves the program as it is (M3-4); then the blocks the lowering never
+    // reached answer the scope query too: what the sandbox did not reach
+    // with the parked scope, skipped definitions with their module's
+    // definitions. Both need every `main` end.
+    let parked = lowerer.lower_parked();
     lowerer.index.record_unlowered(document);
     let trail = lowerer.scopes.take_trail();
     // A module's definitions are visible everywhere in it: its functions,
@@ -161,6 +167,7 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
         index: lowerer.index,
         slot_types: lowerer.slot_types,
         constants: lowerer.constants,
+        parked,
     }
 }
 
@@ -233,6 +240,10 @@ enum ItemCtx {
         /// Its return type.
         ret: Type,
     },
+    /// A parked stack, lowered for the editor's menus only
+    /// (`parked.rs`): it is in no function, so what a `return` gives back
+    /// is not known, and *stop program* is not in `main`.
+    Parked,
 }
 
 /// A name that C++ already sees while its declaration is being lowered: a

@@ -235,6 +235,7 @@ impl<'d> Lowerer<'d> {
             ItemCtx::Main => PartType::Known(Type::Int),
             ItemCtx::Function { ret: Type::Void, .. } => PartType::Empty,
             ItemCtx::Function { ret, .. } => PartType::Known(ret.clone()),
+            ItemCtx::Parked => PartType::Unknown,
         };
         Typed {
             sig,

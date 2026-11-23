@@ -61,7 +61,7 @@ impl Lowerer<'_> {
         self.within(Breakable::Loop, |lowerer| lowerer.body(owner, "BODY", joined))
     }
 
-    fn statement(&mut self, block: &Block) -> Option<Stmt> {
+    pub(super) fn statement(&mut self, block: &Block) -> Option<Stmt> {
         if !self.enter(block) {
             return None;
         }
@@ -643,7 +643,9 @@ impl Lowerer<'_> {
                 },
                 None,
             )
-            | (ItemCtx::Function { ret: Type::Error, .. }, Some(_)) => {}
+            | (ItemCtx::Function { ret: Type::Error, .. }, Some(_))
+            // Where a parked stack will be attached is not known.
+            | (ItemCtx::Parked, _) => {}
             (ItemCtx::Function { name, ret }, None) => {
                 let message = format!(
                     "{} must give back {}, so this 'return' needs a value.",

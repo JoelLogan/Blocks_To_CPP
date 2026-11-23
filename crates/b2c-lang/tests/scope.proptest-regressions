@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 7c7834f7d97da1c20484ee7bee1256f3e848b5ad22482678c85d16d5819a0f80 # shrinks to program = GenProgram { main: [Declare { name: 0, probe_value: false }, For { name: 0, probe_from: false, body: [Disabled(CallProbe)] }], functions: [] }
+cc cc1b3a38a229128fefc1be535ca6de70e4c365a2068aae9e4d7b6fd2da2b6c11 # shrinks to program = GenProgram { main: [Declare { name: 0, probe_value: false }, Declare { name: 0, probe_value: false }], functions: [], parked: [If { body: [If { body: [Declare { name: 0, probe_value: true }], else_body: None }], else_body: None }] }

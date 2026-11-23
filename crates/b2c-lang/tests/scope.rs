@@ -470,19 +470,33 @@ fn parked_blocks_answer_with_the_end_of_main() {
         reporter,
     ]);
     let end = ["f", "x", "y"];
-    for id in &ids {
+    for id in [&ids[0], &ids[1], &ids[6], &ids[7], &ids[8]] {
         assert_eq!(visible(&a, id, None), end, "at {id}");
     }
-    // Their inputs and statement lists answer the same: a declaration in a
-    // parked stack declares nothing, and neither does a parked loop's counter.
-    assert_eq!(visible(&a, &ids[4], Some("BODY")), end);
+    // Below a parked `create`, its stack sees its variable, and a parked
+    // loop's body its counter (M3-4); the program has neither.
+    let below = ["f", "parked", "x", "y"];
+    for id in [&ids[2], &ids[4], &ids[5]] {
+        assert_eq!(visible(&a, id, None), below, "at {id}");
+    }
+    let in_loop = ["f", "k", "parked", "x", "y"];
+    assert_eq!(visible(&a, &ids[3], None), in_loop);
+    assert_eq!(visible(&a, &ids[4], Some("BODY")), in_loop);
     assert_eq!(visible(&a, &ids[1], Some("VALUE")), end);
     assert_eq!(visible(&a, &ids[0], Some("NO_SUCH_INPUT")), end);
     assert!(
-        a.symbol_infos()
+        ["parked", "k"]
             .iter()
-            .all(|s| s.name != "parked" && s.name != "k"),
-        "parked blocks declare nothing"
+            .all(|name| a.symbol_infos().iter().any(|s| s.name == *name)),
+        "the update's symbols list them"
+    );
+    assert!(
+        a.program
+            .symbols
+            .symbols
+            .values()
+            .all(|s| s.name.as_str() != "parked" && s.name.as_str() != "k"),
+        "the program has no parked declaration"
     );
 }
 
@@ -710,8 +724,8 @@ fn the_query_tells_an_unknown_block_from_one_that_sees_nothing() {
 fn after_a_block_its_own_variable_is_visible() {
     // `scope_after` is where a block inserted after this one would be: a
     // `create` the analyser accepted adds its variable, hiding an outer one
-    // with its name; a loop's counter, a disabled `create` and a parked one
-    // add nothing.
+    // with its name, and so does a parked one (M3-4); a loop's counter and a
+    // disabled `create` add nothing.
     let outer = declare_as("int", "x", "s_outer", None);
     let inner = declare_as("int", "x", "s_inner", None);
     let counted = for_range("i", num("0"), "to", num("3"), None, vec![]);
@@ -732,7 +746,14 @@ fn after_a_block_its_own_variable_is_visible() {
     assert_eq!(names_of(Some(after(&ids[1]))), Some(vec![String::from("x")]));
     assert_eq!(after(&ids[1]), a.symbols_in_scope(&block(&ids[1]), None));
     assert_eq!(after(&ids[2]), a.symbols_in_scope(&block(&ids[2]), None));
-    assert_eq!(after(&ids[3]), a.parked_scope(&ModuleId::new("mod_0").unwrap()));
+    assert_eq!(
+        names_of(Some(after(&ids[3]))),
+        Some(vec![String::from("parked"), String::from("x")])
+    );
+    assert_eq!(
+        names_of(Some(a.parked_scope(&ModuleId::new("mod_0").unwrap()))),
+        Some(vec![String::from("x")])
+    );
     assert_eq!(a.scope_after(&block("no_such_block")), None);
 }
 
@@ -898,7 +919,7 @@ fn results_are_sorted_by_name_then_id_with_the_users_names() {
 }
 
 #[test]
-fn symbol_infos_lists_the_program_and_nothing_else() {
+fn symbol_infos_lists_the_program_and_the_parked_declarations() {
     let a = run(vec![
         main(vec![
             declare_const("double", "rate", num("1.5")),
@@ -924,10 +945,13 @@ fn symbol_infos_lists_the_program_and_nothing_else() {
         vec![
             json!({"id": "sym_i", "name": "i", "kind": "loopVariable", "type": "int",
                    "module": "mod_0", "declBlock": for_block}),
+            // A parked `create` (M3-4); the disabled one declares nothing.
+            json!({"id": "sym_loose", "name": "loose", "kind": "variable", "isConst": false,
+                   "type": "int", "module": "mod_0", "declBlock": json[1]["declBlock"]}),
             json!({"id": "sym_n", "name": "n", "kind": "parameter", "mode": "editable", "type": "int",
                    "module": "mod_0", "declBlock": "fn_twice"}),
             json!({"id": "sym_rate", "name": "rate", "kind": "variable", "isConst": true,
-                   "type": "double", "module": "mod_0", "declBlock": json[2]["declBlock"]}),
+                   "type": "double", "module": "mod_0", "declBlock": json[3]["declBlock"]}),
             json!({"id": "sym_twice", "name": "twice", "kind": "function", "params": ["sym_n"],
                    "returns": "int", "type": "int", "module": "mod_0", "declBlock": "fn_twice"}),
         ]
@@ -1301,8 +1325,9 @@ enum Reach {
     /// It is inside the disabled block with this ID (a statement in a list
     /// that is analysed, or a disabled function): it answers like that block.
     Like(String),
-    /// It is parked (in a loose stack, or nested in one): it answers with
-    /// the parked scope.
+    /// It is parked (in a loose stack, or nested in one): it answers as
+    /// the same block does with the stack attached at the end of `main`'s
+    /// body, in a list of its own (M3-4).
     Parked,
 }
 
@@ -1551,6 +1576,41 @@ fn analyse_text(text: &str) -> Analysis {
     analyse(&serde_json::from_str::<Document>(text).expect("generated document"))
 }
 
+/// The project text with the loose stack (the head at `x` 600) attached at
+/// the end of `main`'s body, inside an `if` of its own: a list nested in
+/// the body, as the parked stacks' sandbox lowers a stack (M3-4).
+fn attach_parked(text: &str) -> String {
+    let mut value: Value = serde_json::from_str(text).expect("generated document");
+    let blocks = value["modules"][0]["workspace"]["blocks"]
+        .as_array_mut()
+        .expect("blocks");
+    let Some(at) = blocks.iter().position(|b| b["x"] == json!(600)) else {
+        return text.to_owned();
+    };
+    let mut head = blocks.remove(at);
+    let mut list = vec![];
+    if let Some(Value::Array(stack)) = head.as_object_mut().and_then(|h| h.remove("stack")) {
+        list = stack;
+    }
+    if let Some(map) = head.as_object_mut() {
+        map.remove("x");
+        map.remove("y");
+    }
+    list.insert(0, head);
+    let wrapper = json!({"id": "attached_if", "type": "control.if", "v": 1,
+        "extra": {"elseIfCount": 0, "hasElse": false},
+        "inputs": {"COND0": {"expr": [{"kw": "true"}]}}, "statements": {"DO0": list}});
+    let main = blocks
+        .iter_mut()
+        .find(|b| b["id"] == json!("main"))
+        .expect("main");
+    main["statements"]["BODY"]
+        .as_array_mut()
+        .expect("body")
+        .push(wrapper);
+    value.to_string()
+}
+
 /// The project text with the block `id` enabled.
 fn enable(text: &str, id: &str) -> String {
     fn walk(value: &mut Value, id: &str) {
@@ -1598,12 +1658,21 @@ fn check_program(program: &GenProgram) -> Result<(), TestCaseError> {
             .collect();
         prop_assert_eq!(base.symbols_in_scope(&block(id), None), functions, "{}", id);
     }
+    let attached = renderer
+        .probes
+        .iter()
+        .any(|probe| probe.reach == Reach::Parked)
+        .then(|| analyse_text(&attach_parked(&text)));
     for probe in &renderer.probes {
         let here = base.symbols_in_scope(&block(&probe.block), None);
         match &probe.reach {
             Reach::Reached => {}
             Reach::Parked => {
-                prop_assert_eq!(&here, &parked, "{} is parked", &probe.block);
+                let there = attached
+                    .as_ref()
+                    .map(|a| a.symbols_in_scope(&block(&probe.block), None))
+                    .unwrap_or_default();
+                prop_assert_eq!(&here, &there, "{} is parked", &probe.block);
                 continue;
             }
             Reach::Like(ancestor) => {

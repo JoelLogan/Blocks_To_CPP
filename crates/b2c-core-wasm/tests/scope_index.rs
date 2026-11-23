@@ -444,3 +444,76 @@ fn the_index_holds_other_modules_shared_definitions() {
     );
     assert_eq!(module_of(&report, "s_g_bounded"), None);
 }
+
+/// Parked stacks are lowered for the menus (M3-4, w5-performance.md §5,
+/// §10.1): a parked `create` is visible below it in its stack, in a module
+/// with a namespace and in a second module without `main`, and the index
+/// answers as the scope query there, after a parked `create` included.
+#[test]
+fn parked_stacks_answer_as_the_scope_query() {
+    let print = |id: &str, sym: &str| {
+        serde_json::json!({"id": id, "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+            "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "out"},
+            "inputs": {"ITEM0": {"expr": [{"ref": sym}]}}})
+    };
+    let create = |id: &str, sym: &str, name: &str| {
+        serde_json::json!({"id": id, "type": "var.declare", "v": 1, "x": 400, "y": 40,
+            "fields": {"TYPE": "int", "NAME": {"sym": sym, "name": name}},
+            "inputs": {"VALUE": {"expr": [{"num": "7"}]}}})
+    };
+    let mut first = create("p1", "s_m", "m");
+    first["stack"] = serde_json::json!([
+        print("p2", "s_m"),
+        {"id": "p3", "type": "control.repeat", "v": 1,
+         "inputs": {"TIMES": {"expr": [{"num": "2"}]}},
+         "statements": {"BODY": [print("p4", "s_m")]}}
+    ]);
+    let mut second = create("q1", "s_k", "k");
+    second["stack"] = serde_json::json!([print("q2", "s_k")]);
+    let document = serde_json::json!({
+        "format": "blocks2cpp/project", "formatVersion": 1,
+        "generator": {"app": "0.1.0", "catalog": "1.3.0"},
+        "project": {"id": "prj_parked", "name": "Parked", "language": {"standard": "c++20"}},
+        "modules": [
+            {"id": "mod_main", "name": "main", "workspace": {"blocks": [
+                {"id": "b_main", "type": "program.main", "v": 1, "statements": {"BODY": [
+                    {"id": "b_n", "type": "var.declare", "v": 1,
+                     "fields": {"TYPE": "int", "NAME": {"sym": "s_n", "name": "n"}},
+                     "inputs": {"VALUE": {"expr": [{"num": "3"}]}}}
+                ]}},
+                {"id": "b_geo", "type": "program.namespace", "v": 1,
+                 "fields": {"NAME": {"sym": "s_geo", "name": "geo"}},
+                 "statements": {"DEFINITIONS": [
+                    {"id": "b_area", "type": "func.define", "v": 1,
+                     "fields": {"NAME": {"sym": "s_area", "name": "area"}, "RETURNS": "void"},
+                     "extra": {"params": []}}
+                 ]}},
+                first
+            ]}},
+            {"id": "mod_two", "name": "two", "workspace": {"blocks": [second]}}
+        ]
+    });
+    let text = document.to_string();
+    assert!(check("parked stacks", &text) > 10);
+    let update = parse(&b2c_core_wasm::update(&text, r#"{"indentWidth":4}"#));
+    let index: Value = serde_json::from_str(&b2c_core_wasm::scope_index()).unwrap();
+    let lookup = Lookup::new(index, &update);
+    let ids = |infos: Vec<Value>| -> Vec<String> {
+        infos
+            .into_iter()
+            .map(|info| info["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(ids(lookup.at("p1", None).unwrap()), ["s_area", "s_geo", "s_n"]);
+    assert_eq!(
+        ids(lookup.after("p1").unwrap()),
+        ["s_area", "s_geo", "s_m", "s_n"]
+    );
+    assert_eq!(
+        ids(lookup.at("p4", None).unwrap()),
+        ["s_area", "s_geo", "s_m", "s_n"]
+    );
+    assert_eq!(ids(lookup.at("q2", None).unwrap()), ["s_k"]);
+    assert_eq!(ids(lookup.parked("mod_main")), ["s_area", "s_geo", "s_n"]);
+    assert!(lookup.parked("mod_two").is_empty());
+}

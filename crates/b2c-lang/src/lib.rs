@@ -103,6 +103,9 @@ pub struct Analysis {
     /// The `const` variables whose value is known, for
     /// [`Analysis::constants`].
     constants: BTreeMap<SymbolId, Constant>,
+    /// What the parked stacks' sandbox lowered (M3-4), for the scope query
+    /// and [`Analysis::block_types`] only.
+    parked: query::Parked,
 }
 
 impl Analysis {

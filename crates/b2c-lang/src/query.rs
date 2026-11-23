@@ -17,9 +17,13 @@
 //!   answers like it ([`ScopeIndex::record_tree`], called by the lowering);
 //! * a *parked* block (a top-level statement, reporter or predicate, the
 //!   blocks stacked below a top-level block, and every block nested in them,
-//!   ADR-0012) answers with the parked scope of its module: what is visible
-//!   at the end of the module's `main` body, or the module's functions alone
-//!   when it has no `main` ([`ScopeIndex::record_unlowered`]);
+//!   ADR-0012) is lowered in a sandbox for these questions only (M3-4,
+//!   `lower/parked.rs`): its stack starts from the parked scope of its
+//!   module (what is visible at the end of the module's `main` body, or the
+//!   module's functions alone when it has no `main`), and a parked `create`
+//!   is visible below it in its stack. Its declarations are kept apart from
+//!   the program ([`Parked`]). A parked block the sandbox does not reach
+//!   answers with the parked scope ([`ScopeIndex::record_unlowered`]);
 //! * a definition that is not lowered (a disabled one, or one too damaged to
 //!   lower), and every block in it, answers with the module's functions.
 //!
@@ -46,7 +50,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::diag::Part;
 use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
-use b2c_ir::sast::{Expr, ItemKind, Program, Stmt, SymbolKind};
+use b2c_ir::sast::{Expr, ItemKind, Program, Stmt, Symbol, SymbolKind, SymbolTable};
 use b2c_ir::scope_info::{SymbolInfo, SymbolInfoKind};
 use b2c_ir::types::Type;
 use b2c_model::{Block, Document, Input};
@@ -62,7 +66,7 @@ use crate::scope::{NodeId, Trail};
 /// the module's functions, as a skipped definition does, and so do the
 /// blocks in its mouth that the lowering did not reach. A test checks the
 /// list against the catalog.
-const DEFINITION_TYPES: [&str; 8] = [
+pub(crate) const DEFINITION_TYPES: [&str; 8] = [
     "program.main",
     "func.define",
     "type.struct",
@@ -72,6 +76,20 @@ const DEFINITION_TYPES: [&str; 8] = [
     "program.namespace",
     "program.use_namespace",
 ];
+
+/// What the parked stacks' sandbox lowered (M3-4, `lower/parked.rs`): never
+/// part of the program, which codegen, the checks and the build read, only
+/// of the editor's questions.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct Parked {
+    /// The symbols the parked stacks declare, which the scope query lists
+    /// where they are visible (below their `create` in their stack).
+    pub(crate) symbols: SymbolTable,
+    /// The statements of the parked stacks, for [`Analysis::block_types`].
+    pub(crate) stmts: Vec<Stmt>,
+    /// The parked reporters and predicates on their own, likewise.
+    pub(crate) values: Vec<Expr>,
+}
 
 /// What was visible at a recorded position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,7 +165,7 @@ impl ScopeIndex {
 
     /// The parked scope of a module: what is visible at the end of its
     /// `main` body, or, without one, its functions alone.
-    fn parked_point(&self, module: usize) -> Point {
+    pub(crate) fn parked_point(&self, module: usize) -> Point {
         self.main_ends
             .get(&module)
             .copied()
@@ -186,9 +204,10 @@ impl ScopeIndex {
     }
 
     /// Records the blocks of a document that the lowering never reached as a
-    /// whole: each top-level block that is not a definition, with its
-    /// `stack`, and the blocks stacked below a definition, answer with the
-    /// parked scope of their module; a definition the lowering skipped
+    /// whole: the blocks of each top-level block that is not a definition,
+    /// with its `stack`, and of the blocks stacked below a definition, that
+    /// the parked stacks' sandbox did not reach, answer with the parked
+    /// scope of their module; a definition the lowering skipped
     /// (disabled, or too damaged to lower) answers, with everything in it,
     /// with the module's functions. Called once the lowering has recorded
     /// every `main` end. Returns how many blocks it visited.
@@ -344,9 +363,11 @@ impl Analysis {
     ///   declaration declares nothing, so the same symbols are visible at it
     ///   and after it. Every block nested in it answers like it.
     /// * A parked block (a top-level statement, reporter or predicate, a
-    ///   block in a parked stack, or one nested in them; ADR-0012) answers
-    ///   with the **parked scope** of its module ([`Self::parked_scope`]).
-    ///   Declarations inside parked blocks declare nothing.
+    ///   block in a parked stack, or one nested in them; ADR-0012) answers as
+    ///   if its stack were a statement list that starts with the **parked
+    ///   scope** of its module ([`Self::parked_scope`]): a parked `create`
+    ///   is visible below it in its stack (M3-4), and nowhere else. The
+    ///   program never has these declarations.
     /// * A definition the analyser skips (a disabled `when program starts`
     ///   or function), and every block in it, answers with the module's
     ///   functions.
@@ -372,8 +393,9 @@ impl Analysis {
     /// What is visible **directly after** a block in its statement list,
     /// where a block inserted after it would be: what is visible at the
     /// block, plus the variable the block creates if the analyser accepted
-    /// that declaration (it hides any other symbol with its name). A
-    /// disabled or parked `create` declares nothing, and a `for` loop's
+    /// that declaration (it hides any other symbol with its name); after a
+    /// parked `create`, its variable, in its stack. A disabled `create`
+    /// declares nothing, and a `for` loop's
     /// counter, a *for each* item and a catch part's error are visible only
     /// inside their block, so for those it is what is visible at the block.
     /// `None` when the analysis has no answer for the block
@@ -385,6 +407,7 @@ impl Analysis {
             .symbols
             .symbols
             .iter()
+            .chain(&self.parked.symbols.symbols)
             .find(|(id, symbol)| {
                 symbol.origin.block == *block
                     && matches!(symbol.kind, SymbolKind::Variable { .. })
@@ -417,18 +440,36 @@ impl Analysis {
     }
 
     /// Every symbol of the program (those of disabled and unattached blocks
-    /// are not part of it), sorted by name (byte order), then by ID.
+    /// are not part of it), and those the parked stacks declare, which the
+    /// scope query lists below their `create` (M3-4); sorted by name (byte
+    /// order), then by ID.
     pub fn symbol_infos(&self) -> Vec<SymbolInfo> {
-        self.infos(self.program.symbols.symbols.keys().collect())
+        self.infos(
+            self.program
+                .symbols
+                .symbols
+                .keys()
+                .chain(self.parked.symbols.symbols.keys())
+                .collect(),
+        )
     }
 
     /// The static type of each value block of the program, by block ID: the
     /// type of the expression that the block became ([`Type::Error`] when it
     /// has an error). Expression slots are not blocks and are not listed;
-    /// blocks outside the program (disabled, unattached, or in a second
-    /// `when program starts`) are not either.
+    /// blocks outside the program (disabled, or in a second `when program
+    /// starts`) are not either, but those of parked stacks are, typed in
+    /// their stack (M3-4).
     pub fn block_types(&self) -> BTreeMap<BlockId, Type> {
-        block_types(&self.program)
+        block_types(&self.program, &self.parked)
+    }
+
+    /// A symbol of the program, or one a parked stack declares.
+    fn symbol(&self, id: &SymbolId) -> Option<&Symbol> {
+        self.program
+            .symbols
+            .get(id)
+            .or_else(|| self.parked.symbols.get(id))
     }
 
     /// These symbols, each struct and enum among them followed by its fields
@@ -462,7 +503,7 @@ impl Analysis {
             .into_iter()
             .filter(|id| seen.insert(*id))
             .filter_map(|id| {
-                let symbol = self.program.symbols.get(id)?;
+                let symbol = self.symbol(id)?;
                 let name = self
                     .index
                     .names
@@ -614,7 +655,8 @@ impl<'a> ScopeIndexParts<'a> {
     pub fn created(self) -> Vec<(&'a BlockId, &'a SymbolId)> {
         let analysis = self.analysis;
         let mut created: BTreeMap<&'a BlockId, &'a SymbolId> = BTreeMap::new();
-        for (id, symbol) in &analysis.program.symbols.symbols {
+        let parked = &analysis.parked.symbols.symbols;
+        for (id, symbol) in analysis.program.symbols.symbols.iter().chain(parked) {
             if matches!(symbol.kind, SymbolKind::Variable { .. })
                 && !analysis.index.part_variables.contains(id)
             {
@@ -651,7 +693,7 @@ fn is_member(info: &SymbolInfo) -> bool {
 /// two `&&`) is typed by the outermost one, which the walk meets first. The
 /// expression that a statement block itself became (a call whose result is
 /// ignored) belongs to a statement, not to a value block, and is skipped.
-fn block_types(program: &Program) -> BTreeMap<BlockId, Type> {
+fn block_types(program: &Program, parked: &Parked) -> BTreeMap<BlockId, Type> {
     let mut types = BTreeMap::new();
     let mut stmts: Vec<&Stmt> = Vec::new();
     for item in program.modules.iter().flat_map(|module| &module.items) {
@@ -675,24 +717,30 @@ fn block_types(program: &Program) -> BTreeMap<BlockId, Type> {
         if let Some(body) = body {
             stmts.extend(body.stmts.iter().rev());
         }
-        record_types(&item.origin.block, values, &mut types);
+        record_types(Some(&item.origin.block), values, &mut types);
     }
+    // The parked stacks' statements (M3-4), beneath the program's, so that
+    // they come last: a block the program has keeps its type there.
+    stmts.splice(0..0, parked.stmts.iter().rev());
     while let Some(stmt) = stmts.pop() {
         let (values, bodies) = crate::nesting::parts(stmt);
         for body in bodies.into_iter().rev() {
             stmts.extend(body.stmts.iter().rev());
         }
-        record_types(&stmt.origin.block, values, &mut types);
+        record_types(Some(&stmt.origin.block), values, &mut types);
     }
+    // And the parked reporters and predicates on their own.
+    record_types(None, parked.values.iter().collect(), &mut types);
     types
 }
 
 /// Records the type of every value block in `values` and their operands,
-/// except the expressions the block `owner` itself became.
-fn record_types<'p>(owner: &BlockId, values: Vec<&'p Expr>, types: &mut BTreeMap<BlockId, Type>) {
+/// except the expressions the block `owner` itself became (none for a value
+/// block on its own).
+fn record_types<'p>(owner: Option<&BlockId>, values: Vec<&'p Expr>, types: &mut BTreeMap<BlockId, Type>) {
     let mut exprs: Vec<&'p Expr> = values.into_iter().rev().collect();
     while let Some(expr) = exprs.pop() {
-        if expr.origin.part == Part::Whole && &expr.origin.block != owner {
+        if expr.origin.part == Part::Whole && Some(&expr.origin.block) != owner {
             types
                 .entry(expr.origin.block.clone())
                 .or_insert_with(|| expr.ty.clone());
@@ -874,8 +922,9 @@ mod tests {
     #[test]
     fn the_index_stays_linear_on_long_disabled_stacks() {
         // 5,000 `create` blocks stacked below a disabled loose head (parked),
-        // and 5,000 in a disabled loop in `main`: one position each, the same
-        // two for all of them, nothing declared, and each block visited once.
+        // and 5,000 in a disabled loop in `main`: one position each, each
+        // block visited once. The disabled ones declare nothing; the parked
+        // ones, lowered for the menus (M3-4), two trail nodes each.
         let count = 5_000;
         let creates = |prefix: &str| -> Vec<serde_json::Value> {
             (0..count)
@@ -903,20 +952,22 @@ mod tests {
         .expect("document");
         let blocks = 2 * count + 4;
         let analysis = crate::analyze_with(&document, b2c_catalog::core_catalog().sigs());
-        // `kept` declares one name, and hides it in its own starting value.
-        assert_eq!(analysis.index.trail.len(), 2);
+        // `kept` declares one name, and hides it in its own starting value;
+        // so does each parked `create`.
+        assert_eq!(analysis.index.trail.len(), 2 + 2 * count);
         assert_eq!(analysis.index.blocks.len(), blocks);
         let points: BTreeSet<Option<NodeId>> = analysis
             .index
             .blocks
-            .values()
-            .filter_map(|points| points.at.map(|point| point.node))
+            .iter()
+            .filter(|(id, _)| !id.as_str().starts_with('p'))
+            .filter_map(|(_, points)| points.at.map(|point| point.node))
             .collect();
-        // `main` and `kept` see nothing; the loop, everything in it and the
-        // parked stack see `kept` (node 1, after the hiding node 0).
+        // `main` and `kept` see nothing; the loop and everything in it see
+        // `kept` (node 1, after the hiding node 0).
         assert_eq!(points, BTreeSet::from([None, Some(1)]));
         let kept = ["kept"];
-        for id in ["d0", "d4999", "p0", "p4999", "head"] {
+        for id in ["d0", "d4999", "p0", "head"] {
             let names: Vec<String> = analysis
                 .symbols_in_scope(&block(id), None)
                 .into_iter()
@@ -924,6 +975,8 @@ mod tests {
                 .collect();
             assert_eq!(names, kept, "{id}");
         }
+        // Below the parked head, each `create` sees those above it.
+        assert_eq!(analysis.symbols_in_scope(&block("p4999"), None).len(), count);
         // Every walk visits each block once.
         let mut index = ScopeIndex::default();
         assert_eq!(index.record_unlowered(&document), blocks);
@@ -1032,6 +1085,7 @@ mod tests {
             index,
             slot_types: BTreeMap::new(),
             constants: BTreeMap::new(),
+            parked: Parked::default(),
         }
     }
 
@@ -1114,7 +1168,7 @@ mod tests {
             layout: b2c_ir::layout::Layout::default(),
             spellings: b2c_ir::spelling::Spellings::default(),
         };
-        let types = block_types(&program);
+        let types = block_types(&program, &Parked::default());
         assert_eq!(types.len(), 1);
         assert_eq!(types.get(&block("leaf")), Some(&Type::Bool));
         // Dropping the tree as a whole would recurse; take it apart level by

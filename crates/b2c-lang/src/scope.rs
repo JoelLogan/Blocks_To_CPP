@@ -112,6 +112,46 @@ impl Scopes {
         self.head = None;
     }
 
+    /// Empties the stack and opens one frame (`key`) that holds what is
+    /// visible at trail node `node`: walking back from it, each name C++ sees
+    /// there (the first one met; a hidden name hides the rest of its name)
+    /// becomes visible again, for name lookups and [`Self::contains`]. The
+    /// current node is `node`, so what is declared next extends the trail
+    /// from it. A parked stack is lowered from its module's parked point
+    /// this way (M3-4, `lower/parked.rs`).
+    pub(crate) fn seed(&mut self, node: Option<NodeId>, key: ListKey) {
+        self.reset();
+        self.head = node;
+        let mut declared = Vec::new();
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        let mut at = node;
+        while let Some(index) = at {
+            let Some(step) = self.trail.get(index) else {
+                break;
+            };
+            if seen.insert(step.name.as_str())
+                && let Some(sym) = &step.sym
+            {
+                declared.push((step.name.clone(), sym.clone()));
+            }
+            // Parents always come first.
+            at = step.parent.filter(|parent| *parent < index);
+        }
+        for (name, sym) in &declared {
+            self.by_sym.insert(sym.clone(), 0);
+            self.by_name
+                .entry(name.clone())
+                .or_default()
+                .push((0, sym.clone()));
+        }
+        self.frames.push(Frame {
+            key,
+            joined: false,
+            declared,
+            entry: node,
+        });
+    }
+
     /// Makes `globals` the module's globals, seen beneath every scope (see
     /// [`Scopes::globals`]).
     pub(crate) fn set_globals(&mut self, globals: &BTreeMap<String, SymbolId>) {
@@ -346,6 +386,39 @@ mod tests {
         let trail = s.take_trail();
         assert_eq!(trail.len(), 5, "a, b, -c, d and p; nothing for `outside`");
         assert_eq!(s.here(), None);
+    }
+
+    /// A seeded stack sees what was visible at the node: the innermost of
+    /// each name, none behind a hidden name, and declares on from there.
+    #[test]
+    fn seeding_makes_a_node_s_names_visible_again() {
+        let mut s = Scopes::default();
+        s.push(key("m", "BODY"), false);
+        s.declare("x", &sym("x1"));
+        s.declare("y", &sym("y1"));
+        s.push(key("if", "DO0"), false);
+        s.declare("x", &sym("x2"));
+        let mark = s.hide("y");
+        let end = s.here();
+        s.unhide(mark);
+        s.reset();
+        assert!(!s.contains(&sym("x2")));
+
+        s.seed(end, key("p", "#seed"));
+        assert_eq!(s.here(), end);
+        assert!(s.contains(&sym("x2")));
+        assert!(!s.contains(&sym("x1")), "the inner x hides the outer one");
+        assert!(!s.contains(&sym("y1")), "a hidden name hides the outer one");
+        assert_eq!(s.lookup("x"), Some(&sym("x2")));
+        s.push(key("p", "#parked"), false);
+        assert!(s.in_same_scope("x").is_none(), "a new list shadows");
+        s.declare("z", &sym("z"));
+        assert_eq!(walk(&s.trail, s.here()), ["z", "-y", "x", "y", "x"]);
+        s.reset();
+        assert!(!s.contains(&sym("z")) && !s.contains(&sym("x2")));
+        s.seed(None, key("q", "#seed"));
+        assert_eq!(s.here(), None);
+        assert!(s.lookup("x").is_none());
     }
 
     #[test]

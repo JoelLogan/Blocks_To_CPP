@@ -78,8 +78,13 @@ fn exercise(document: &Document, what: &str) -> Analysis {
                     | "program.namespace"
                     | "program.use_namespace"
             );
+            // A parked head sees the parked scope; its own lists and value
+            // inputs are lowered in the sandbox (M3-4), so they may see a
+            // counter, or not see a name being declared.
+            let own_part = input
+                .is_some_and(|name| block.statements.contains_key(name) || block.inputs.contains_key(name));
             assert!(
-                !*top || item || found == parked,
+                !*top || item || own_part || found == parked,
                 "{what}: the parked block {} does not see the parked scope",
                 block.id
             );
