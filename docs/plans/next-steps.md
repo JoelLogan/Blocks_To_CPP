@@ -576,8 +576,6 @@ main thread's preview task is often shorter than the 4 ms it looked for;
   about linear, `c4ecb92`).
 - **Bench A/B:** `pipeline/preview-modules` and the two new preview
   metrics are gated once they have five baselines each.
-- **Dependabot #35:** `@codemirror/view` 6.43.15, `zustand` 5.0.16 and
-  `vite` 8.3.5 are still to review.
 - The spec sections of w3-export-run.md §10 (W3's export and run slice)
   that this docs step did not cover: 04 §4.5 (_End input_, run options),
   §4.10 and §4.12, 05 §5.9 (`run.externalTerminal`), and 07 §7.5.1's
@@ -585,3 +583,34 @@ main thread's preview task is often shorter than the 4 ms it looked for;
   `docs/reference/cli.md` already name the new commands and `--replace`.
 - `ProjectExportDialogResponse` could gain an additive list of the kept
   files, so that the app names them (it logs their count now).
+
+### 3.10 What remains of M3
+
+Surveyed on 2026-11-23 from the waves' contracts (each one's _Status_
+section). W0 to W3 are done; W4 and W5 are done but for the pieces left to
+the coordinator; W6 has not started.
+
+**Next, in this order** (each a package of its own, small enough for one
+agent and a review):
+
+1. **M3-4, parked stacks in the scope query** (W5 §5, §10.1): the exact
+   proposal is written; it lowers a parked stack so the menus see its
+   declarations.
+2. **W4's coordinator pieces** (w4-editor-tools.md §7, §12): the ⚙ popover
+   (`constexpr`, `static`), _format … with_ and the unchecked `[]` index
+   from a block's context menu, and the catalog's `advanced` and `requires`
+   keys. `block:text.format` stays AWAITED until then.
+3. **W5's leftovers** (w5-worker.md §11, w5-performance.md §14): the
+   clipboard arguments with their copy, paste and duplicate measurements
+   (ADR-0016 §1), `coreMemory()` and the nightly security case of
+   worker.md, RD-15, and the first run of `building.yml` (M3-7), which runs
+   weekly and has not run yet.
+4. **The spec sections** still owed: worker.md §11 and 08 §8.8's
+   `WORKER_CSP`, w4-appearance-expert.md §8, w4-editor-tools.md §9, and
+   w3-export-run.md §10 (listed in §3.9).
+5. **W6, the close-out** (§3.4).
+
+**For the owner:** W4A-4 (the title bar) and W4A-5 (the _View_ menu) from
+w4-appearance-expert.md, and the scope query's shadowing of another
+module's shared definition (§3.9). The friendly g++ rules were recorded
+against GCC 13 only; GCC 11 and 14 are installed here, GCC 15 is not.
