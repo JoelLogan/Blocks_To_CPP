@@ -756,6 +756,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - The WebAssembly core's size budget is 2,100,000 bytes after `wasm-opt -Oz`,
   up from 2,000,000 (ADR-0003 and ADR-0010 amended, owner decision of
   2026-11-24); a saving pass on the core follows.
+- Dependencies on 2026-11-24: `cookie` 0.18.3 in `Cargo.lock`, for
+  RUSTSEC-2026-0594 (private-cookie nonces can repeat in a process that
+  forks). `cookie` comes in through Tauri. The update keeps `cargo deny` and
+  OSV-Scanner clean.
 - Dependencies on 2026-11-22: `url` 2.5.9 (with `form_urlencoded` 1.2.3) in
   `Cargo.lock`, for RUSTSEC-2026-0592 (`Url::origin()` overflows the stack on
   deeply nested `blob:` URLs). `url` comes in through Tauri, `reqwest` and
