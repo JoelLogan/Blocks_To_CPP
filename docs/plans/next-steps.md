@@ -608,20 +608,44 @@ agent and a review):
    2026-11-24:_ the four pieces, each a commit, with the corrections in
    w4-editor-tools.md §7.1; `block:text.format` is the catalog's now, and
    the WebAssembly core is 2,011,983 bytes.
-3. **A saving pass on the WebAssembly core** (owner decision of
+3. **Back to the contracts** (owner decision of 2026-11-24: no deviations
+   from a contract). Each correction row a package recorded instead of
+   building what its contract says is reworked to the contract, with tests
+   that fail first. From w4-editor-tools.md §7.1:
+   - `requires` as the contract's table, not a list of words (about 20 KB
+     of the WebAssembly core, which the saving pass must make room for);
+   - an option's `advanced` and `requires` in the contract's shape;
+   - _format … with_'s pattern as a value input, not a text field;
+   - _format … with_'s `std::ostringstream` form under C++17 (03 §3.7.4);
+   - the gate's reason in the tooltip of a block the gate refuses;
+   - the ⚙ popover on _global_ as well as _create_, holding the _constant_
+     tick (03 §3.7.2);
+   - a `constexpr` decimal number readable in another `constexpr` value
+     (L10 telling `constexpr` doubles apart);
+   - the C++ label mode showing `numbers[i]` for unchecked access;
+   - a map's unchecked _item of_ as the contract writes it; `m[k]` on a
+     read-only map does not compile, so if the contract cannot be followed
+     there, the owner decides, not the package.
+
+   Then the same sweep for the correction rows of w3-modules.md §7.1,
+   w5-performance.md §10.1 (M3-4's nine) and the earlier waves' contracts:
+   each one either reworked to the contract or put to the owner. **From
+   now on**, a package that finds its contract cannot be built as written
+   stops and asks the owner instead of recording a correction.
+4. **A saving pass on the WebAssembly core** (owner decision of
    2026-11-24, with the budget raised to 2,100,000 bytes): measure what
    the module spends its bytes on and trim it, so the budget can come back
    down.
-4. **W5's leftovers** (w5-worker.md §11, w5-performance.md §14): the
+5. **W5's leftovers** (w5-worker.md §11, w5-performance.md §14): the
    clipboard arguments with their copy, paste and duplicate measurements
    (ADR-0016 §1), `coreMemory()` and the nightly security case of
    worker.md, RD-15, and the first run of `building.yml` (M3-7), which runs
    weekly and has not run yet: GitHub dispatches only a workflow that is on
    the default branch, so it first runs after the merge into `main`.
-5. **The spec sections** still owed: worker.md §11 and 08 §8.8's
+6. **The spec sections** still owed: worker.md §11 and 08 §8.8's
    `WORKER_CSP`, w4-appearance-expert.md §8, w4-editor-tools.md §9, and
    w3-export-run.md §10 (listed in §3.9).
-6. **W6, the close-out** (§3.4).
+7. **W6, the close-out** (§3.4).
 
 **For the owner:** W4A-4 (the title bar) and W4A-5 (the _View_ menu) from
 w4-appearance-expert.md, and the scope query's shadowing of another
