@@ -604,7 +604,10 @@ agent and a review):
 2. **W4's coordinator pieces** (w4-editor-tools.md §7, §12): the ⚙ popover
    (`constexpr`, `static`), _format … with_ and the unchecked `[]` index
    from a block's context menu, and the catalog's `advanced` and `requires`
-   keys. `block:text.format` stays AWAITED until then.
+   keys. `block:text.format` stays AWAITED until then. _Done on
+   2026-11-24:_ the four pieces, each a commit, with the corrections in
+   w4-editor-tools.md §7.1; `block:text.format` is the catalog's now, and
+   the WebAssembly core is 2,011,983 bytes.
 3. **A saving pass on the WebAssembly core** (owner decision of
    2026-11-24, with the budget raised to 2,100,000 bytes): measure what
    the module spends its bytes on and trim it, so the budget can come back

@@ -293,8 +293,8 @@ impl Lowerer<'_> {
             "coll.item" | "coll.length" | "coll.is_empty" | "coll.list_of" | "coll.contains"
             | "coll.next" => self.collection_value(block, origin, place),
             "text.length" | "text.letter" | "text.case" | "text.split" | "text.to_number"
-            | "text.as_text" | "text.find" | "text.part" | "text.trim" | "text.replace" | "math.fn"
-            | "math.abs" | "math.minmax" | "math.fn_two" | "math.clamp" | "math.random_real" => {
+            | "text.as_text" | "text.find" | "text.part" | "text.trim" | "text.replace" | "text.format"
+            | "math.fn" | "math.abs" | "math.minmax" | "math.fn_two" | "math.clamp" | "math.random_real" => {
                 self.text_value(block, origin)
             }
             "type.new" | "type.field" | "type.enum_value" => self.type_value(block, origin),
@@ -441,7 +441,7 @@ impl Lowerer<'_> {
         }
     }
 
-    fn str_literal(&mut self, text: &str, origin: Origin, location: Location) -> Expr {
+    pub(super) fn str_literal(&mut self, text: &str, origin: Origin, location: Location) -> Expr {
         match StrLit::new(text) {
             Ok(literal) => Expr {
                 kind: ExprKind::Str(literal),

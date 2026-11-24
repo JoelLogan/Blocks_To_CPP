@@ -125,6 +125,20 @@ describe('the requirements table', () => {
     expect(typeGate('int', mode()).allowed).toBe(true);
   });
 
+  it('offers format … with from the catalog only with C++20 and std::format (w4-editor-tools.md §7)', () => {
+    expect(AWAITED.has('block:text.format')).toBe(false);
+    expect(blockGate('text.format', mode()).allowed).toBe(true);
+    const old = { ...CAPABLE, stdFormat: false };
+    expect(blockGate('text.format', mode({ toolchain: old }))).toEqual({
+      allowed: false,
+      reason: 'toolchain',
+      needs: 'stdFormat',
+    });
+    // A toolchain not known yet refuses nothing; the build reports it.
+    expect(blockGate('text.format', mode({ toolchain: null })).allowed).toBe(true);
+    expect(BASIC_BLOCKS.has('text.format')).toBe(false);
+  });
+
   it("refuses an option of a block that is itself refused, for the block's reason", () => {
     const old = mode({ standard: 'c++17' });
     expect(optionGate('text.format', 'ANY', 'x', old)).toEqual(blockGate('text.format', old));
@@ -262,6 +276,7 @@ describe('the requirements table', () => {
         'block:control.fallthrough',
         'block:program.check',
         'block:program.use_header',
+        'block:text.format',
         'option:coll.item.CHECKED=false',
         'option:coll.set_item.CHECKED=false',
         'option:text.find.OP=ends',

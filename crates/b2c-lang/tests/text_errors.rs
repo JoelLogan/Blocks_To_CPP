@@ -594,3 +594,75 @@ fn a_caught_error_cannot_be_changed_and_ends_with_its_part() {
     // Inside the part, it is visible.
     assert_eq!(names(a.scope_at(&try_id, Some("CATCH0")).unwrap()), ["e", "n"]);
 }
+
+/// *format (pattern) with* these values, as an input (w4-editor-tools.md §7).
+fn format_with(pattern: &str, items: Vec<Value>) -> (String, Value) {
+    let count = items.len();
+    let inputs: Map<String, Value> = items
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| (format!("ITEM{index}"), item))
+        .collect();
+    let block_id = id();
+    let block = json!({
+        "id": block_id, "type": "text.format", "v": 1, "extra": {"itemCount": count},
+        "fields": {"FORMAT": pattern}, "inputs": Value::Object(inputs)
+    });
+    (block_id, input(block))
+}
+
+#[test]
+fn format_takes_a_pattern_with_a_place_per_value_that_fits_it() {
+    // A place per value, each fitting: clean, and the block is text.
+    let (fine, block) = format_with(
+        "{} is {:.2f}, {:>3} {{x}} {}",
+        vec![text("pi"), e("3.14159"), e("7"), boolean(true)],
+    );
+    let a = check_main(vec![print(vec![block])]);
+    assert_eq!(reported(&a), Vec::<String>::new());
+    assert_eq!(type_of(&a, &fine), Type::String);
+
+    // Too few places, a brace left open, a place 'format' does not know, a
+    // precision on a whole number, and a value it can't put in.
+    let (few, few_block) = format_with("{}", vec![e("1"), e("2")]);
+    let (open, open_block) = format_with("{} {", vec![e("1")]);
+    let (named, named_block) = format_with("{0}", vec![e("1")]);
+    let (precise, precise_block) = format_with("{:.1f}", vec![e("1")]);
+    let (_, words) = value(
+        "text.split",
+        json!({}),
+        json!({"TEXT": text("a b"), "SEPARATOR": text(" ")}),
+    );
+    let (_, list_block) = format_with("{}", vec![words]);
+    let a = check_main(vec![print(vec![
+        few_block,
+        open_block,
+        named_block,
+        precise_block,
+        list_block,
+    ])]);
+    let lines = reported(&a);
+    let expected = [
+        format!(
+            "error B2C-E0306 at {few} field FORMAT: The pattern has 1 place for values, but the block gives it 2 values. Add or remove values with ⊕ and ⊖, or change the pattern."
+        ),
+        format!(
+            "error B2C-E0312 at {open} field FORMAT: This pattern can't be used by 'format': a '{{' has no '}}' after it (write '{{{{' for a brace of its own)."
+        ),
+        format!(
+            "error B2C-E0312 at {named} field FORMAT: This pattern can't be used by 'format': '{{0}}' is not a place 'format' knows: write {{}}, or for example {{:.2f}}."
+        ),
+        format!(
+            "error B2C-E0312 at {precise} field FORMAT: Place 1 of the pattern does not fit its value, a whole number: a number of decimal places or a letter such as 'f' needs a value of its kind."
+        ),
+    ];
+    for line in &expected {
+        assert!(lines.contains(line), "{line}\nnot in\n{lines:#?}");
+    }
+    assert!(
+        lines.iter().any(|line| line.starts_with("error B2C-E0314")
+            && line.contains("'format' can put in whole numbers, decimal numbers, characters, true/false values and text, not")),
+        "{lines:#?}"
+    );
+    assert_eq!(lines.len(), 5, "{lines:#?}");
+}

@@ -510,6 +510,15 @@ of module* moved to M4 ([§3.7.13](#3713-organisation)). *share with other
 modules* is shown on *define*, *struct*, *enum* and *global* in a project
 with several modules ([§3.8](#38-organisation-features-editor)).
 
+**In M3** (wave W4) *format … with* joins the Text category after *join*,
+so the catalog has 89 blocks; it is offered with C++20 and a toolchain that
+has `std::format` ([§3.7.4](#374-text)). *create* gains its ⚙ popover
+([§3.7.2](#372-variables)), *item of* and *set item* their *fast unchecked
+access* ([§3.7.8](#378-collections)), and *use header*, *check at compile
+time*, *go on into the next case* and *change*'s bitwise forms are offered
+with *Show advanced blocks* (the catalog's `advanced`,
+[§3.11.1](#3111-catalog-format)).
+
 ### 3.7.1 Program
 
 | Block | Generates |
@@ -623,7 +632,7 @@ goes straight into a whole number, which C++ leaves undefined.
 | `"hello"` | `"hello"` (escaped per [08 §8.4.2](08-security.md#842-string-and-character-literals)) |
 | `character 'a'` | `'a'` (one ASCII character; use text for anything else) |
 | `join (a) (b) ⊕` | Idiomatic per part: `std::string(a) + b`, `+ std::to_string(n)` for whole numbers and `+ b2c::to_text(x)` for decimal numbers, which writes the number exactly as `print` would, `+ std::string(1, c)`; `std::format` when the *formatting style* setting is `format` and the toolchain supports it |
-| `format ("{} scored {}") with (name) (score) ⊕` | `std::format("{} scored {}", name, score)` (C++20 with GCC 13+; otherwise an `std::ostringstream` helper; wave W4) |
+| `format [{} scored {}] with (name) (score) ⊕` | `std::format("{} scored {}", name, score)` (C++20 with GCC 13+, wave W4). The pattern is a text field, as `std::format` needs it fixed when the program is built; each place is `{}` or `{:spec}` with `[[fill]align][width][.precision][letter]` (`{:.2f}`, `{:>5}`), `{{` and `}}` are braces of their own, and the places must be as many as the values (`B2C-E0306`) and fit them (`B2C-E0312`); the values are whole and decimal numbers, characters, true/false values and text (`B2C-E0314`). There is no older form: the toolbox offers the block only with C++20 and a toolchain that has `std::format`, and under C++17 the block is `B2C-E0703` |
 | `length of (s)` | `static_cast<int>(s.size())`; a character is `B2C-E0301` ("Use a text value here.") |
 | `letter (i) of (s)` | `s.at(static_cast<std::size_t>(i))`, a character; a literal position as written (`s.at(0)`) |
 | `part of (s) from (i) length (n)` | `s.substr(static_cast<std::size_t>(i), static_cast<std::size_t>(n))`, a literal as written; fewer characters when the text ends first |
@@ -642,8 +651,9 @@ The text these blocks give is a `std::string` object and is used as it is:
 *for each* over *lowercase* of a text is
 `for (const auto& letter : b2c::to_lower(text))`, and a *join* that starts
 with one does not wrap it in `std::string(…)`. **In M3** (wave W2) every
-block of this table is built but *format … with*, which comes with wave
-W4's feature gating (it needs GCC 13 and C++20, or a fallback); *as text*
+block of this table is built but *format … with*, which wave W4 built with
+its feature gating (it needs GCC 13 and C++20, with no fallback); *join*'s
+`std::format` form waits for the *formatting style* setting; *as text*
 and *text as number* are in the Text category
 ([§3.7.3](#373-math-and-logic)).
 

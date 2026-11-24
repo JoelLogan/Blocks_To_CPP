@@ -10,6 +10,7 @@ Toolbox icon: “ ”. Back to [all categories](README.md).
 | --- | --- | --- | --- | --- | --- |
 | `text.literal` (reporter, gives `std::string`) | `"%VALUE"` | `"%VALUE"` | A piece of text. | `VALUE`: text, default empty. | — |
 | `text.join` (reporter, gives `std::string`) | `join %ITEM …` | `%ITEM + …` | Joins text and numbers into one piece of text. | — | `ITEM0`, `ITEM1`, …: any value, one for each of `itemCount`; default `""`. Setting `itemCount`: 2 to 32, default 2. |
+| `text.format` (reporter, gives `std::string`) | `format %FORMAT with %ITEM …` | `std::format(%FORMAT, %ITEM, …)` | Text from a pattern: each {} is replaced by the next value, in order, and {:.2f} shows a decimal number with 2 decimal places. Needs C++20 and a compiler that has std::format (GCC 13 or newer). | `FORMAT`: text, default `{} scored {}`. | `ITEM0`, `ITEM1`, …: any value, one for each of `itemCount`; default `""`. Setting `itemCount`: 1 to 32, default 2. |
 | `text.char` (reporter, gives `char`) | `character '%VALUE'` | `'%VALUE'` | A single character, such as 'a'. | `VALUE`: text, default `a`. | — |
 | `text.length` (reporter, gives `int`) | `length of %TEXT` | `static_cast<int>(%TEXT.size())` | The number of characters in a text. | — | `TEXT`: text; default `"hello"`. |
 | `text.letter` (reporter, gives `char`) | `letter %INDEX of %TEXT` | `%TEXT.at(%INDEX)` | The character at a position of a text, counting from 0. A position outside the text stops the program with an out-of-range error. | — | `INDEX`: a whole number; default `0`. `TEXT`: text; default `"hello"`. |
@@ -26,14 +27,15 @@ Toolbox icon: “ ”. Back to [all categories](README.md).
 
 1. `text.literal`
 2. `text.join`
-3. `text.char`
-4. `text.length`
-5. `text.letter`
-6. `text.case`
-7. `text.split`
-8. `text.to_number`
-9. `text.as_text`
-10. `text.find`
-11. `text.part`
-12. `text.trim`
-13. `text.replace`
+3. `text.format`
+4. `text.char`
+5. `text.length`
+6. `text.letter`
+7. `text.case`
+8. `text.split`
+9. `text.to_number`
+10. `text.as_text`
+11. `text.find`
+12. `text.part`
+13. `text.trim`
+14. `text.replace`

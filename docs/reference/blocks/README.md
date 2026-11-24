@@ -14,7 +14,7 @@ Catalog version: 1.3.0.
 | [Variables](variables.md) | x | 6 |
 | [Math](math.md) | ∑ | 11 |
 | [Logic](logic.md) | ◇ | 4 |
-| [Text](text.md) | “ ” | 13 |
+| [Text](text.md) | “ ” | 14 |
 | [Control](control.md) | ⋔ | 4 |
 | [Loops](loops.md) | ↻ | 9 |
 | [Input / Output](io.md) | ⌨ | 3 |

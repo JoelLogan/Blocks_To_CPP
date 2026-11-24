@@ -167,6 +167,7 @@ impl Lowerer<'_> {
                 let [text] = self.typed_values(block, [("TEXT", part("'trim'"))]);
                 Self::text_call(TextOp::Trim, vec![text], Type::String, origin)
             }
+            "text.format" => self.format_text(block, origin),
             "text.replace" => {
                 let [old, new, text] = self.typed_values(
                     block,
@@ -368,5 +369,193 @@ impl Lowerer<'_> {
             ty
         };
         Self::value(ExprKind::MathCall { op, args }, ty, origin)
+    }
+}
+
+// --- format … with (w4-editor-tools.md §7) ------------------------------------
+
+/// What one place of a *format* pattern (`{}`, `{:.2f}`) asks of its value:
+/// a precision, and a presentation letter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FormatPlace {
+    /// `.N`: a number of decimal places, or of characters of a text.
+    precision: bool,
+    /// The presentation letter (`f`, `d`, `x`, `s`, …).
+    kind: Option<char>,
+}
+
+impl FormatPlace {
+    /// Whether a value of `ty` (one `std::format` takes) fits the place.
+    fn fits(self, ty: &Type) -> bool {
+        let (precision, kinds) = match ty {
+            Type::Double => (true, "eEfFgG"),
+            Type::String => (true, "s"),
+            Type::Int => (false, "dxXobBc"),
+            Type::Char => (false, "cdxXobB"),
+            Type::Bool => (false, "sdxXobB"),
+            _ => return true,
+        };
+        (precision || !self.precision) && self.kind.is_none_or(|kind| kinds.contains(kind))
+    }
+}
+
+/// The places of a *format … with* pattern, in order, or why `std::format`
+/// would not take it: `{{` and `}}` are a brace each, and a place is `{}` or
+/// `{:spec}`, the spec `[[fill]align][width][.precision][letter]` (the
+/// subset the block offers; numbered places and the `+`, `#` flags are not).
+pub(crate) fn format_places(pattern: &str) -> Result<Vec<FormatPlace>, String> {
+    let mut places = Vec::new();
+    let mut chars = pattern.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '{' if chars.peek() == Some(&'{') => {
+                chars.next();
+            }
+            '{' => {
+                let mut inner = String::new();
+                loop {
+                    match chars.next() {
+                        Some('}') => break,
+                        Some('{') | None => {
+                            return Err(String::from(
+                                "a '{' has no '}' after it (write '{{' for a brace of its own)",
+                            ));
+                        }
+                        Some(c) => inner.push(c),
+                    }
+                }
+                places.push(format_place(&inner)?);
+            }
+            '}' if chars.peek() == Some(&'}') => {
+                chars.next();
+            }
+            '}' => {
+                return Err(String::from(
+                    "a '}' has no '{' before it (write '}}' for a brace of its own)",
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(places)
+}
+
+/// One place's spec (what is between its braces).
+fn format_place(inner: &str) -> Result<FormatPlace, String> {
+    let unknown =
+        || format!("'{{{inner}}}' is not a place 'format' knows: write {{}}, or for example {{:.2f}}");
+    let spec: Vec<char> = match inner.strip_prefix(':') {
+        Some(spec) => spec.chars().collect(),
+        None if inner.is_empty() => Vec::new(),
+        None => return Err(unknown()),
+    };
+    let is_align = |c: &char| matches!(c, '<' | '>' | '^');
+    let mut at = if spec.get(1).is_some_and(is_align) {
+        2
+    } else {
+        usize::from(spec.first().is_some_and(is_align))
+    };
+    while spec.get(at).is_some_and(char::is_ascii_digit) {
+        at += 1;
+    }
+    let precision = spec.get(at) == Some(&'.');
+    if precision {
+        at += 1;
+        let digits = at;
+        while spec.get(at).is_some_and(char::is_ascii_digit) {
+            at += 1;
+        }
+        if at == digits {
+            return Err(unknown());
+        }
+    }
+    let kind = spec.get(at).copied();
+    at += usize::from(kind.is_some());
+    if at != spec.len() || kind.is_some_and(|kind| !"sdxXobBceEfFgG".contains(kind)) {
+        return Err(unknown());
+    }
+    Ok(FormatPlace { precision, kind })
+}
+
+impl Lowerer<'_> {
+    /// *format (pattern) with (a) (b) …*: `std::format("pattern", a, b)`.
+    /// The pattern is a text field, which `std::format` needs fixed when the
+    /// program is built; its places must be as many as the values and fit
+    /// them, and each value is a number, a character, a true/false value or
+    /// text.
+    fn format_text(&mut self, block: &Block, origin: Origin) -> Expr {
+        let location = self.loc(&block.id, super::field("FORMAT"));
+        let count = crate::access::extra_count(block, "itemCount", 1, 2);
+        let values: Vec<Expr> = (0..count)
+            .map(|i| self.required_input(block, &format!("ITEM{i}")))
+            .collect();
+        let Ok(text) = crate::access::text_field(block, "FORMAT", Some("")) else {
+            self.incomplete(
+                location,
+                "The pattern of this 'format' block is damaged. Type it again.",
+            );
+            return error_expr(origin);
+        };
+        let pattern = self.str_literal(text, origin.clone(), location.clone());
+        if !self.checking() {
+            let mut args = vec![pattern];
+            args.extend(values);
+            return Self::text_call(TextOp::Format, args, Type::String, origin);
+        }
+        for value in &values {
+            let formattable = matches!(
+                value.ty,
+                Type::Bool | Type::Char | Type::Int | Type::Double | Type::String | Type::Error
+            );
+            if !formattable {
+                let message = format!(
+                    "'format' can put in whole numbers, decimal numbers, characters, true/false values and \
+                     text, not {}. Use 'as text' on it first, or 'join'.",
+                    self.type_name(&value.ty)
+                );
+                self.diags
+                    .error(codes::NOT_PRINTABLE, value.origin.location(), message);
+            }
+        }
+        match format_places(text) {
+            Err(problem) => {
+                let message = format!("This pattern can't be used by 'format': {problem}.");
+                self.diags.error(codes::BAD_LITERAL, location, message);
+            }
+            Ok(places) if places.len() != values.len() => {
+                let message = format!(
+                    "The pattern has {} for values, but the block gives it {}. Add or remove values with ⊕ \
+                     and ⊖, or change the pattern.",
+                    counted(places.len(), "place"),
+                    counted(values.len(), "value")
+                );
+                self.diags.error(codes::ARGUMENT_COUNT, location, message);
+            }
+            Ok(places) => {
+                for (number, (place, value)) in places.iter().zip(&values).enumerate() {
+                    if !place.fits(&value.ty) {
+                        let message = format!(
+                            "Place {} of the pattern does not fit its value, {}: a number of decimal places \
+                             or a letter such as 'f' needs a value of its kind.",
+                            number + 1,
+                            self.type_name(&value.ty)
+                        );
+                        self.diags.error(codes::BAD_LITERAL, location.clone(), message);
+                    }
+                }
+            }
+        }
+        let mut args = vec![pattern];
+        args.extend(values);
+        Self::text_call(TextOp::Format, args, Type::String, origin)
+    }
+}
+
+/// `1 place`, `2 places`.
+fn counted(count: usize, noun: &str) -> String {
+    if count == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{count} {noun}s")
     }
 }

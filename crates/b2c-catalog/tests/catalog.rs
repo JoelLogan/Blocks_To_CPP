@@ -81,6 +81,7 @@ fn value_blocks_declare_their_output_type() {
         ("text.case", "std::string"),
         ("text.char", "char"),
         ("text.find", "bool"),
+        ("text.format", "std::string"),
         ("text.join", "std::string"),
         ("text.length", "int"),
         ("text.letter", "char"),

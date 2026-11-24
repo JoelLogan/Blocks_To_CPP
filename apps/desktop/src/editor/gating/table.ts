@@ -32,9 +32,6 @@ const ADVANCED: Requirement = Object.freeze({ advanced: true });
 
 /** The rows the catalog does not describe, as [kind, key parts, requirement]. */
 const HAND_ROWS: readonly (readonly [RequirementKind, readonly string[], Requirement])[] = [
-  // *format … with* (03 §3.7.4, w2.md §1.10): std::format, with no older form. Its block brings
-  // the requirement with it (w4-editor-tools.md §7); until then the row waits here.
-  ['block', ['text.format'], { standard: 'c++20', capability: 'stdFormat' }],
   // The advanced categories of 03 §3.7.
   ['category', ['memory'], ADVANCED],
   ['category', ['concurrency'], ADVANCED],
@@ -45,7 +42,8 @@ const HAND_ROWS: readonly (readonly [RequirementKind, readonly string[], Require
 /**
  * The rows of the catalog: each block's `requirement` and each field's `requirements` by value
  * (the catalog's `advanced` and `requires`: W4E-1's advanced blocks and *change*'s bitwise forms,
- * the C++20 members with a C++17 form, w4-editor-tools.md §2.1).
+ * the C++20 members with a C++17 form, w4-editor-tools.md §2.1; *format … with*, which needs C++20
+ * and `std::format`, §7).
  */
 function catalogRows(): (readonly [string, Requirement])[] {
   const rows: (readonly [string, Requirement])[] = [];
@@ -79,7 +77,6 @@ export const REQUIREMENTS: ReadonlyMap<string, Requirement> = new Map([
  * that exists.
  */
 export const AWAITED: ReadonlyMap<string, string> = new Map([
-  ['block:text.format', 'W4, the coordinator: format … with (w4-editor-tools.md §7)'],
   ['category:memory', 'M4: the Memory category'],
   ['category:concurrency', 'M4: the Concurrency category'],
   ['category:generics', 'M4: the Generics category'],

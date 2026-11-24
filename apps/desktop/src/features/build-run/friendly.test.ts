@@ -90,6 +90,19 @@ const RECORDED: readonly (readonly [Diagnostic, RegExp])[] = [
     ),
     /^The name “x”/u,
   ],
+  // *format … with* on GCC 11 (no `<format>`) and in a C++17 build (recorded with g++ 11 and 13).
+  [
+    gxx('C:error', 'main.cpp:1:10: fatal error: format: No such file or directory', 'error'),
+    /^This compiler has no std::format, which the “format … with” block needs/u,
+  ],
+  [
+    gxx('C:error', "main.cpp:3:35: error: 'format' is not a member of 'std'", 'error'),
+    /^This compiler has no std::format/u,
+  ],
+  [
+    gxx('C:error', 'main.cpp:3:35: error: ‘format’ is not a member of ‘std’', 'error'),
+    /choose GCC 13 or newer/u,
+  ],
 ];
 
 describe('the rules', () => {

@@ -98,7 +98,7 @@ The decisions (W4E-1 for the owner):
 | `block:control.fallthrough` | advanced | falling through is rare and easy to misuse; a case without it is the beginner's form |
 | `option:text.find.OP=starts,ends` | C++20 with fallback | `starts_with`/`ends_with`; codegen writes `b2c::starts_with` before C++20: always offered |
 | `block:coll.contains` | C++20 with fallback | `contains`; `count` before C++20: always offered |
-| `block:text.format` | C++20 and `stdFormat` | AWAITED, now the coordinator's (§7) |
+| `block:text.format` | C++20 and `stdFormat` | the catalog's `requires`, since the coordinator built the block (§7); no longer AWAITED |
 | `category:memory`, `concurrency`, `generics`, `raw` | advanced | AWAITED, M4 |
 
 Every other W2 block and option is basic; the audit list in `table.ts`
@@ -449,7 +449,9 @@ and a field's `requirements`.
   older standard or a toolchain without `std::format`, with `gateText`'s
   reason in its tooltip when shown. A `%` argument list is a repeated input
   (the variadic mutator). The friendly-message table gains `std::format`'s
-  errors.
+  errors. *Done by the coordinator* (§7.1): the row is the catalog's
+  `requires = ["c++20", "stdFormat"]`, AWAITED keeps the M4 categories
+  only, and the pattern is a text field.
 * **The unchecked `[]` index**: a context-menu item on *item … of* (and
   *set item*), *Use unchecked `[]`*, toggling a field (`CHECKED`); the
   menu item comes through `editor/menus/registry.ts`, gated as advanced
@@ -469,6 +471,9 @@ here with its reason.
 | --- | --- | --- |
 | `requires` is a list of words, not a table: `requires = ["c++20", "stdFormat"]`, with `"fallback"` for a form the generator writes before C++20 (`catalog.json` still writes an object, `{"standard": "c++20", "fallback": true}`) | the catalog reads a list of words with the reader it has for `headers`; a table, or a map of tables on a field, added about 20 KB to the WebAssembly core (2,016,903 bytes against 1,998,537) | §6.1 |
 | *Fast unchecked access* is a checkbox `CHECKED` (default ticked, `omit_default`, `advanced = ["false"]`) with two new catalog keys: `menu`, the menu item's words, and `mark`, the words the block shows while the field is away from its default (*unchecked*). blockly-ext hides the checkbox and draws the mark after it (`blocks/marks.ts`); `menus/registry.ts` adds one item per such field, ticked (✓) while on, offered where `optionOffered` allows the value it sets and always back to the default | the friendly-label rule needs every field drawn with words beside it; a field set from the menu is the exception, and saying so in the catalog keeps the rule, the layout and the menu generic | §7 |
+| *format … with*'s pattern is a text field (`FORMAT`, default `{} scored {}`), not a value input; its values are the repeated input `ITEM` (`itemCount`, 1 to 32, the items mutator). The analyser checks the pattern: a place per value (`B2C-E0306`), braces in pairs and each place `{}` or `{:[[fill]align][width][.precision][letter]}` fitting its value (`B2C-E0312`), and values that are numbers, characters, true/false values or text (`B2C-E0314`). The SAST is a `TextCall` with the new `TextOp::Format`, the pattern as its first argument | `std::format` checks its pattern when the program is built (C++20's `consteval` format string), so a pattern from a variable would not compile, and a wrong one gives g++'s longest messages; the analyser's subset is what a student needs | §7 |
+| No `std::ostringstream` fallback (03 §3.7.4 had one): under C++17 the catalog stage reports `B2C-E0703` from the block's `requires`, the first block to report it; the toolchain capability is the editor's gate and, for a compiler without `<format>` (GCC 11, 12), a friendly message that names GCC 13 | the code generator does not know the toolchain, so a fallback by standard would still fail on GCC 12 in C++20; the analyser has the signatures, not the catalog's keys, so the resolve stage reads them | §6.1, §7 |
+| The block's tooltip is its help text, which says it needs C++20 and GCC 13; `gateText`'s reason is not added to it | the toolbox shows the block only where the gate allows it, so the reason would show only on a block already on the canvas, which the build reports anyway | §7 |
 | The ⚙ popover is on *create* only: two checkboxes, `CONSTEXPR` (basic) and `STATIC` (`advanced = ["true"]`), with the catalog key `popover` (the tick's words) and a `mark` each, both `omit_default`; blockly-ext hides them, shows the ticked marks and a ⚙ (`B2cGearField`, unnamed so never saved) that opens a group of checkboxes in Blockly's drop-down (`blocks/gear.ts`), each change one undo step. The SAST's `VarDecl` gains `is_constexpr` and `is_static` (`constexpr` sets `is_const` too, so *set* refuses it with `B2C-E0308`), and the C++ is `[static] [constexpr\|const] T x = v;` | a `b2c_options` field holding an object would be a new field kind and a new value shape in the project format; two checkboxes need neither. *global* keeps W2's choice (a constant global is `constexpr` when its value allows it, w2.md §2.7), and a global's linkage is the module work's (an unshared global of a project with several modules is in an anonymous namespace) | §7 |
 | The *constant* checkbox stays on *create*, beside the ⚙ (03 §3.7.2 said the popover replaces it) | a beginner's `const` should not hide behind ⚙; the ticks only add to it | §7 |
 | A `constexpr` variable must be a whole number, a decimal number, a character or a true/false value with a value fixed when the program is built (`B2C-E0424`, two new messages); with no value it is `constexpr int x{};`. A `constexpr` decimal number read in another `constexpr` value is reported, though C++ accepts it | L10 counts a `const double` read as not a constant expression (w2.md §2.7), and does not tell a `constexpr` one apart; C++ has no `constexpr` text, list or struct variable a program can keep | §7 |
@@ -597,6 +602,15 @@ On `m3/w4-editor-tools`, from `8a3d8ec`, on 2026-10-28 to 2026-10-30.
   compiles it, and a codegen test runs a `static` counter. The golden C++
   of the examples is unchanged. The core is 2,005,923 bytes (+3,228). No
   E2E flow, as above.
+* *format … with* (§7): `text.format` in Text after *join*, the analyser's
+  checks of its pattern and values, `std::format` in the generator,
+  `B2C-E0703` from the catalog stage under C++17, the friendly message for
+  a compiler without `std::format`, and `block:text.format` out of
+  AWAITED. A codegen test builds and runs it with every g++ here that has
+  `std::format` (13 and 14; GCC 11 is skipped), and the every-block
+  project leaves out the blocks that need more than C++17. The golden C++
+  of the examples is unchanged. The core is 2,011,983 bytes (+6,060;
+  +17,414 for the four pieces). No E2E flow, as above.
 
 **Not done, and why.**
 
@@ -606,7 +620,7 @@ On `m3/w4-editor-tools`, from `8a3d8ec`, on 2026-10-28 to 2026-10-30.
 * The spec sections (§9): the coordinator's paths. The catalog's
   `advanced`/`requires` keys (§6.1) are done by the coordinator (above).
 * The ⚙ popover, *format … with* and the `[]` index: the coordinator's
-  (§7 lists what the editor needs).
+  (§7 lists what the editor needs); done by the coordinator (above).
 * The friendly rules are checked against GCC 13's messages (recorded) and
   the wording GCC 11 and 15 use for the same options; no GCC 11 or 15 was
   installed here to record them.

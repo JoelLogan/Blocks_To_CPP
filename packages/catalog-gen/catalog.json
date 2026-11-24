@@ -3484,6 +3484,62 @@
       ]
     },
     {
+      "id": "text.format",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "std::string",
+      "label": {
+        "friendly": "format %FORMAT with %ITEM …",
+        "cpp": "std::format(%FORMAT, %ITEM, …)"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<format>"
+      ],
+      "help": "Text from a pattern: each {} is replaced by the next value, in order, and {:.2f} shows a decimal number with 2 decimal places. Needs C++20 and a compiler that has std::format (GCC 13 or newer).",
+      "field": [
+        {
+          "name": "FORMAT",
+          "kind": "text",
+          "options": [],
+          "types": [],
+          "default": "{} scored {}"
+        }
+      ],
+      "input": [
+        {
+          "name": "ITEM",
+          "check": "any",
+          "optional": false,
+          "repeat": {
+            "count": "itemCount",
+            "plus": 0
+          },
+          "default": [
+            {
+              "str": ""
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": [
+        {
+          "name": "itemCount",
+          "kind": "count",
+          "min": 1,
+          "max": 32,
+          "default": "2",
+          "types": []
+        }
+      ],
+      "requires": {
+        "standard": "c++20",
+        "capability": "stdFormat"
+      }
+    },
+    {
       "id": "text.join",
       "version": 1,
       "category": "text",
@@ -4924,6 +4980,11 @@
           },
           {
             "block": "text.join",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.format",
             "label": null,
             "preset": null
           },

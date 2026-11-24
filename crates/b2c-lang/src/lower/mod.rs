@@ -427,6 +427,7 @@ fn is_value_type(block_type: &str) -> bool {
             | "text.literal"
             | "text.char"
             | "text.join"
+            | "text.format"
             | "text.length"
             | "text.letter"
             | "text.case"

@@ -1186,10 +1186,19 @@ fn the_every_block_project_uses_every_block_of_the_catalog() {
     {
         block_types(block, &mut used);
     }
+    // A block that needs a newer standard or a toolchain capability with no
+    // older form (the catalog's `requires`, w4-editor-tools.md §6.1) cannot
+    // be in a program every g++ builds under C++17: *format … with* has its
+    // own test, [`format_compiles_and_runs_on_every_gxx_with_std_format`].
     let missing: Vec<&String> = b2c_catalog::core_catalog()
         .blocks
-        .keys()
-        .filter(|id| !used.contains(*id))
+        .iter()
+        .filter(|(id, def)| {
+            let needs_more = b2c_catalog::Requires::parse(&def.requires)
+                .is_ok_and(|r| !r.fallback && !def.requires.is_empty());
+            !used.contains(*id) && !needs_more
+        })
+        .map(|(id, _)| id)
         .collect();
     assert!(
         missing.is_empty(),
@@ -1260,5 +1269,113 @@ fn every_block_program_compiles_clean_and_runs(compilers: &[PathBuf], dir: &Path
             let stdout = String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n");
             assert_eq!(stdout, EVERY_BLOCK_OUTPUT, "{} {flag}", gxx.display());
         }
+    }
+}
+
+// ---- format … with (w4-editor-tools.md §7) ----------------------------------------
+
+/// The project of [`format_compiles_and_runs_on_every_gxx_with_std_format`]:
+/// *print (format "{} scored {:.1f} {}{:>4}|" with (name) (score) (letter) (done))*.
+const FORMAT_PROJECT: &str = r#"{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {"app": "1.0.0", "catalog": "1.3.0"},
+  "project": {"id": "p", "name": "Format", "language": {"standard": "c++20"}},
+  "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [{
+    "id": "b_main", "type": "program.main", "v": 1,
+    "statements": {"BODY": [
+      {"id": "b1", "type": "var.declare", "v": 1,
+       "fields": {"TYPE": "std::string", "NAME": {"sym": "s_name", "name": "name"}},
+       "inputs": {"VALUE": {"expr": [{"str": "Ann"}]}}},
+      {"id": "b2", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+       "inputs": {"ITEM0": {"block": {
+         "id": "b3", "type": "text.format", "v": 1, "extra": {"itemCount": 4},
+         "fields": {"FORMAT": "{} scored {:.1f} {}{:>4}| {{ok}}"},
+         "inputs": {
+           "ITEM0": {"expr": [{"ref": "s_name"}]},
+           "ITEM1": {"expr": [{"num": "9.25"}]},
+           "ITEM2": {"expr": [{"chr": "A"}]},
+           "ITEM3": {"expr": [{"kw": "true"}]}
+         }
+       }}}}
+    ]}
+  }]}}]
+}"#;
+
+/// Whether `gxx` has `std::format` under C++20 (GCC 13 and later).
+fn has_std_format(gxx: &Path, dir: &Path) -> bool {
+    let probe = dir.join("probe.cpp");
+    std::fs::write(
+        &probe,
+        "#include <format>\nint main() { return std::format(\"{}\", 1).size() == 1 ? 0 : 1; }\n",
+    )
+    .unwrap();
+    command(gxx)
+        .args(["-std=c++20", "-fsyntax-only"])
+        .arg(&probe)
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+#[test]
+fn format_compiles_and_runs_on_every_gxx_with_std_format() {
+    let mut document = b2c_model::load(FORMAT_PROJECT.as_bytes()).unwrap();
+    let catalog = b2c_catalog::core_catalog();
+    let resolved = b2c_catalog::resolve_report(&document, catalog);
+    assert!(resolved.diagnostics.is_empty(), "{:#?}", resolved.diagnostics);
+    let analysis = b2c_lang::analyze_checked_with(
+        &resolved.document,
+        &resolved.diagnostics,
+        &resolved.unchecked,
+        catalog.sigs(),
+    );
+    assert!(analysis.diagnostics.is_empty(), "{:#?}", analysis.diagnostics);
+    let generation = crate::generate_with_report(&analysis.program, &CodegenOptions::default());
+    let [file] = generation.project.files.as_slice() else {
+        panic!("one file expected");
+    };
+    let source = file.contents.clone();
+    for needle in [
+        "#include <format>",
+        r#"std::format("{} scored {:.1f} {}{:>4}| {{ok}}", name, 9.25, 'A', true)"#,
+    ] {
+        assert!(source.contains(needle), "{needle} not in\n{source}");
+    }
+    // Under C++17 the catalog stage refuses the block (`B2C-E0703`).
+    document.project.language.standard = CppStandard::Cpp17;
+    let old = b2c_catalog::resolve_report(&document, catalog);
+    let codes: Vec<&str> = old.diagnostics.iter().map(|d| d.code.0.as_str()).collect();
+    assert_eq!(codes, ["B2C-E0703"]);
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("format.cpp");
+    std::fs::write(&path, &source).unwrap();
+    let mut built = 0;
+    for gxx in compilers() {
+        if !has_std_format(&gxx, dir.path()) {
+            continue;
+        }
+        let program = dir.path().join(format!("format{built}"));
+        let output = command(&gxx)
+            .arg("-std=c++20")
+            .args(STRICT)
+            .arg(&path)
+            .arg("-o")
+            .arg(&program)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{} rejected the program:\n{}\n--- source ---\n{source}",
+            gxx.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let run = command(&program).output().unwrap();
+        let stdout = String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n");
+        assert_eq!(stdout, "Ann scored 9.2 Atrue| {ok}\n", "{}", gxx.display());
+        built += 1;
+    }
+    if std::env::var_os("B2C_REQUIRE_GXX").is_some() {
+        eprintln!("format … with: built with {built} g++ that have std::format");
     }
 }

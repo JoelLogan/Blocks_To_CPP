@@ -639,6 +639,14 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   and, with _Show advanced blocks_, `static` (a local created once). The
   block shows each ticked word before its ⚙; the catalog's `popover` key
   sets the ticks aside (`CONSTEXPR`, `STATIC`, written only when ticked).
+- _format … with_ (wave W4): `std::format("pattern", values…)` from a
+  pattern typed on the block, checked by the analyser (a place per value,
+  `{}` or `{:spec}` fitting its value, values of the kinds `std::format`
+  takes: `B2C-E0306`, `B2C-E0312`, `B2C-E0314`). It needs C++20 and a
+  toolchain with `std::format`: the toolbox offers it only then, a C++17
+  project reports `B2C-E0703` (now reported, from the catalog's
+  `requires`), and a compiler without it gets a friendly message. The
+  block catalog has 89 blocks.
 
 ### Changed
 

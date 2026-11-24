@@ -179,11 +179,12 @@ pub(crate) const NAMESPACE_IN_USE: &str = "B2C-I0523";
 
 // --- Generating C++ (E07xx), reported by the analyser ----------------------
 //
-// None yet. `B2C-E0703`, a C++20 standard sub-namespace (`std::ranges`,
-// `std::views`, `std::numbers`) in a project for an older standard (06 §6.4,
-// §6.14.3), comes with the blocks that name those namespaces (W3's package S,
-// w3-modules.md §1.4, not done), and is documented in `generator.md` beside
-// `B2C-E0701` and `B2C-E0702`.
+// None. `B2C-E0703`, a block that needs a newer standard than the project's
+// (*format … with*), is the catalog stage's (`b2c-catalog`, from the
+// catalog's `requires`, w4-editor-tools.md §6.1); a C++20 standard
+// sub-namespace (`std::ranges`, `std::views`, `std::numbers`, 06 §6.14.3)
+// will be reported the same way when *use namespace* offers them (M4). It is
+// documented in `generator.md` beside `B2C-E0701` and `B2C-E0702`.
 
 #[cfg(test)]
 pub(crate) const ALL: &[&str] = &[
@@ -268,7 +269,7 @@ mod tests {
     const REFERENCE: &str = include_str!("../../../docs/reference/diagnostics/analyser.md");
     /// The reference of the codes of generating C++ (`B2C-E07xx`), which the
     /// analyser reports too when it can tell before generating
-    /// (`B2C-E0703`, none yet). Read when the test runs, so that the WebAssembly
+    /// (`B2C-E0703`, from the catalog stage). Read when the test runs, so that the WebAssembly
     /// core's build inputs need not list it.
     fn generator_reference() -> String {
         let path = concat!(

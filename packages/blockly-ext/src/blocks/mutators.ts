@@ -10,7 +10,7 @@ import type * as Blockly from 'blockly/core';
 
 /** The mutator extension names. */
 export const MUTATOR_NAME = Object.freeze({
-  /** Variadic items: io.print, text.join, logic.operation (`itemCount`). */
+  /** Variadic items: io.print, text.join, text.format, logic.operation (`itemCount`). */
   items: 'b2c_mutator_items',
   /** if / else if / else: control.if (`elseIfCount`, `hasElse`). */
   if: 'b2c_mutator_if',
@@ -51,6 +51,8 @@ export const MUTATOR_FOR_BLOCK: Readonly<Record<string, MutatorName>> = Object.f
   'type.new': MUTATOR_NAME.callArgs,
   'type.struct': MUTATOR_NAME.params,
   'type.enum': MUTATOR_NAME.params,
+  // W4 (w4-editor-tools.md §7): *format … with*'s values.
+  'text.format': MUTATOR_NAME.items,
 });
 
 /**

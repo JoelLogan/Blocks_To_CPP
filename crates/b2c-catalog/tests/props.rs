@@ -312,7 +312,9 @@ proptest! {
         // Filling defaults only ever adds; nothing present is changed.
         prop_assert_eq!(document.modules[0].workspace.blocks.len(), completed.modules[0].workspace.blocks.len());
         for diagnostic in &diagnostics {
-            prop_assert!(diagnostic.code.0.starts_with("B2C-E06"));
+            // The stage's own codes, and `B2C-E0703` for a block that needs
+            // a newer standard than the project's.
+            prop_assert!(diagnostic.code.0.starts_with("B2C-E06") || diagnostic.code.0 == "B2C-E0703");
         }
     }
 

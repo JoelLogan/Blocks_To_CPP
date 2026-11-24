@@ -79,6 +79,12 @@ impl Lowerer<'_> {
             (TextOp::Split, _) => helper("b2c::split", Helper::Split, self),
             (TextOp::Trim, _) => helper("b2c::trim", Helper::Trim, self),
             (TextOp::ReplaceAll, _) => helper("b2c::replace_all", Helper::ReplaceAll, self),
+            (TextOp::Format, _) => {
+                // `std::format("pattern", values…)` (*format … with*, C++20).
+                self.include("<format>");
+                let args = args.iter().map(|arg| self.expr(arg)).collect();
+                CExpr::call_fixed("std::format", args)
+            }
             (TextOp::Contains, [text, part]) => {
                 // `s.find(t) != std::string::npos`
                 let object = self.library_object(text);

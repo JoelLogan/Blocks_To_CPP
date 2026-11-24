@@ -486,14 +486,17 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** a call gives a function more values than it has inputs, or
   fewer than its inputs without a default value, or *new … with* has a
-  number of parts other than its struct's fields.
+  number of parts other than its struct's fields, or the pattern of
+  *format … with* has a number of places (`{}`) other than its values.
 * **Example:** `area (5)` typed in a slot, where `area` has the inputs
   `width` and `height`.
 * **Message:** "`area` needs 2 values, but 1 is given." / "`greet` needs 1
   to 2 values, but 0 are given." (`times` has a default value) / "`beep`
   needs at most 1 value, but 2 are given." / "`Student` has 2 fields, but
   this block has 1 part. Choose the struct again so that the block has one
-  part for each field."
+  part for each field." / "The pattern has 1 place for values, but the
+  block gives it 2 values. Add or remove values with ⊕ and ⊖, or change the
+  pattern."
 * **How to fix:** add or remove values in the call block (⊕ / ⊖).
 
 ## B2C-E0307 Editable input needs a variable
@@ -580,10 +583,18 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** a text value, or the message of `check at compile time`,
   contains the NUL character or is longer than 64 KiB, or a character value
-  is not exactly one plain ASCII character.
+  is not exactly one plain ASCII character, or the pattern of *format …
+  with* is not one `std::format` takes: a brace without its pair (`{{` and
+  `}}` are a brace of their own), a place other than `{}` or `{:spec}` with
+  the spec `[[fill]align][width][.precision][letter]`, or a place that does
+  not fit its value (decimal places on a whole number, `{:d}` on text).
 * **Example:** `character 'é'`, `character 'ab'`.
 * **Message:** "This character can't be used: a character value must be a
-  plain ASCII character; use text for 'é'."
+  plain ASCII character; use text for 'é'." / "This pattern can't be used
+  by 'format': a '{' has no '}' after it (write '{{' for a brace of its
+  own)." / "Place 1 of the pattern does not fit its value, a whole number: a
+  number of decimal places or a letter such as 'f' needs a value of its
+  kind."
 * **How to fix:** use a text value for anything other than one ASCII
   character.
 
@@ -616,7 +627,9 @@ Codes by area:
 ## B2C-E0314 Not printable
 
 * **Severity:** error
-* **Meaning:** a value that `print` or `join` must turn into text cannot be:
+* **Meaning:** a value that `print` or `join` must turn into text cannot be
+  (and *format … with* takes only whole and decimal numbers, characters,
+  true/false values and text):
   a list, a deque, a set, a map, a queue, a stack or a priority queue (they
   are printed item by item), a file, an error, or a struct not ticked
   *printable*. A struct ticked *printable* must have fields whose types are

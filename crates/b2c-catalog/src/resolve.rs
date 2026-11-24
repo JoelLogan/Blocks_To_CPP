@@ -61,7 +61,7 @@ use serde_json::Value;
 
 use crate::codes::{self, Diags};
 use crate::definitions::{self, PARAM_MODES, count_default, default_tokens, field_def, repeat_index};
-use crate::schema::{BlockDef, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, Shape};
+use crate::schema::{BlockDef, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, Requires, Shape};
 use crate::signature::{self, TypeFit};
 use crate::stack;
 use crate::upgrade::{self, BlockUpgrades};
@@ -103,6 +103,7 @@ pub(crate) fn run(document: &Document, catalog: &Catalog) -> ResolveReport {
 fn run_with(document: &Document, catalog: &Catalog, upgrades: &BlockUpgrades<'_>) -> ResolveReport {
     let mut completed = document.clone();
     let mut resolver = Resolver::new(catalog, upgrades, &document.generator.catalog);
+    resolver.standard = document.project.language.standard;
     let has_blocks = completed.modules.iter().any(|m| !m.workspace.blocks.is_empty());
     if catalog.blocks.is_empty() {
         if has_blocks {
@@ -156,6 +157,9 @@ struct Resolver<'c> {
     /// The blocks kept as they were without being checked against a
     /// definition ([`ResolveReport::unchecked`]).
     unchecked: BTreeSet<BlockId>,
+    /// The project's C++ standard, which a block's `requires` may need more
+    /// of (`B2C-E0703`).
+    standard: b2c_ir::sast::CppStandard,
 }
 
 impl<'c> Resolver<'c> {
@@ -172,6 +176,7 @@ impl<'c> Resolver<'c> {
             module: None,
             diags: Diags::default(),
             unchecked: BTreeSet::new(),
+            standard: b2c_ir::sast::CppStandard::default(),
         }
     }
 
@@ -257,6 +262,7 @@ impl Resolver<'_> {
             return;
         }
         self.check_place(def, position, &location);
+        self.check_standard(def, &location);
         let extras = self.extras(def, block, &location);
         self.fields(def, block, &extras, &location);
         self.inputs(def, block, &extras, &location);
@@ -288,6 +294,37 @@ impl Resolver<'_> {
     // -----------------------------------------------------------------------
     // Shapes
     // -----------------------------------------------------------------------
+
+    /// Reports a block every form of which needs a newer C++ than the
+    /// project's, the catalog's `requires` without `fallback`
+    /// (`B2C-E0703`; w4-editor-tools.md §6.1): *format … with* needs C++20.
+    /// A toolchain capability is the build's to find out: the catalog stage
+    /// does not know the toolchain.
+    fn check_standard(&mut self, def: &BlockDef, location: &Location) {
+        let Ok(requires) = Requires::parse(&def.requires) else {
+            return;
+        };
+        let Some(needed) = requires.standard else {
+            return;
+        };
+        if requires.fallback || needed <= self.standard {
+            return;
+        }
+        let name = |standard: b2c_ir::sast::CppStandard| match standard {
+            b2c_ir::sast::CppStandard::Cpp17 => "C++17",
+            b2c_ir::sast::CppStandard::Cpp20 => "C++20",
+            b2c_ir::sast::CppStandard::Cpp23 => "C++23",
+            b2c_ir::sast::CppStandard::Cpp26 => "C++26",
+        };
+        let message = format!(
+            "The {} needs {} or newer, and this project is for {}. Choose {} or newer in the project settings, or use other blocks.",
+            block_noun(def),
+            name(needed),
+            name(self.standard),
+            name(needed)
+        );
+        self.diags.error(codes::NEWER_STANDARD, location.clone(), message);
+    }
 
     /// Reports a block whose shape does not fit its place (`B2C-E0604`). Only
     /// the placements the editor cannot produce are reported (ADR-0012): a
@@ -1498,6 +1535,40 @@ repeat = { count = "catchCount" }
             diagnostics[0].message,
             "This \"leave loop\" block was made with a newer version of Blocks2Cpp: it is version 2, and this version knows only up to version 1. Update Blocks2Cpp to use it."
         );
+    }
+
+    #[test]
+    fn a_block_that_needs_a_newer_standard_than_the_project_s_is_e0703() {
+        // *format … with* needs C++20 and has no older form; *contains*
+        // has one (`requires` with `fallback`), so it is never reported.
+        let resolve = |standard: &str| {
+            let value = serde_json::json!({
+                "format": "blocks2cpp/project",
+                "formatVersion": 1,
+                "generator": {"app": "0.1.0", "catalog": "1.3.0"},
+                "project": {"id": "p", "name": "P", "language": {"standard": standard}},
+                "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [{
+                    "id": "b_main", "type": "program.main", "v": 1,
+                    "statements": {"BODY": [{"id": "b1", "type": "io.print", "v": 1, "inputs": {"ITEM0": {"block": {
+                        "id": "b2", "type": "text.format", "v": 1, "extra": {"itemCount": 1},
+                        "fields": {"FORMAT": "{}"}, "inputs": {"ITEM0": {"expr": [{"num": "1"}]}}
+                    }}}}]}
+                }]}}]
+            });
+            let document = b2c_model::load(&serde_json::to_vec(&value).unwrap()).unwrap();
+            run(&document, crate::core_catalog()).diagnostics
+        };
+        let old = resolve("c++17");
+        assert_eq!(
+            codes_and_blocks(&old),
+            [(codes::NEWER_STANDARD.to_owned(), "b2".to_owned())]
+        );
+        assert_eq!(
+            old[0].message,
+            "The \"format\" block needs C++20 or newer, and this project is for C++17. Choose C++20 or newer in the project settings, or use other blocks."
+        );
+        assert_eq!(resolve("c++20"), []);
+        assert_eq!(resolve("c++23"), []);
     }
 
     #[test]

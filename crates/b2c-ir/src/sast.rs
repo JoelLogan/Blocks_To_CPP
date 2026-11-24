@@ -950,6 +950,10 @@ pub enum TextOp {
     Trim,
     /// `b2c::replace_all(s, old, new)`.
     ReplaceAll,
+    /// `std::format(pattern, values…)` (*format … with*, C++20 and a
+    /// toolchain with `std::format`; w4-editor-tools.md §7): the first
+    /// argument is the pattern, a text literal the analyser checked.
+    Format,
 }
 
 /// The functions of [`ExprKind::MathCall`] (w2.md §1.4).

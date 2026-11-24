@@ -45,6 +45,18 @@ function first(quoted: readonly string[], fallback: string): string {
 /** The rules, in the order they are tried: patterns first, then options. */
 const RULES: readonly Rule[] = [
   {
+    // *format … with* (w4-editor-tools.md §7) on a g++ without `std::format`: GCC 11 and 12 have
+    // no `<format>` (`main.cpp:1:10: fatal error: format: No such file or directory`), and a
+    // C++17 build has no `std::format` (`'format' is not a member of 'std'`). Before the header
+    // rule below, which would send the student to a “use header” block.
+    pattern:
+      /^(?:(?:fatal error: )?format: No such file or directory|(?:error: )?[‘']format[’'] is not a member of [‘']std[’'])$/u,
+    text: () =>
+      'This compiler has no std::format, which the “format … with” block needs: choose GCC 13 or newer on the toolchain page and C++20 or newer in the project settings, or use “join” instead.',
+    notGeneratorBug: true,
+    compilerAtPlace: true,
+  },
+  {
     // An `#include` g++ cannot find (`main.cpp:1:10: x.h: No such file or directory`); a header
     // name has no spaces. The linker's `cannot find -lx: No such file or directory` and the
     // driver's `main.cpp: No such file or directory` are not this.

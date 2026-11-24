@@ -42,6 +42,7 @@ export const TEST_MUTATOR_FOR_BLOCK: Readonly<Record<string, B2cMutatorName>> = 
   'type.new': B2C_MUTATOR_CALL_ARGS,
   'type.struct': B2C_MUTATOR_PARAMS,
   'type.enum': B2C_MUTATOR_PARAMS,
+  'text.format': B2C_MUTATOR_ITEMS,
 };
 
 /** A field holding any value, such as `{ref}` or `{sym, name}`. */

@@ -57,6 +57,41 @@ check = "any"
 repeat = { count = "itemCount" }
 default = [{ str = "" }]
 
+# *format … with* (03 §3.7.4, w4-editor-tools.md §7): `std::format`, which
+# needs C++20 and a toolchain that has it (GCC 13 and later); no older form,
+# so the editor hides the block elsewhere and the catalog stage reports
+# B2C-E0703 under an older standard. The pattern is a text field: std::format
+# needs it fixed when the program is built.
+[[block]]
+id = "text.format"
+version = 1
+category = "text"
+shape = "reporter"
+output = "std::string"
+label = { friendly = "format %FORMAT with %ITEM …", cpp = "std::format(%FORMAT, %ITEM, …)" }
+lowering = "builtin"
+headers = ["<format>"]
+help = "Text from a pattern: each {} is replaced by the next value, in order, and {:.2f} shows a decimal number with 2 decimal places. Needs C++20 and a compiler that has std::format (GCC 13 or newer)."
+requires = ["c++20", "stdFormat"]
+
+[[block.field]]
+name = "FORMAT"
+kind = "text"
+default = "{} scored {}"
+
+[[block.extra]]
+name = "itemCount"
+kind = "count"
+min = 1
+max = 32
+default = "2"
+
+[[block.input]]
+name = "ITEM"
+check = "any"
+repeat = { count = "itemCount" }
+default = [{ str = "" }]
+
 # Milestone M3's second wave (docs/plans/m3-contracts/w2.md §1.3): what a text
 # holds, and a text read as a number. A quoted literal where an object is
 # needed becomes a std::string (M3 contracts types.md §11.1).

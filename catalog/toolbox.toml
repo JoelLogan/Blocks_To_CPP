@@ -126,6 +126,9 @@ block = "text.literal"
 block = "text.join"
 
 [[category.entry]]
+block = "text.format"
+
+[[category.entry]]
 block = "text.char"
 
 [[category.entry]]

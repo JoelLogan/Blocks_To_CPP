@@ -40,6 +40,10 @@ pub(crate) const BAD_PARAM: &str = "B2C-E0614";
 pub(crate) const BROKEN_DEFINITION: &str = "B2C-E0620";
 /// More problems than are listed.
 pub(crate) const TOO_MANY_PROBLEMS: &str = "B2C-E0699";
+/// A block every form of which needs a newer C++ standard than the
+/// project's (the catalog's `requires`, w4-editor-tools.md §6.1); documented
+/// with the generator's codes.
+pub(crate) const NEWER_STANDARD: &str = "B2C-E0703";
 
 /// Maximum diagnostics listed for one document; the rest are counted.
 pub(crate) const MAX_DIAGNOSTICS: usize = 10_000;
