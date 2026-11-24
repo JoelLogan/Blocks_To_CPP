@@ -6,7 +6,9 @@ use super::{Blocks, Case, X, declaration, nested, only_printed, reference, token
 
 /// Each block printed, and a text literal that becomes a `std::string`;
 /// W2's blocks (package B): *split* as a list's value, and the forms each
-/// option or input changes.
+/// option or input changes. *format … with* needs C++20 and `std::format`
+/// (its catalog `requires`), so its case is a C++20 project only and is
+/// compiled only with a g++ that has `<format>`.
 pub(super) fn cases(b: &Blocks) -> Vec<Case> {
     let mut cases: Vec<Case> = [
         "text.literal",
@@ -21,6 +23,7 @@ pub(super) fn cases(b: &Blocks) -> Vec<Case> {
         "text.part",
         "text.trim",
         "text.replace",
+        "text.format",
     ]
     .into_iter()
     .map(|kind| only_printed(b, kind))

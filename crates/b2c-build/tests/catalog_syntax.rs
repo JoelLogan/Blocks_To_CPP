@@ -72,6 +72,14 @@
 //! * **Textbook style.** Every case is also generated with *Textbook style*
 //!   on and compiled the same way (06 §6.14.13, w3-modules.md §5.2): a case
 //!   that includes a standard header then writes `using namespace std;`.
+//! * **Requirements.** A block whose catalog `requires` names a standard and
+//!   no fallback (w4-editor-tools.md §6.1) has its cases generated, checked
+//!   and compiled only under the standards of [`STANDARDS`] that are at
+//!   least that one; its snapshot is still the C++20 code, so it must not
+//!   need a newer standard. A case whose block needs a toolchain capability
+//!   (`stdFormat`) is compiled only with a g++ whose probe found it (07
+//!   §7.3), as the editor offers the block only there: not with GCC 11 and
+//!   12, which have no `<format>`.
 
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -86,7 +94,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use b2c_build::{FrontendOptions, run_frontend};
-use b2c_catalog::{Preset, core_catalog, toolbox};
+use b2c_catalog::{Capability, Preset, Requires, core_catalog, toolbox};
 use b2c_ir::Severity;
 use b2c_ir::sast::CppStandard;
 use b2c_ir::source_map::{FileKind, GeneratedProject};
@@ -208,6 +216,40 @@ impl Case {
             }
         }
         self.blocks.iter().any(|block| holds(block, self.block))
+    }
+
+    /// What the case's block needs (its catalog `requires`): nothing for a
+    /// block that is not in the catalog, which
+    /// `every_catalog_block_has_a_case` reports.
+    fn requires(&self) -> Requires {
+        core_catalog()
+            .blocks
+            .get(self.block)
+            .map(|definition| Requires::parse(&definition.requires).unwrap())
+            .unwrap_or_default()
+    }
+
+    /// The standards of [`STANDARDS`] the case is generated for and
+    /// compiled with: those at least the one its block requires, unless the
+    /// code generator has an older form (`fallback`).
+    fn standards(&self) -> Vec<CppStandard> {
+        let requires = self.requires();
+        STANDARDS
+            .into_iter()
+            .filter(|&standard| {
+                requires.fallback || requires.standard.is_none_or(|needed| standard >= needed)
+            })
+            .collect()
+    }
+
+    /// Whether `toolchain` has every capability the case's block needs
+    /// (probed at discovery, 07 §7.3).
+    fn compiles_with(&self, toolchain: &Toolchain) -> bool {
+        let requires = self.requires();
+        requires.fallback
+            || requires.capability.is_none_or(|capability| match capability {
+                Capability::StdFormat => toolchain.capabilities.library.format,
+            })
     }
 }
 
@@ -521,6 +563,13 @@ fn every_catalog_block_has_a_case() {
         if !case.uses_its_block() {
             failures.push(format!("{}: its program has no {} block", case.name, case.block));
         }
+        if !case.standards().contains(&SNAPSHOT_STANDARD) {
+            failures.push(format!(
+                "{}: its block needs a standard newer than {}, the snapshots' standard",
+                case.name,
+                spelling(SNAPSHOT_STANDARD)
+            ));
+        }
         if !case.curated && !covered.insert(case.block) {
             failures.push(format!("{}: a second default case for {}", case.name, case.block));
         }
@@ -542,9 +591,10 @@ fn catalog_blocks_generate_the_expected_cpp() {
     let mut failures = Vec::new();
     let mut texts = Vec::new();
     for case in cases() {
-        let generated: Result<Vec<(CppStandard, String)>, String> = STANDARDS
-            .iter()
-            .map(|&standard| generate(&case, standard).map(|project| (standard, render(&project))))
+        let generated: Result<Vec<(CppStandard, String)>, String> = case
+            .standards()
+            .into_iter()
+            .map(|standard| generate(&case, standard).map(|project| (standard, render(&project))))
             .collect();
         match generated {
             Ok(generated) => texts.push((case, generated)),
@@ -599,6 +649,7 @@ const HEADERS: &[(&str, &[&str])] = &[
     ("std::find", &["<algorithm>"]),
     ("std::fixed", &["<ios>", "<iostream>"]),
     ("std::floor", &["<cmath>"]),
+    ("std::format", &["<format>"]),
     ("std::getline", &["<string>"]),
     ("std::greater", &["<functional>"]),
     ("std::hypot", &["<cmath>"]),
@@ -689,7 +740,7 @@ fn standard_names_are_found() {
 fn catalog_blocks_include_what_they_use() {
     let mut failures = Vec::new();
     for case in cases() {
-        for standard in STANDARDS {
+        for standard in case.standards() {
             let project = match generate(&case, standard) {
                 Ok(project) => project,
                 Err(failure) => {
@@ -759,7 +810,7 @@ fn catalog_blocks_compile_with_textbook_style() {
     let cases = cases();
     let mut failures = Vec::new();
     for case in &cases {
-        for standard in STANDARDS {
+        for standard in case.standards() {
             match generate_with(case, standard, true) {
                 Ok(project) => {
                     let file = &project.files[0];
@@ -800,7 +851,8 @@ fn catalog_blocks_compile_with_textbook_style() {
 
 /// Generates every case as a `standard` project, in Textbook style when
 /// `textbook`, into a folder of `root`, each into a folder named after the
-/// case, and compiles them all with one `g++ -c`.
+/// case, and compiles them all with one `g++ -c`: each case whose block
+/// allows `standard` and whose capabilities `toolchain` has.
 fn syntax_check(
     toolchain: &Toolchain,
     cases: &[Case],
@@ -811,7 +863,10 @@ fn syntax_check(
     let folder = root.join(spelling(standard));
     std::fs::create_dir(&folder).unwrap();
     let mut sources = Vec::new();
-    for case in cases {
+    let compiled = cases
+        .iter()
+        .filter(|case| case.standards().contains(&standard) && case.compiles_with(toolchain));
+    for case in compiled {
         let generated = generate_with(case, standard, textbook)?;
         let dir = folder.join(&case.name);
         std::fs::create_dir(&dir).unwrap();
