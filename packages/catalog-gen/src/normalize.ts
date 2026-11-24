@@ -14,6 +14,7 @@ import type {
   RequirementJson,
   PresetJson,
   RepeatJson,
+  RequiresJson,
   StatementDefJson,
   TokenJson,
   ToolboxCategoryJson,
@@ -130,9 +131,16 @@ function requirement(
   return Object.keys(merged).length === 0 ? null : merged;
 }
 
-function blockRequirement(block: RustBlockDef): { requirement?: RequirementJson } {
-  const merged = requirement(block.advanced === true, block.requires);
-  return merged === null ? {} : { requirement: merged };
+/** A block's `advanced` flag and `requires` table, each written only when present. */
+function blockRequirement(block: RustBlockDef): {
+  advanced?: true;
+  requires?: RequiresJson;
+} {
+  const requires = requirement(false, block.requires);
+  return {
+    ...(block.advanced === true ? { advanced: true as const } : {}),
+    ...(requires === null ? {} : { requires }),
+  };
 }
 
 /** A field's `advanced` values and `requires` table, by value, in the order of its options. */

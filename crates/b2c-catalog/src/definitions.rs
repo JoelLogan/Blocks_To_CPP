@@ -256,8 +256,8 @@ pub(crate) fn check_block(def: &BlockDef) -> Vec<String> {
             "reporter and predicate blocks cannot have statement inputs",
         ));
     }
-    if !def.requires.is_empty() {
-        check_requires("the block", &def.requires, &mut problems);
+    if let Some(requires) = &def.requires {
+        check_requires("the block", requires, &mut problems);
     }
     check_namespace_parts(def, &mut problems);
     check_output(def, &mut problems);
@@ -581,11 +581,7 @@ fn check_field_gates(field: &FieldDef, problems: &mut Vec<String>) {
         check_requires(&format!("{name}={value}"), requires, problems);
     }
     let refused = |value: &String| {
-        field.advanced.contains(value)
-            || field
-                .requires
-                .get(value)
-                .is_some_and(|words| Requires::refuses(words))
+        field.advanced.contains(value) || field.requires.get(value).is_some_and(Requires::refuses)
     };
     if default.as_ref().is_some_and(refused) {
         problems.push(format!(
@@ -596,14 +592,7 @@ fn check_field_gates(field: &FieldDef, problems: &mut Vec<String>) {
 
 /// A `requires` names a standard newer than C++17 (the oldest a project
 /// can target) or a capability, and `fallback` only beside one of them.
-fn check_requires(what: &str, words: &[String], problems: &mut Vec<String>) {
-    let requires = match Requires::parse(words) {
-        Ok(requires) => requires,
-        Err(error) => {
-            problems.push(format!("{what} requires {error}"));
-            return;
-        }
-    };
+fn check_requires(what: &str, requires: &Requires, problems: &mut Vec<String>) {
     if requires.standard.is_none() && requires.capability.is_none() {
         problems.push(format!(
             "{what} requires nothing: name a standard or a capability"
@@ -793,7 +782,7 @@ fn all_unique<T: Ord>(items: &[T]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{Category, Label, Lowering, Repeat, Shape, StatementDef, TypeClass};
+    use crate::schema::{Capability, Category, Label, Lowering, Repeat, Shape, StatementDef, TypeClass};
 
     fn def() -> BlockDef {
         BlockDef {
@@ -871,7 +860,7 @@ mod tests {
             ],
             namespace_member: false,
             advanced: false,
-            requires: Vec::new(),
+            requires: None,
         }
     }
 
@@ -1112,30 +1101,53 @@ mod tests {
 
     #[test]
     fn advanced_and_requires_keys() {
-        let words = |list: &[&str]| list.iter().map(|word| (*word).to_owned()).collect::<Vec<_>>();
+        let cpp20 = |fallback: bool| Requires {
+            standard: Some(CppStandard::Cpp20),
+            fallback,
+            ..Requires::default()
+        };
         // A block, and a dropdown's value other than its default.
         let ok = problems_after(|d| {
             d.advanced = true;
-            d.requires = words(&["c++20", "stdFormat"]);
+            d.requires = Some(Requires {
+                capability: Some(Capability::StdFormat),
+                ..cpp20(false)
+            });
             d.field[0].advanced = vec!["b".into()];
-            d.field[0].requires = BTreeMap::from([("b".into(), words(&["c++20", "fallback"]))]);
+            d.field[0].requires = BTreeMap::from([("b".into(), cpp20(true))]);
         });
         assert_eq!(ok, Vec::<String>::new());
-        // A requirement names something newer than C++17, in known words.
-        let nothing = problems_after(|d| d.requires = words(&["fallback"]));
+        // A requirement names something newer than C++17.
+        let nothing = problems_after(|d| {
+            d.requires = Some(Requires {
+                fallback: true,
+                ..Requires::default()
+            });
+        });
         assert_eq!(
             nothing,
             ["the block requires nothing: name a standard or a capability"]
         );
-        let old = problems_after(|d| d.requires = words(&["c++17"]));
+        let old = problems_after(|d| {
+            d.requires = Some(Requires {
+                standard: Some(CppStandard::Cpp17),
+                ..Requires::default()
+            });
+        });
         assert_eq!(old, ["the block requires C++17, which every project has"]);
-        let unknown = problems_after(|d| d.requires = words(&["c++20", "gcc13"]));
+        // The table, as the catalog writes it; an unknown key or value is
+        // the file's error.
+        let read = |table: &str| toml::from_str::<Requires>(table).map_err(|error| error.to_string());
         assert_eq!(
-            unknown,
-            ["the block requires \"gcc13\" is not a standard, a capability or \"fallback\", or repeats one"]
+            read("standard = \"c++20\"\ncapability = \"stdFormat\"\nfallback = true"),
+            Ok(Requires {
+                capability: Some(Capability::StdFormat),
+                ..cpp20(true)
+            })
         );
-        let twice = problems_after(|d| d.requires = words(&["c++20", "c++23"]));
-        assert_eq!(twice.len(), 1, "{twice:?}");
+        assert!(read("standard = \"c++98\"").is_err());
+        assert!(read("capability = \"gcc13\"").is_err());
+        assert!(read("standard = \"c++20\"\nnewer = true").is_err());
         // Only options the field has, each once, and never the default
         // unless the code generator has a fallback for it.
         let unknown = problems_after(|d| d.field[0].advanced = vec!["c".into()]);
@@ -1147,11 +1159,10 @@ mod tests {
             problems_after(|d| d.field[0].advanced = vec!["a".into()]),
             [default_rule]
         );
-        let hidden =
-            problems_after(|d| d.field[0].requires = BTreeMap::from([("a".into(), words(&["c++20"]))]));
+        let hidden = problems_after(|d| d.field[0].requires = BTreeMap::from([("a".into(), cpp20(false))]));
         assert_eq!(hidden, [default_rule]);
         let kept = problems_after(|d| {
-            d.field[0].requires = BTreeMap::from([("a".into(), words(&["c++20", "fallback"]))]);
+            d.field[0].requires = BTreeMap::from([("a".into(), cpp20(true))]);
         });
         assert_eq!(kept, Vec::<String>::new());
         // A checkbox's values are `true` and `false`; other kinds have none.
@@ -1175,9 +1186,8 @@ mod tests {
             text,
             ["only a dropdown's or a checkbox's values can be advanced or require something (WORD)"]
         );
-        // `catalog.json` writes the words as an object.
-        let json = serde_json::to_value(Requires::parse(&words(&["c++20", "fallback"])).expect("parses"))
-            .expect("serialises");
+        // `catalog.json` writes the table as an object.
+        let json = serde_json::to_value(cpp20(true)).expect("serialises");
         assert_eq!(json, serde_json::json!({"standard": "c++20", "fallback": true}));
     }
 
@@ -1258,7 +1268,10 @@ mod tests {
         }
         let change = field_def(&catalog.blocks["var.change"], "OP").expect("OP");
         assert_eq!(change.advanced, ["and", "or", "xor", "shl", "shr"]);
-        let contains = Requires::parse(&catalog.blocks["coll.contains"].requires).expect("requires");
+        let contains = catalog.blocks["coll.contains"]
+            .requires
+            .clone()
+            .expect("requires");
         assert_eq!(
             (contains.standard, contains.fallback),
             (Some(CppStandard::Cpp20), true)

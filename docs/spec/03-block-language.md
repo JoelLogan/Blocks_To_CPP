@@ -1259,18 +1259,20 @@ type  = "T"                            # converts to T
 * **Gating keys** (wave W4,
   [w4-editor-tools.md §6.1](../plans/m3-contracts/w4-editor-tools.md#61-the-catalogs-gating-keys)).
   `advanced = true` on a block offers it only with *Show advanced blocks*;
-  `requires = ["c++20", "stdFormat"]` lists the oldest standard and the
-  toolchain capability every form of it needs, and `"fallback"` when the
-  generator writes an older form, which keeps it offered whatever the
-  standard or the toolchain (`requires = ["c++20", "fallback"]`). On a
-  dropdown or a checkbox, `advanced` lists the values offered only with
-  advanced blocks (`advanced = ["and", "or"]`; a checkbox's values are
-  `"true"` and `"false"`) and `requires` maps a value to its list
-  (`requires = { starts = ["c++20", "fallback"] }`). A requirement names a
-  standard newer than C++17 or a capability, each word once; a gated value
-  is one the field has, and a field's default is never one the editor could
-  hide. `catalog.json` writes a requirement as an object (`{"standard":
-  "c++20", "fallback": true}`). The editor's gating service reads these keys
+  `requires = { standard = "c++20", capability = "stdFormat" }` names the
+  oldest standard and the toolchain capability every form of it needs, and
+  `fallback = true` that the generator writes an older form, which keeps it
+  offered whatever the standard or the toolchain (`requires = { standard =
+  "c++20", fallback = true }`). On a dropdown or a checkbox, `advanced`
+  lists the values offered only with advanced blocks (`advanced = ["and",
+  "or"]`; a checkbox's values are `"true"` and `"false"`) and `requires`
+  maps a value to its table (`requires = { starts = { standard = "c++20",
+  fallback = true } }`). A requirement names a standard newer than C++17 or
+  a capability, and has no other keys; a gated value is one the field has,
+  and a field's default is never one the editor could hide. `catalog.json`
+  writes a requirement as the same table (`{"standard": "c++20",
+  "fallback": true}`), and the editor's definitions keep a block's
+  `advanced` and `requires`. The editor's gating service reads these keys
   ([04 §4.2](04-user-interface.md#42-toolbox)); toolbox categories and
   types keep their rows in the editor (`gating/table.ts`).
 * **Signatures** ([ADR-0017](../adr/0017-open-type-representation.md),

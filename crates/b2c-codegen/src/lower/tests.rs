@@ -1194,8 +1194,7 @@ fn the_every_block_project_uses_every_block_of_the_catalog() {
         .blocks
         .iter()
         .filter(|(id, def)| {
-            let needs_more = b2c_catalog::Requires::parse(&def.requires)
-                .is_ok_and(|r| !r.fallback && !def.requires.is_empty());
+            let needs_more = def.requires.as_ref().is_some_and(b2c_catalog::Requires::refuses);
             !used.contains(*id) && !needs_more
         })
         .map(|(id, _)| id)

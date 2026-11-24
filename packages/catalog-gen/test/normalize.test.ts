@@ -187,11 +187,10 @@ describe('normalize', () => {
         }),
       ),
     ).blocks.at(-1);
-    expect(gated?.requirement).toEqual({
-      advanced: true,
-      standard: 'c++20',
-      capability: 'stdFormat',
-    });
+    // A block keeps the catalog's two keys: `advanced`, and `requires` as its table.
+    expect(gated?.advanced).toBe(true);
+    expect(gated?.requires).toEqual({ standard: 'c++20', capability: 'stdFormat' });
+    expect(gated).not.toHaveProperty('requirement');
     expect(gated?.fields[0]?.requirements).toEqual({
       b: { standard: 'c++20', fallback: true },
       c: { advanced: true, standard: 'c++23' },
@@ -200,7 +199,8 @@ describe('normalize', () => {
     expect(gated?.fields[1]).toMatchObject({ menu: 'Go fast', mark: 'fast' });
     expect(gated?.fields[2]).toMatchObject({ popover: 'Kept', mark: 'kept' });
     // A basic block and field carry no key.
-    expect(block('text.show')).not.toHaveProperty('requirement');
+    expect(block('text.show')).not.toHaveProperty('advanced');
+    expect(block('text.show')).not.toHaveProperty('requires');
     for (const field of block('text.show').fields) {
       expect(field).not.toHaveProperty('requirements');
     }

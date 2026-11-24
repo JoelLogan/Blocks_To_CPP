@@ -40,16 +40,20 @@ const HAND_ROWS: readonly (readonly [RequirementKind, readonly string[], Require
 ];
 
 /**
- * The rows of the catalog: each block's `requirement` and each field's `requirements` by value
- * (the catalog's `advanced` and `requires`: W4E-1's advanced blocks and *change*'s bitwise forms,
- * the C++20 members with a C++17 form, w4-editor-tools.md §2.1; *format … with*, which needs C++20
- * and `std::format`, §7).
+ * The rows of the catalog: each block's `advanced` and `requires`, merged into one requirement, and
+ * each field's `requirements` by value (W4E-1's advanced blocks and *change*'s bitwise forms, the
+ * C++20 members with a C++17 form, w4-editor-tools.md §2.1; *format … with*, which needs C++20 and
+ * `std::format`, §7).
  */
 function catalogRows(): (readonly [string, Requirement])[] {
   const rows: (readonly [string, Requirement])[] = [];
   for (const def of BLOCK_DEFS) {
-    if (def.requirement !== undefined) {
-      rows.push([requirementKey('block', def.id), def.requirement]);
+    if (def.advanced === true || def.requires !== undefined) {
+      const requirement: Requirement = {
+        ...(def.advanced === true ? { advanced: true as const } : {}),
+        ...def.requires,
+      };
+      rows.push([requirementKey('block', def.id), requirement]);
     }
     for (const field of def.fields) {
       for (const [value, requirement] of Object.entries(field.requirements ?? {})) {

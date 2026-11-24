@@ -72,7 +72,7 @@ label = { friendly = "format %FORMAT with %ITEM …", cpp = "std::format(%FORMAT
 lowering = "builtin"
 headers = ["<format>"]
 help = "Text from a pattern: each {} is replaced by the next value, in order, and {:.2f} shows a decimal number with 2 decimal places. Needs C++20 and a compiler that has std::format (GCC 13 or newer)."
-requires = ["c++20", "stdFormat"]
+requires = { standard = "c++20", capability = "stdFormat" }
 
 [[block.field]]
 name = "FORMAT"
@@ -236,7 +236,7 @@ name = "OP"
 kind = "dropdown"
 options = [["contains", "contains"], ["starts with", "starts"], ["ends with", "ends"]]
 default = "contains"
-requires = { starts = ["c++20", "fallback"], ends = ["c++20", "fallback"] }
+requires = { starts = { standard = "c++20", fallback = true }, ends = { standard = "c++20", fallback = true } }
 
 [[block.input]]
 name = "TEXT"

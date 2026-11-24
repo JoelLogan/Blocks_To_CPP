@@ -200,16 +200,22 @@ export interface FieldDefJson {
 export type StandardJson = 'c++17' | 'c++20' | 'c++23' | 'c++26';
 
 /**
- * What a block or a field's value needs beyond the basic editor (the catalog's `advanced` and
- * `requires`, w4-editor-tools.md §6.1): advanced blocks shown, the oldest standard that has it, a
- * probed toolchain capability, and whether the code generator writes an older form (`fallback`),
- * which keeps it offered whatever the standard or the toolchain.
+ * The catalog's `requires` table (w4-editor-tools.md §6.1): the oldest standard that has a block or
+ * an option, a probed toolchain capability it needs, and whether the code generator writes an
+ * older form (`fallback`), which keeps it offered whatever the standard or the toolchain.
  */
-export interface RequirementJson {
-  readonly advanced?: true;
+export interface RequiresJson {
   readonly standard?: StandardJson;
   readonly capability?: 'stdFormat';
   readonly fallback?: true;
+}
+
+/**
+ * What a field's value needs beyond the basic editor (the catalog's `advanced` and `requires` on
+ * the field, w4-editor-tools.md §6.1): advanced blocks shown, and its {@link RequiresJson}.
+ */
+export interface RequirementJson extends RequiresJson {
+  readonly advanced?: true;
 }
 
 /** A value-input definition. */
@@ -305,8 +311,13 @@ export interface BlockDefJson {
    * there (*define*, *struct*, *enum*, *global*, *namespace*; w3-modules.md §2.12).
    */
   readonly namespaceMember?: true;
-  /** What the block needs (`advanced`, `requires`); absent for a basic block. */
-  readonly requirement?: RequirementJson;
+  /**
+   * Present and `true` on a block the editor offers only with *Show advanced blocks* (the catalog's
+   * `advanced`, w4-editor-tools.md §6.1).
+   */
+  readonly advanced?: true;
+  /** The catalog's `requires` table: what every form of the block needs; absent for none. */
+  readonly requires?: RequiresJson;
 }
 
 /** Blocks the editor adds to a category for the open project. */
@@ -460,7 +471,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     members: {},
     headers: [],
     optionHeaders: {},
-    requirement: { standard: 'c++20', fallback: true },
+    requires: { standard: 'c++20', fallback: true },
   },
   {
     id: 'coll.for_each',
@@ -1109,7 +1120,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     members: {},
     headers: [],
     optionHeaders: {},
-    requirement: { advanced: true },
+    advanced: true,
   },
   {
     id: 'control.for_range',
@@ -3001,7 +3012,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     members: {},
     headers: [],
     optionHeaders: {},
-    requirement: { advanced: true },
+    advanced: true,
   },
   {
     id: 'program.exit',
@@ -3147,7 +3158,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     members: {},
     headers: [],
     optionHeaders: {},
-    requirement: { advanced: true },
+    advanced: true,
   },
   {
     id: 'program.use_namespace',
@@ -3392,7 +3403,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     members: {},
     headers: ['<format>'],
     optionHeaders: {},
-    requirement: { standard: 'c++20', capability: 'stdFormat' },
+    requires: { standard: 'c++20', capability: 'stdFormat' },
   },
   {
     id: 'text.join',

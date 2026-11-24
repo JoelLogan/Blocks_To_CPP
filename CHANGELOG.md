@@ -623,10 +623,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   the native benchmark's 8-module case `pipeline/preview-modules`
   (reported).
 - The catalog's gating keys (wave W4): `advanced = true` and `requires =
-  ["c++20", "stdFormat"]` (with `"fallback"` for a form the generator writes
-  for older standards) on a block, and `advanced` and `requires` by value on
-  a dropdown or a checkbox, checked when the catalog
-  loads and exported in `catalog.json` and the editor's definitions. The
+  { standard = "c++20", capability = "stdFormat" }` (with `fallback = true`
+  for a form the generator writes for older standards) on a block, and
+  `advanced` and `requires` by value on a dropdown or a checkbox, checked
+  when the catalog loads and exported in `catalog.json` and the editor's
+  definitions. The
   editor's gating table reads its block and option rows from them and keeps
   only categories and types by hand.
 - _Fast unchecked access_ (wave W4): the block menu of _item of_ and _set
@@ -1078,6 +1079,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   namespaces. The sandbox leaves the program, its C++ and its diagnostics as
   they were (only `B2C-W0505`); the update's `symbols` and `blockTypes` and
   the worker's scope index list what it found.
+- A block's `requires` in the catalog is the W4 contract's table, `requires =
+  { standard = "c++20", capability = "stdFormat", fallback = true }`, not a
+  list of words, in the catalog files, `catalog.json` and the editor's
+  definitions, which keep a block's `advanced` and `requires` as the catalog
+  writes them; the editor's gating table merges them. The WebAssembly core
+  is 2,033,601 bytes (+21,618).
 
 ### Removed
 

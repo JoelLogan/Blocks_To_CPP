@@ -107,111 +107,51 @@ pub struct BlockDef {
     pub advanced: bool,
     /// `requires`: the standard or toolchain capability every form of the
     /// block needs, and whether the code generator has an older form
-    /// (`requires = ["c++20", "stdFormat"]`, [`Requires`]). Written only
-    /// when present.
-    #[serde(
-        default,
-        serialize_with = "serialize_requires",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub requires: Vec<String>,
+    /// (`requires = { standard = "c++20", capability = "stdFormat" }`,
+    /// [`Requires`]). Written only when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<Requires>,
 }
 
 /// What a block, or one value of a field, needs beyond the basic editor
-/// (w4-editor-tools.md §6.1), written in a catalog file as a list of words:
-/// the oldest standard that has it (`"c++20"`), a toolchain capability
-/// (`"stdFormat"`) and `"fallback"` when the code generator writes an older
-/// form (`requires = ["c++20", "fallback"]`). The editor's gating service
-/// hides what the project's standard or the toolchain cannot compile, unless
-/// `fallback` says the generator has that older form, and the analyser
-/// reports `B2C-E0703` for a block used with an older standard and no
-/// fallback. `catalog.json` writes it as an object (`{"standard": "c++20",
-/// "fallback": true}`).
-///
-/// The definitions keep the words, which the catalog reads with the reader
-/// it has for `headers`, and [`Requires::parse`] reads them: a table, or a
-/// map of these, cost the WebAssembly core some 20 KB.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+/// (w4-editor-tools.md §6.1), written in a catalog file as a table: the
+/// oldest standard that has it (`standard = "c++20"`), a toolchain
+/// capability (`capability = "stdFormat"`) and `fallback = true` when the
+/// code generator writes an older form
+/// (`requires = { standard = "c++20", fallback = true }`). The editor's
+/// gating service hides what the project's standard or the toolchain cannot
+/// compile, unless `fallback` says the generator has that older form, and
+/// the analyser reports `B2C-E0703` for a block used with an older standard
+/// and no fallback. `catalog.json` writes the same table as an object.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Requires {
     /// The oldest standard that has it.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub standard: Option<b2c_ir::sast::CppStandard>,
     /// A toolchain capability it needs, probed at discovery (07 §7.3).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capability: Option<Capability>,
     /// The code generator writes an older form where the standard or the
     /// capability is missing, so the editor always offers it.
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub fallback: bool,
 }
 
 impl Requires {
-    /// Reads a `requires` list: each word a standard, a capability or
-    /// `fallback`, each kind at most once.
-    ///
-    /// # Errors
-    ///
-    /// A word that is none of these, or a kind said twice, with a message
-    /// naming the word.
-    pub fn parse(words: &[String]) -> Result<Requires, String> {
-        use b2c_ir::sast::CppStandard;
-        let mut requires = Requires::default();
-        for word in words {
-            let standard = match word.as_str() {
-                "c++17" => Some(CppStandard::Cpp17),
-                "c++20" => Some(CppStandard::Cpp20),
-                "c++23" => Some(CppStandard::Cpp23),
-                "c++26" => Some(CppStandard::Cpp26),
-                _ => None,
-            };
-            match word.as_str() {
-                _ if standard.is_some() && requires.standard.is_none() => requires.standard = standard,
-                "stdFormat" if requires.capability.is_none() => {
-                    requires.capability = Some(Capability::StdFormat);
-                }
-                "fallback" if !requires.fallback => requires.fallback = true,
-                _ => {
-                    return Err(format!(
-                        "{word:?} is not a standard, a capability or \"fallback\", or repeats one"
-                    ));
-                }
-            }
-        }
-        Ok(requires)
-    }
-
     /// Whether the editor hides it where the requirement is not met: a
     /// requirement with a fallback never is.
-    pub fn refuses(words: &[String]) -> bool {
-        Requires::parse(words).is_ok_and(|requires| !requires.fallback)
+    pub fn refuses(&self) -> bool {
+        !self.fallback
     }
 }
 
 /// A probed toolchain capability a block can need (07 §7.3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Capability {
     /// `std::format` compiles and links (GCC 13 and later).
     #[serde(rename = "stdFormat")]
     StdFormat,
-}
-
-/// Writes a block's `requires` words as a [`Requires`] object.
-fn serialize_requires<S: Serializer>(words: &[String], serializer: S) -> Result<S::Ok, S::Error> {
-    Requires::parse(words)
-        .map_err(serde::ser::Error::custom)?
-        .serialize(serializer)
-}
-
-/// Writes a field's `requires` as [`Requires`] objects by value.
-fn serialize_requires_by_value<S: Serializer>(
-    by_value: &BTreeMap<String, Vec<String>>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    let parsed: Result<BTreeMap<&str, Requires>, String> = by_value
-        .iter()
-        .map(|(value, words)| Ok((value.as_str(), Requires::parse(words)?)))
-        .collect();
-    parsed.map_err(serde::ser::Error::custom)?.serialize(serializer)
 }
 
 /// Toolbox categories (spec §3.7), declared (and ordered) in the order the
@@ -416,14 +356,10 @@ pub struct FieldDef {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub advanced: Vec<String>,
     /// `requires` on a dropdown or a checkbox: what each listed value needs,
-    /// as a block's [`Requires`] (`requires = { starts = ["c++20",
-    /// "fallback"] }`). Written only when not empty.
-    #[serde(
-        default,
-        serialize_with = "serialize_requires_by_value",
-        skip_serializing_if = "BTreeMap::is_empty"
-    )]
-    pub requires: BTreeMap<String, Vec<String>>,
+    /// as a block's [`Requires`] (`requires = { starts = { standard =
+    /// "c++20", fallback = true } }`). Written only when not empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub requires: BTreeMap<String, Requires>,
     /// `menu` on a checkbox: the field is set from the block's context menu,
     /// with these words, instead of being drawn on the block (*Fast
     /// unchecked access*, w4-editor-tools.md §7). Such a field is shown once,

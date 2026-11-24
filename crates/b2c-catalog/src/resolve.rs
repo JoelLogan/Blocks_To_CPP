@@ -61,7 +61,7 @@ use serde_json::Value;
 
 use crate::codes::{self, Diags};
 use crate::definitions::{self, PARAM_MODES, count_default, default_tokens, field_def, repeat_index};
-use crate::schema::{BlockDef, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, Requires, Shape};
+use crate::schema::{BlockDef, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, Shape};
 use crate::signature::{self, TypeFit};
 use crate::stack;
 use crate::upgrade::{self, BlockUpgrades};
@@ -301,7 +301,7 @@ impl Resolver<'_> {
     /// A toolchain capability is the build's to find out: the catalog stage
     /// does not know the toolchain.
     fn check_standard(&mut self, def: &BlockDef, location: &Location) {
-        let Ok(requires) = Requires::parse(&def.requires) else {
+        let Some(requires) = &def.requires else {
             return;
         };
         let Some(needed) = requires.standard else {

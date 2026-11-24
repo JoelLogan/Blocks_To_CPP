@@ -225,7 +225,7 @@ impl Case {
         core_catalog()
             .blocks
             .get(self.block)
-            .map(|definition| Requires::parse(&definition.requires).unwrap())
+            .and_then(|definition| definition.requires.clone())
             .unwrap_or_default()
     }
 

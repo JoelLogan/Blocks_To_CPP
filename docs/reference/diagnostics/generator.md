@@ -43,8 +43,8 @@ use a newer version of Blocks2Cpp.
 **Severity:** error · **Source:** catalog (the resolve stage)
 
 **What it means:** the program uses a block whose every form needs a newer
-C++ standard than the project's, as the block catalog says (`requires`
-without `"fallback"`): *format … with* writes `std::format`, which arrives
+C++ standard than the project's, as the block catalog says (its `requires`
+table without `fallback = true`): *format … with* writes `std::format`, which arrives
 with C++20. The namespaces `std::ranges`, `std::views` and `std::numbers`,
 which arrive with C++20 too, will be reported the same way when the menu of
 *use namespace* offers them (M4).

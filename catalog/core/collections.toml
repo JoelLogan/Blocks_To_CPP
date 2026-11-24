@@ -164,7 +164,7 @@ label = { friendly = "%LIST contains %VALUE", cpp = "std::ranges::find(%LIST, %V
 lowering = "builtin"
 help = "True when a list, deque or set holds the value, or a map has the key."
 where = { C = "searchable" }
-requires = ["c++20", "fallback"]
+requires = { standard = "c++20", fallback = true }
 
 [[block.field]]
 name = "LIST"
