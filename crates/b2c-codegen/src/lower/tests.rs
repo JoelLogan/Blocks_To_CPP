@@ -1118,6 +1118,7 @@ exists true
 log: added
 read: first 1
 half 4
+format Ann Lee|  7|3.14|ff| true  |
 ";
 
 /// What the every-block program reads: an age, then a name.
@@ -1136,13 +1137,39 @@ fn block_types(block: &b2c_model::Block, found: &mut BTreeSet<String>) {
     }
 }
 
+/// Whether a block, or a block in it, needs a toolchain capability for
+/// some standard (the catalog's `requires`: *format … with*'s
+/// `std::format` under C++20).
+fn needs_capability(block: &b2c_model::Block) -> bool {
+    let mut types = BTreeSet::new();
+    block_types(block, &mut types);
+    let catalog = b2c_catalog::core_catalog();
+    types.iter().any(|id| {
+        catalog.blocks[id]
+            .requires
+            .as_ref()
+            .is_some_and(|requires| requires.capability.is_some())
+    })
+}
+
 /// The C++ of [`EVERY_BLOCK_PROJECT`] for `standard`, through the stages a
 /// build runs (load, resolve, analyse, generate), none of which may report
-/// anything.
-fn every_block_program(standard: CppStandard) -> String {
+/// anything; with `capable` false, without `main`'s statements that hold a
+/// block needing a toolchain capability (for a g++ without `std::format`
+/// under C++20).
+fn every_block_program(standard: CppStandard, capable: bool) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(EVERY_BLOCK_PROJECT);
     let mut document = b2c_model::load(&std::fs::read(&path).unwrap()).unwrap();
     document.project.language.standard = standard;
+    if !capable {
+        for block in &mut document.modules[0].workspace.blocks {
+            if block.block_type == "program.main" {
+                for body in block.statements.values_mut() {
+                    body.retain(|statement| !needs_capability(statement));
+                }
+            }
+        }
+    }
     let catalog = b2c_catalog::core_catalog();
     let resolved = b2c_catalog::resolve_report(&document, catalog);
     assert!(resolved.diagnostics.is_empty(), "{:#?}", resolved.diagnostics);
@@ -1188,8 +1215,8 @@ fn the_every_block_project_uses_every_block_of_the_catalog() {
     }
     // A block that needs a newer standard or a toolchain capability with no
     // older form (the catalog's `requires`, w4-editor-tools.md §6.1) cannot
-    // be in a program every g++ builds under C++17: *format … with* has its
-    // own test, [`format_compiles_and_runs_on_every_gxx_with_std_format`].
+    // be in a program every g++ builds under C++17; none does now (*format
+    // … with* has a C++17 form, 03 §3.7.4).
     let missing: Vec<&String> = b2c_catalog::core_catalog()
         .blocks
         .iter()
@@ -1208,14 +1235,22 @@ fn the_every_block_project_uses_every_block_of_the_catalog() {
 /// The every-block program compiles at the strict level with `-Werror`
 /// under C++17 and C++20 with each of `compilers`, and each build runs (in a
 /// folder of its own under `dir`, for the files it writes) and prints
-/// [`EVERY_BLOCK_OUTPUT`].
+/// [`EVERY_BLOCK_OUTPUT`]. Under C++20 a g++ without `std::format` (GCC 11
+/// and 12) builds the program without *format … with*'s statement, and
+/// prints the rest.
 fn every_block_program_compiles_clean_and_runs(compilers: &[PathBuf], dir: &Path) {
     use std::io::Write as _;
     for (standard, flag) in [
         (CppStandard::Cpp17, "-std=c++17"),
         (CppStandard::Cpp20, "-std=c++20"),
     ] {
-        let source = every_block_program(standard);
+        let source = every_block_program(standard, true);
+        let without = every_block_program(standard, false);
+        assert_ne!(source, without);
+        let expected_without: String = EVERY_BLOCK_OUTPUT
+            .split_inclusive('\n')
+            .filter(|line| !line.starts_with("format "))
+            .collect();
         // The *use namespace* block's directive after the helpers, the
         // namespace and the call from outside it (w3-modules.md §2.12).
         for needle in [
@@ -1228,19 +1263,34 @@ fn every_block_program_compiles_clean_and_runs(compilers: &[PathBuf], dir: &Path
             "numbers[static_cast<size_t>(first)]",
             // The ⚙ popover's `static` and `constexpr` on *create*.
             "static constexpr int first = 0;",
+            // *format … with*: `b2c::format` under C++17, `std::format`
+            // (short after `using namespace std;`) under C++20 (03 §3.7.4).
+            if standard == CppStandard::Cpp17 {
+                "cout << b2c::format(\"format {}|{:>3}|{:.2f}|{:x}|{:^7}|\", who, age, 3.14159, 255, true)"
+            } else {
+                "cout << format(\"format {}|{:>3}|{:.2f}|{:x}|{:^7}|\", who, age, 3.14159, 255, true)"
+            },
         ] {
             assert!(source.contains(needle), "{needle} not in\n{source}");
         }
         let path = dir.join(format!("every_block{}.cpp", &flag[5..]));
         std::fs::write(&path, &source).unwrap();
+        let path_without = dir.join(format!("every_block_without{}.cpp", &flag[5..]));
+        std::fs::write(&path_without, &without).unwrap();
         for (index, gxx) in compilers.iter().enumerate() {
+            let capable = standard == CppStandard::Cpp17 || has_std_format(gxx, dir);
+            let (path, source, expected) = if capable {
+                (&path, &source, EVERY_BLOCK_OUTPUT)
+            } else {
+                (&path_without, &without, expected_without.as_str())
+            };
             let folder = dir.join(format!("{}-{index}", &flag[5..]));
             std::fs::create_dir(&folder).unwrap();
             let program = folder.join("every_block");
             let output = command(gxx)
                 .arg(flag)
                 .args(STRICT)
-                .arg(&path)
+                .arg(path)
                 .arg("-o")
                 .arg(&program)
                 .output()
@@ -1266,14 +1316,14 @@ fn every_block_program_compiles_clean_and_runs(compilers: &[PathBuf], dir: &Path
             let run = run.wait_with_output().unwrap();
             assert!(run.status.success(), "{} {flag}: {:?}", gxx.display(), run.status);
             let stdout = String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n");
-            assert_eq!(stdout, EVERY_BLOCK_OUTPUT, "{} {flag}", gxx.display());
+            assert_eq!(stdout, expected, "{} {flag}", gxx.display());
         }
     }
 }
 
 // ---- format … with (w4-editor-tools.md §7) ----------------------------------------
 
-/// The project of [`format_compiles_and_runs_on_every_gxx_with_std_format`]:
+/// The first project of [`format_writes_the_same_text_in_both_forms`]:
 /// *print (format "{} scored {:.1f} {}{:>4}|" with (name) (score) (letter) (done))*.
 const FORMAT_PROJECT: &str = r#"{
   "format": "blocks2cpp/project",
@@ -1316,9 +1366,103 @@ fn has_std_format(gxx: &Path, dir: &Path) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-#[test]
-fn format_compiles_and_runs_on_every_gxx_with_std_format() {
-    let mut document = b2c_model::load(FORMAT_PROJECT.as_bytes()).unwrap();
+/// The cases of [`format_writes_the_same_text_in_both_forms`]: a pattern,
+/// its values as expression tokens, and what `std::format` writes.
+const FORMAT_CASES: &[(&str, &str, &str)] = &[
+    (
+        "{:>6}|{:<6}|{:^6}|",
+        r#"[[{"num": "42"}], [{"num": "42"}], [{"num": "42"}]]"#,
+        "    42|42    |  42  |",
+    ),
+    (
+        "{:*^7}|{:05}|{:+<4}|",
+        r#"[[{"num": "42"}], [{"op": "-"}, {"num": "42"}], [{"str": "ab"}]]"#,
+        "**42***|-0042|ab++|",
+    ),
+    (
+        "{:x}|{:X}|{:o}|{:b}|{:08b}",
+        r#"[[{"num": "255"}], [{"num": "255"}], [{"num": "8"}], [{"num": "5"}], [{"num": "5"}]]"#,
+        "ff|FF|10|101|00000101",
+    ),
+    (
+        "{:x}|{:d}|{:c}{:c}",
+        r#"[[{"op": "-"}, {"num": "255"}], [{"num": "7"}], [{"num": "72"}], [{"num": "105"}]]"#,
+        "-ff|7|Hi",
+    ),
+    (
+        "{}|{}|{}|{}",
+        r#"[[{"num": "3.14159"}], [{"num": "0.1"}], [{"num": "1234567.0"}], [{"num": "0.0001"}]]"#,
+        "3.14159|0.1|1234567|1e-04",
+    ),
+    (
+        "{:.2f}|{:8.3f}|{:e}|{:.2E}|{:g}|{:.3}",
+        r#"[[{"num": "3.14159"}], [{"num": "3.14159"}], [{"num": "3.14159"}], [{"num": "3.14159"}], [{"num": "3.14159"}], [{"num": "3.14159"}]]"#,
+        "3.14|   3.142|3.141590e+00|3.14E+00|3.14159|3.14",
+    ),
+    (
+        "{:08.2f}|{:<8.1f}|{:^9}|",
+        r#"[[{"op": "-"}, {"num": "3.14159"}], [{"num": "2.25"}], [{"num": "0.5"}]]"#,
+        "-0003.14|2.2     |   0.5   |",
+    ),
+    (
+        "{}|{:>3}|{:d}|{:x}|{}|{:>6}|{:d}",
+        r#"[[{"chr": "A"}], [{"chr": "B"}], [{"chr": "A"}], [{"chr": "A"}], [{"kw": "true"}], [{"kw": "false"}], [{"kw": "true"}]]"#,
+        "A|  B|65|41|true| false|1",
+    ),
+    (
+        "{:.3}|{:>5.2}|{:-^8}|{{x}}",
+        r#"[[{"str": "abcdef"}], [{"str": "xyz"}], [{"str": "hi"}]]"#,
+        "abc|   xy|---hi---|{x}",
+    ),
+    (
+        "{:0>4}|{:<05}|{}",
+        r#"[[{"num": "7"}], [{"num": "7"}], [{"ref": "s_name"}]]"#,
+        "0007|7    |Ann",
+    ),
+];
+
+/// A C++20 project that prints each of [`FORMAT_CASES`] on a line of its
+/// own, after creating `name` ("Ann").
+fn format_cases_project() -> b2c_model::Document {
+    let mut body = vec![serde_json::json!({
+        "id": "b_name", "type": "var.declare", "v": 1,
+        "fields": {"TYPE": "std::string", "NAME": {"sym": "s_name", "name": "name"}},
+        "inputs": {"VALUE": {"expr": [{"str": "Ann"}]}}
+    })];
+    for (index, (pattern, values, _)) in FORMAT_CASES.iter().enumerate() {
+        let values: Vec<serde_json::Value> = serde_json::from_str(values).unwrap();
+        let inputs: serde_json::Map<String, serde_json::Value> = values
+            .into_iter()
+            .enumerate()
+            .map(|(item, tokens)| (format!("ITEM{item}"), serde_json::json!({ "expr": tokens })))
+            .collect();
+        body.push(serde_json::json!({
+            "id": format!("b_print{index}"), "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+            "inputs": {"ITEM0": {"block": {
+                "id": format!("b_format{index}"), "type": "text.format", "v": 1,
+                "extra": {"itemCount": inputs.len()},
+                "fields": {"FORMAT": pattern},
+                "inputs": inputs
+            }}}
+        }));
+    }
+    let project = serde_json::json!({
+        "format": "blocks2cpp/project",
+        "formatVersion": 1,
+        "generator": {"app": "1.0.0", "catalog": "1.3.0"},
+        "project": {"id": "p", "name": "Format", "language": {"standard": "c++20"}},
+        "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [{
+            "id": "b_main", "type": "program.main", "v": 1, "statements": {"BODY": body}
+        }]}}]
+    });
+    b2c_model::load(&serde_json::to_vec(&project).unwrap()).unwrap()
+}
+
+/// The one file `document` generates for `standard`, through the stages a
+/// build runs, none of which may report anything.
+fn format_source(document: &b2c_model::Document, standard: CppStandard) -> String {
+    let mut document = document.clone();
+    document.project.language.standard = standard;
     let catalog = b2c_catalog::core_catalog();
     let resolved = b2c_catalog::resolve_report(&document, catalog);
     assert!(resolved.diagnostics.is_empty(), "{:#?}", resolved.diagnostics);
@@ -1330,51 +1474,105 @@ fn format_compiles_and_runs_on_every_gxx_with_std_format() {
     );
     assert!(analysis.diagnostics.is_empty(), "{:#?}", analysis.diagnostics);
     let generation = crate::generate_with_report(&analysis.program, &CodegenOptions::default());
+    assert_eq!(generation.placeholders, 0);
     let [file] = generation.project.files.as_slice() else {
         panic!("one file expected");
     };
-    let source = file.contents.clone();
+    file.contents.clone()
+}
+
+/// Builds `source` with `gxx` and `flag` at the strict level, runs it and
+/// gives back what it printed.
+fn build_and_run(gxx: &Path, flag: &str, source: &str, dir: &Path, name: &str) -> String {
+    let path = dir.join(format!("{name}.cpp"));
+    std::fs::write(&path, source).unwrap();
+    let program = dir.join(name);
+    let output = command(gxx)
+        .arg(flag)
+        .args(STRICT)
+        .arg(&path)
+        .arg("-o")
+        .arg(&program)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{} {flag} rejected the program:\n{}\n--- source ---\n{source}",
+        gxx.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let run = command(&program).output().unwrap();
+    assert!(run.status.success(), "{} {flag}: {:?}", gxx.display(), run.status);
+    String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n")
+}
+
+/// *format … with* is `std::format` under C++20 and `b2c::format`, the
+/// `std::ostringstream` helper, under C++17 (03 §3.7.4): C++20's form is
+/// built with every g++ that has `std::format` (GCC 13 on), C++17's with
+/// every g++ (GCC 11 on, under C++17 and C++20), and each prints what
+/// `std::format` writes.
+#[test]
+fn format_writes_the_same_text_in_both_forms() {
+    let catalog = b2c_catalog::core_catalog();
+    let simple = b2c_model::load(FORMAT_PROJECT.as_bytes()).unwrap();
+    let cases = format_cases_project();
+    let mut expected = String::from("Ann scored 9.2 Atrue| {ok}\n");
+    for (_, _, line) in FORMAT_CASES {
+        expected.push_str(line);
+        expected.push('\n');
+    }
+    let new = format_source(&simple, CppStandard::Cpp20);
     for needle in [
         "#include <format>",
         r#"std::format("{} scored {:.1f} {}{:>4}| {{ok}}", name, 9.25, 'A', true)"#,
     ] {
-        assert!(source.contains(needle), "{needle} not in\n{source}");
+        assert!(new.contains(needle), "{needle} not in\n{new}");
     }
-    // Under C++17 the catalog stage refuses the block (`B2C-E0703`).
+    let old = format_source(&simple, CppStandard::Cpp17);
+    assert!(
+        old.contains(r#"b2c::format("{} scored {:.1f} {}{:>4}| {{ok}}", name, 9.25, 'A', true)"#),
+        "{old}"
+    );
+    assert!(!old.contains("<format>"), "{old}");
+    // Under C++17 the catalog stage no longer refuses the block: it has an
+    // older form (`requires` with `fallback`).
+    let mut document = simple.clone();
     document.project.language.standard = CppStandard::Cpp17;
-    let old = b2c_catalog::resolve_report(&document, catalog);
-    let codes: Vec<&str> = old.diagnostics.iter().map(|d| d.code.0.as_str()).collect();
-    assert_eq!(codes, ["B2C-E0703"]);
+    assert!(
+        b2c_catalog::resolve_report(&document, catalog)
+            .diagnostics
+            .is_empty()
+    );
 
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("format.cpp");
-    std::fs::write(&path, &source).unwrap();
-    let mut built = 0;
-    for gxx in compilers() {
-        if !has_std_format(&gxx, dir.path()) {
-            continue;
+    let programs = |standard| [format_source(&simple, standard), format_source(&cases, standard)];
+    let (mut new_built, mut old_built) = (0, 0);
+    for (index, gxx) in compilers().iter().enumerate() {
+        for (run, (flag, standard)) in [
+            ("-std=c++17", CppStandard::Cpp17),
+            ("-std=c++20", CppStandard::Cpp17),
+            ("-std=c++20", CppStandard::Cpp20),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if standard == CppStandard::Cpp20 && !has_std_format(gxx, dir.path()) {
+                continue;
+            }
+            let mut stdout = String::new();
+            for (part, program) in programs(standard).iter().enumerate() {
+                let name = format!("format_{index}_{run}_{part}");
+                stdout.push_str(&build_and_run(gxx, flag, program, dir.path(), &name));
+            }
+            assert_eq!(stdout, expected, "{} {flag} {standard:?}", gxx.display());
+            if standard == CppStandard::Cpp20 {
+                new_built += 1;
+            } else {
+                old_built += 1;
+            }
         }
-        let program = dir.path().join(format!("format{built}"));
-        let output = command(&gxx)
-            .arg("-std=c++20")
-            .args(STRICT)
-            .arg(&path)
-            .arg("-o")
-            .arg(&program)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{} rejected the program:\n{}\n--- source ---\n{source}",
-            gxx.display(),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let run = command(&program).output().unwrap();
-        let stdout = String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n");
-        assert_eq!(stdout, "Ann scored 9.2 Atrue| {ok}\n", "{}", gxx.display());
-        built += 1;
     }
     if std::env::var_os("B2C_REQUIRE_GXX").is_some() {
-        eprintln!("format … with: built with {built} g++ that have std::format");
+        eprintln!("format … with: std::format built with {new_built}, b2c::format with {old_built} g++ runs");
     }
 }

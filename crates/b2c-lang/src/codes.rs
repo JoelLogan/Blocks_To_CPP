@@ -180,7 +180,8 @@ pub(crate) const NAMESPACE_IN_USE: &str = "B2C-I0523";
 // --- Generating C++ (E07xx), reported by the analyser ----------------------
 //
 // None. `B2C-E0703`, a block that needs a newer standard than the project's
-// (*format … with*), is the catalog stage's (`b2c-catalog`, from the
+// and has no older form (none of the core catalog's: *format … with* has
+// one, 03 §3.7.4), is the catalog stage's (`b2c-catalog`, from the
 // catalog's `requires`, w4-editor-tools.md §6.1); a C++20 standard
 // sub-namespace (`std::ranges`, `std::views`, `std::numbers`, 06 §6.14.3)
 // will be reported the same way when *use namespace* offers them (M4). It is

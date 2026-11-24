@@ -898,7 +898,12 @@ statement (with its comment lines and nested bodies) and expression has one.
   initialisers or positional ones) and a comparable struct's operators.
   Every block W2 added has a form for both standards, so none reports
   `E0703`; the editor's gating service hides what the standard or the
-  toolchain cannot compile from wave W4 on. (`E0701` and
+  toolchain cannot compile from wave W4 on. Wave W4's *format … with* is
+  `std::format` under C++20 and the `b2c::format` helper under C++17
+  ([03 §3.7.4](03-block-language.md#374-text)), chosen by the standard
+  alone too, so it does not report `E0703` either; a C++20 project on a
+  toolchain without `std::format` (GCC 11 and 12) gets g++'s error, which
+  the editor explains. (`E0701` and
   `E0702` are the generator's own errors: a placeholder in generated code,
   and libraries not yet supported; see the
   [diagnostics reference](../reference/diagnostics/generator.md).)

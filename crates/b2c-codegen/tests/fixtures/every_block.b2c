@@ -3922,6 +3922,71 @@
                   }
                 },
                 {
+                  "id": "b901",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "block": {
+                        "id": "b902",
+                        "type": "text.format",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 5
+                        },
+                        "fields": {
+                          "FORMAT": "format {}|{:>3}|{:.2f}|{:x}|{:^7}|"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "ref": "s_who"
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "ref": "s_age"
+                              }
+                            ]
+                          },
+                          "ITEM2": {
+                            "expr": [
+                              {
+                                "num": "3.14159"
+                              }
+                            ]
+                          },
+                          "ITEM3": {
+                            "expr": [
+                              {
+                                "num": "255"
+                              }
+                            ]
+                          },
+                          "ITEM4": {
+                            "expr": [
+                              {
+                                "kw": "true"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
                   "id": "b193",
                   "type": "program.exit",
                   "v": 1,

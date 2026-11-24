@@ -511,8 +511,9 @@ modules* is shown on *define*, *struct*, *enum* and *global* in a project
 with several modules ([§3.8](#38-organisation-features-editor)).
 
 **In M3** (wave W4) *format … with* joins the Text category after *join*,
-so the catalog has 89 blocks; it is offered with C++20 and a toolchain that
-has `std::format` ([§3.7.4](#374-text)). *create* gains its ⚙ popover
+so the catalog has 89 blocks; it is `std::format` with C++20 and a helper
+with C++17, so it is offered whatever the standard or the toolchain
+([§3.7.4](#374-text)). *create* gains its ⚙ popover
 ([§3.7.2](#372-variables)), *item of* and *set item* their *fast unchecked
 access* ([§3.7.8](#378-collections)), and *use header*, *check at compile
 time*, *go on into the next case* and *change*'s bitwise forms are offered
@@ -632,7 +633,7 @@ goes straight into a whole number, which C++ leaves undefined.
 | `"hello"` | `"hello"` (escaped per [08 §8.4.2](08-security.md#842-string-and-character-literals)) |
 | `character 'a'` | `'a'` (one ASCII character; use text for anything else) |
 | `join (a) (b) ⊕` | Idiomatic per part: `std::string(a) + b`, `+ std::to_string(n)` for whole numbers and `+ b2c::to_text(x)` for decimal numbers, which writes the number exactly as `print` would, `+ std::string(1, c)`; `std::format` when the *formatting style* setting is `format` and the toolchain supports it |
-| `format [{} scored {}] with (name) (score) ⊕` | `std::format("{} scored {}", name, score)` (C++20 with GCC 13+, wave W4). The pattern is a text field, as `std::format` needs it fixed when the program is built; each place is `{}` or `{:spec}` with `[[fill]align][width][.precision][letter]` (`{:.2f}`, `{:>5}`), `{{` and `}}` are braces of their own, and the places must be as many as the values (`B2C-E0306`) and fit them (`B2C-E0312`); the values are whole and decimal numbers, characters, true/false values and text (`B2C-E0314`). There is no older form: the toolbox offers the block only with C++20 and a toolchain that has `std::format`, and under C++17 the block is `B2C-E0703` |
+| `format [{} scored {}] with (name) (score) ⊕` | `std::format("{} scored {}", name, score)` (C++20 with GCC 13+, wave W4). The pattern is a text field, as `std::format` needs it fixed when the program is built; each place is `{}` or `{:spec}` with `[[fill]align][width][.precision][letter]` (`{:.2f}`, `{:>5}`), `{{` and `}}` are braces of their own, and the places must be as many as the values (`B2C-E0306`) and fit them (`B2C-E0312`); the values are whole and decimal numbers, characters, true/false values and text (`B2C-E0314`). Under C++17 it is `b2c::format("{} scored {}", name, score)`, a `std::ostringstream` helper ([§3.9](#39-support-helpers)) that writes the same text, so the toolbox offers the block whatever the standard; a C++20 project needs a toolchain with `std::format` (GCC 13 or newer) |
 | `length of (s)` | `static_cast<int>(s.size())`; a character is `B2C-E0301` ("Use a text value here.") |
 | `letter (i) of (s)` | `s.at(static_cast<std::size_t>(i))`, a character; a literal position as written (`s.at(0)`) |
 | `part of (s) from (i) length (n)` | `s.substr(static_cast<std::size_t>(i), static_cast<std::size_t>(n))`, a literal as written; fewer characters when the text ends first |
@@ -652,7 +653,8 @@ The text these blocks give is a `std::string` object and is used as it is:
 `for (const auto& letter : b2c::to_lower(text))`, and a *join* that starts
 with one does not wrap it in `std::string(…)`. **In M3** (wave W2) every
 block of this table is built but *format … with*, which wave W4 built with
-its feature gating (it needs GCC 13 and C++20, with no fallback); *join*'s
+its feature gating (`std::format` with C++20 and GCC 13, and the helper
+with C++17); *join*'s
 `std::format` form waits for the *formatting style* setting; *as text*
 and *text as number* are in the Text category
 ([§3.7.3](#373-math-and-logic)).
@@ -1101,7 +1103,11 @@ similar.
 (M2), `to_text` for decimal numbers (written as `std::cout` would write
 them now), and `split`, `to_lower`, `to_upper`, `trim`, `replace_all`,
 `starts_with` and `ends_with` (C++17 only; C++20 has the members),
-`random_real`, `remove_at` and `read_line`. `split` keeps empty parts and gives one part
+`random_real`, `remove_at` and `read_line`; wave W4 adds `format` (C++17
+only; C++20 has `std::format`), which writes what `std::format` writes for
+the places *format … with* accepts, building its text in a
+`std::ostringstream` (a decimal number with no letter or precision in the
+fewest digits that read back as the same number, `std::to_chars`). `split` keeps empty parts and gives one part
 for each character for an empty separator; `to_lower` and `to_upper` change
 the letters A to Z only; `trim` drops spaces and tabs; `replace_all` with an
 empty old text changes nothing; `remove_at` throws `std::out_of_range` for a

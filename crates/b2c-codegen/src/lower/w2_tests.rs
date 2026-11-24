@@ -766,9 +766,11 @@ ok
 1 3
 caught
 [one][two][][last] 4
+[Ann|  7|3.14|ff|1e-04|true |{x}]
 ";
 
-/// A program that uses every helper W2 adds (w2.md §2.12) and prints
+/// A program that uses every helper W2 adds (w2.md §2.12), and W4's
+/// `b2c::format` (*format … with* under C++17, 03 §3.7.4), and prints
 /// [`HELPERS_OUTPUT`]; `b2c_support.hpp` holds them all.
 const HELPERS_MAIN: &str = r#"#include <deque>
 #include <iostream>
@@ -837,6 +839,9 @@ int main() {
         ++lines;
     }
     std::cout << ' ' << lines << '\n';
+    const std::string name = "Ann";
+    std::cout << b2c::format("[{}|{:>3}|{:.2f}|{:x}|{}|{:<5}|{{x}}]", name, 7, 3.14159, 255, 0.0001, true)
+              << '\n';
 }
 "#;
 

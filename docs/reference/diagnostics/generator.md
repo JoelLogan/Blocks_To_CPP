@@ -44,14 +44,16 @@ use a newer version of Blocks2Cpp.
 
 **What it means:** the program uses a block whose every form needs a newer
 C++ standard than the project's, as the block catalog says (its `requires`
-table without `fallback = true`): *format … with* writes `std::format`, which arrives
-with C++20. The namespaces `std::ranges`, `std::views` and `std::numbers`,
-which arrive with C++20 too, will be reported the same way when the menu of
-*use namespace* offers them (M4).
+table without `fallback = true`). No block of the catalog is reported now:
+*format … with*, which writes `std::format` under C++20, writes the same
+text with a helper, `b2c::format`, under C++17. The namespaces
+`std::ranges`, `std::views` and `std::numbers`, which arrive with C++20,
+will be reported this way when the menu of *use namespace* offers them
+(M4).
 
-**Message:** "The "format" block needs C++20 or newer, and this project is
-for C++17. Choose C++20 or newer in the project settings, or use other
-blocks."
+**Message:** "The "use namespace" block needs C++20 or newer, and this
+project is for C++17. Choose C++20 or newer in the project settings, or use
+other blocks."
 
 **How to fix:** choose C++20 or newer in the project settings, or use other
-blocks (*join* for *format … with*).
+blocks.

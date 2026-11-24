@@ -58,10 +58,10 @@ repeat = { count = "itemCount" }
 default = [{ str = "" }]
 
 # *format … with* (03 §3.7.4, w4-editor-tools.md §7): `std::format`, which
-# needs C++20 and a toolchain that has it (GCC 13 and later); no older form,
-# so the editor hides the block elsewhere and the catalog stage reports
-# B2C-E0703 under an older standard. The pattern is a text field: std::format
-# needs it fixed when the program is built.
+# needs C++20 and a toolchain that has it (GCC 13 and later); under C++17 the
+# generator writes the same text with `b2c::format`, a `std::ostringstream`
+# helper (`fallback`), so the editor offers the block everywhere. The pattern
+# is a text field: std::format needs it fixed when the program is built.
 [[block]]
 id = "text.format"
 version = 1
@@ -70,9 +70,8 @@ shape = "reporter"
 output = "std::string"
 label = { friendly = "format %FORMAT with %ITEM …", cpp = "std::format(%FORMAT, %ITEM, …)" }
 lowering = "builtin"
-headers = ["<format>"]
-help = "Text from a pattern: each {} is replaced by the next value, in order, and {:.2f} shows a decimal number with 2 decimal places. Needs C++20 and a compiler that has std::format (GCC 13 or newer)."
-requires = { standard = "c++20", capability = "stdFormat" }
+help = "Text from a pattern: each {} is replaced by the next value, in order, and {:.2f} shows a decimal number with 2 decimal places. With C++20 it is std::format, which needs GCC 13 or newer; with C++17 a helper writes the same text."
+requires = { standard = "c++20", capability = "stdFormat", fallback = true }
 
 [[block.field]]
 name = "FORMAT"

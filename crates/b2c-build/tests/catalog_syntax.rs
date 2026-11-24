@@ -76,10 +76,13 @@
 //!   no fallback (w4-editor-tools.md §6.1) has its cases generated, checked
 //!   and compiled only under the standards of [`STANDARDS`] that are at
 //!   least that one; its snapshot is still the C++20 code, so it must not
-//!   need a newer standard. A case whose block needs a toolchain capability
-//!   (`stdFormat`) is compiled only with a g++ whose probe found it (07
-//!   §7.3), as the editor offers the block only there: not with GCC 11 and
-//!   12, which have no `<format>`.
+//!   need a newer standard. With `fallback`, the generator has a form for
+//!   the older standards, so its cases are generated and compiled under all
+//!   of them. A case whose block needs a toolchain capability (`stdFormat`)
+//!   is compiled under the standards where the generator writes the form
+//!   that needs it only with a g++ whose probe found it (07 §7.3): *format
+//!   … with*'s `std::format` under C++20 not with GCC 11 and 12, which have
+//!   no `<format>`, and its C++17 form, `b2c::format`, with every g++.
 
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -243,10 +246,14 @@ impl Case {
     }
 
     /// Whether `toolchain` has every capability the case's block needs
-    /// (probed at discovery, 07 §7.3).
-    fn compiles_with(&self, toolchain: &Toolchain) -> bool {
+    /// under `standard` (probed at discovery, 07 §7.3): a capability is
+    /// needed where the generator writes the newer form, from the standard
+    /// the block requires on; before it, a block with `fallback` has a form
+    /// that needs none.
+    fn compiles_with(&self, toolchain: &Toolchain, standard: CppStandard) -> bool {
         let requires = self.requires();
-        requires.fallback
+        let newer_form = requires.standard.is_none_or(|needed| standard >= needed);
+        !newer_form
             || requires.capability.is_none_or(|capability| match capability {
                 Capability::StdFormat => toolchain.capabilities.library.format,
             })
@@ -677,6 +684,7 @@ const HEADERS: &[(&str, &[&str])] = &[
     ("std::ranges", &["<algorithm>"]),
     ("std::round", &["<cmath>"]),
     ("std::runtime_error", &["<stdexcept>"]),
+    ("std::scientific", &["<ios>", "<iostream>"]),
     ("std::set", &["<set>"]),
     ("std::setprecision", &["<iomanip>"]),
     ("std::sin", &["<cmath>"]),
@@ -693,11 +701,14 @@ const HEADERS: &[(&str, &[&str])] = &[
     ("std::tan", &["<cmath>"]),
     ("std::this_thread", &["<thread>"]),
     ("std::tie", &["<tuple>"]),
+    ("std::to_chars", &["<charconv>"]),
+    ("std::to_chars_result", &["<charconv>"]),
     ("std::to_string", &["<string>"]),
     ("std::tolower", &["<cctype>"]),
     ("std::toupper", &["<cctype>"]),
     ("std::uniform_int_distribution", &["<random>"]),
     ("std::uniform_real_distribution", &["<random>"]),
+    ("std::uppercase", &["<ios>", "<iostream>"]),
     ("std::vector", &["<vector>"]),
     ("std::ws", &["<istream>", "<iostream>"]),
 ];
@@ -865,7 +876,7 @@ fn syntax_check(
     let mut sources = Vec::new();
     let compiled = cases
         .iter()
-        .filter(|case| case.standards().contains(&standard) && case.compiles_with(toolchain));
+        .filter(|case| case.standards().contains(&standard) && case.compiles_with(toolchain, standard));
     for case in compiled {
         let generated = generate_with(case, standard, textbook)?;
         let dir = folder.join(&case.name);

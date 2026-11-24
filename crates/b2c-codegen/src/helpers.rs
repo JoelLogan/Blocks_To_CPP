@@ -39,12 +39,15 @@ pub(crate) enum Helper {
     RemoveAt,
     /// `b2c::read_line(file, line)` (*read line*, *for each line in file*).
     ReadLine,
+    /// `b2c::format(pattern, values…)` (*format … with*, C++17 only; C++20
+    /// has `std::format`).
+    Format,
 }
 
 impl Helper {
     /// Every helper, in emission order.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 14] = [
+    pub(crate) const ALL: [Self; 15] = [
         Self::RandomInt,
         Self::AskLine,
         Self::Ask,
@@ -59,6 +62,7 @@ impl Helper {
         Self::RandomReal,
         Self::RemoveAt,
         Self::ReadLine,
+        Self::Format,
     ];
 
     /// The standard headers the helper's code needs.
@@ -80,6 +84,14 @@ impl Helper {
             Self::Trim | Self::ReplaceAll => &["<cstddef>", "<string>"],
             Self::RemoveAt => &["<cstddef>"],
             Self::ReadLine => &["<istream>", "<string>"],
+            Self::Format => &[
+                "<charconv>",
+                "<cstddef>",
+                "<iomanip>",
+                "<ios>",
+                "<sstream>",
+                "<string>",
+            ],
         }
     }
 
@@ -100,6 +112,7 @@ impl Helper {
             Self::RandomReal => RANDOM_REAL,
             Self::RemoveAt => REMOVE_AT,
             Self::ReadLine => READ_LINE,
+            Self::Format => FORMAT,
         }
     }
 }
@@ -386,6 +399,253 @@ inline std::istream& read_line(std::istream& file, std::string& line) {
 \t\tline.pop_back();
 \t}
 \treturn file;
+}
+";
+
+const FORMAT: &str = "\
+/// One place of a `b2c::format` pattern, read from what follows its `{:`:
+/// `[[fill]align][0][width][.precision][letter]`.
+struct FormatPlace {
+	std::string fill = \" \";
+	char align = '\\0';
+	bool zero = false;
+	std::size_t width = 0;
+	int precision = -1;
+	char letter = '\\0';
+};
+
+/// Reads a place's spec, the text between `{:` and `}`.
+inline FormatPlace format_place(const std::string& spec) {
+	FormatPlace place;
+	const auto is_align = [](char c) { return c == '<' || c == '>' || c == '^'; };
+	// The fill is one character, up to four bytes of UTF-8, before an alignment.
+	std::size_t fill = 1;
+	while (fill < spec.size() && fill < 4 && (static_cast<unsigned char>(spec[fill]) & 0xC0) == 0x80) {
+		++fill;
+	}
+	std::size_t at = 0;
+	if (spec.size() > fill && is_align(spec[fill])) {
+		place.fill = spec.substr(0, fill);
+		place.align = spec[fill];
+		at = fill + 1;
+	} else if (!spec.empty() && is_align(spec[0])) {
+		place.align = spec[0];
+		at = 1;
+	}
+	if (at < spec.size() && spec[at] == '0') {
+		place.zero = true;
+		++at;
+	}
+	while (at < spec.size() && spec[at] >= '0' && spec[at] <= '9') {
+		place.width = place.width * 10 + static_cast<std::size_t>(spec[at] - '0');
+		++at;
+	}
+	if (at < spec.size() && spec[at] == '.') {
+		place.precision = 0;
+		++at;
+		while (at < spec.size() && spec[at] >= '0' && spec[at] <= '9') {
+			place.precision = place.precision * 10 + (spec[at] - '0');
+			++at;
+		}
+	}
+	if (at < spec.size()) {
+		place.letter = spec[at];
+	}
+	return place;
+}
+
+/// The number of characters of a UTF-8 text: its bytes that do not continue
+/// a character.
+inline std::size_t format_length(const std::string& text) {
+	std::size_t length = 0;
+	for (const char byte : text) {
+		if ((static_cast<unsigned char>(byte) & 0xC0) != 0x80) {
+			++length;
+		}
+	}
+	return length;
+}
+
+/// `text` filled to the place's width, on the side its alignment says, or
+/// on the side `align` says when the place names none.
+inline std::string format_fill(const std::string& text, const FormatPlace& place, char align) {
+	const std::size_t length = format_length(text);
+	if (length >= place.width) {
+		return text;
+	}
+	const std::size_t missing = place.width - length;
+	const char side = place.align == '\\0' ? align : place.align;
+	const std::size_t before = side == '>' ? missing : side == '^' ? missing / 2 : std::size_t{0};
+	std::string filled;
+	for (std::size_t i = 0; i < before; ++i) {
+		filled += place.fill;
+	}
+	filled += text;
+	for (std::size_t i = before; i < missing; ++i) {
+		filled += place.fill;
+	}
+	return filled;
+}
+
+/// A number's text, filled on the left, or with zeros after its sign for
+/// the `0` option when the place names no alignment and the number is
+/// finite.
+inline std::string format_number(const std::string& text, const FormatPlace& place) {
+	const std::size_t sign = !text.empty() && text[0] == '-' ? 1U : 0U;
+	const bool digit = text.size() > sign && text[sign] >= '0' && text[sign] <= '9';
+	if (place.zero && place.align == '\\0' && digit && text.size() < place.width) {
+		std::string padded = text;
+		padded.insert(sign, place.width - text.size(), '0');
+		return padded;
+	}
+	return format_fill(text, place, '>');
+}
+
+/// A whole number in base 10, or in base 2, 8 or 16 for the letters b, B,
+/// o, x and X, with a '-' before a negative number.
+inline std::string format_integer(long long value, const FormatPlace& place) {
+	const char letter = place.letter;
+	const unsigned base = letter == 'b' || letter == 'B' ? 2U
+		: letter == 'o' ? 8U
+		: letter == 'x' || letter == 'X' ? 16U
+		: 10U;
+	const std::string digits = letter == 'X' ? \"0123456789ABCDEF\" : \"0123456789abcdef\";
+	unsigned long long magnitude = static_cast<unsigned long long>(value);
+	if (value < 0) {
+		magnitude = 0ULL - magnitude;
+	}
+	std::string text;
+	do {
+		text.insert(text.begin(), digits[static_cast<std::size_t>(magnitude % base)]);
+		magnitude /= base;
+	} while (magnitude > 0);
+	if (value < 0) {
+		text.insert(text.begin(), '-');
+	}
+	return format_number(text, place);
+}
+
+/// A whole number, or with the letter c the character of that code.
+inline std::string format_value(const FormatPlace& place, int value) {
+	if (place.letter == 'c') {
+		return format_fill(std::string(1, static_cast<char>(value)), place, '<');
+	}
+	return format_integer(value, place);
+}
+
+/// A character, or with b, B, d, o, x or X its code.
+inline std::string format_value(const FormatPlace& place, char value) {
+	if (place.letter == '\\0' || place.letter == 'c') {
+		return format_fill(std::string(1, value), place, '<');
+	}
+	return format_integer(static_cast<unsigned char>(value), place);
+}
+
+/// `true` or `false`, or with b, B, d, o, x or X its number, 1 or 0.
+inline std::string format_value(const FormatPlace& place, bool value) {
+	if (place.letter == '\\0' || place.letter == 's') {
+		return format_fill(value ? \"true\" : \"false\", place, '<');
+	}
+	return format_integer(value ? 1 : 0, place);
+}
+
+/// A decimal number: in the fewest digits that read back as the same
+/// number, or as `printf` writes it with the letters f, e and g (F, E and G
+/// in capitals) and a precision (6 when the place names none).
+inline std::string format_value(const FormatPlace& place, double value) {
+	if (place.letter == '\\0' && place.precision < 0) {
+		char shortest[32];
+		const std::to_chars_result end = std::to_chars(shortest, shortest + sizeof shortest, value);
+		return format_number(std::string(shortest, end.ptr), place);
+	}
+	std::ostringstream text;
+	const char letter = place.letter;
+	if (letter == 'f' || letter == 'F') {
+		text << std::fixed;
+	} else if (letter == 'e' || letter == 'E') {
+		text << std::scientific;
+	}
+	if (letter == 'F' || letter == 'E' || letter == 'G') {
+		text << std::uppercase;
+	}
+	text << std::setprecision(place.precision < 0 ? 6 : place.precision) << value;
+	return format_number(text.str(), place);
+}
+
+/// A text, or with a precision its first characters.
+inline std::string format_value(const FormatPlace& place, const std::string& value) {
+	std::string text = value;
+	if (place.precision >= 0) {
+		std::size_t characters = 0;
+		for (std::size_t at = 0; at < text.size(); ++at) {
+			const bool starts = (static_cast<unsigned char>(text[at]) & 0xC0) != 0x80;
+			if (starts && characters++ == static_cast<std::size_t>(place.precision)) {
+				text.erase(at);
+				break;
+			}
+		}
+	}
+	return format_fill(text, place, '<');
+}
+
+/// A text written in the program, `\"...\"`.
+inline std::string format_value(const FormatPlace& place, const char* value) {
+	return format_value(place, std::string(value));
+}
+
+/// Copies `pattern` from `at` into `out` up to its next place, with `{{` and
+/// `}}` as single braces, then reads that place's spec (what follows its
+/// `:`) into `spec` and moves `at` past it. Gives back false at the end of
+/// the pattern.
+inline bool format_next(std::ostringstream& out, const std::string& pattern, std::size_t& at, std::string& spec) {
+	while (at < pattern.size()) {
+		const char c = pattern[at];
+		if ((c == '{' || c == '}') && at + 1 < pattern.size() && pattern[at + 1] == c) {
+			out << c;
+			at += 2;
+		} else if (c == '{') {
+			const std::size_t close = pattern.find('}', at);
+			spec = pattern.substr(at + 1, close - at - 1);
+			if (!spec.empty()) {
+				spec.erase(0, 1);
+			}
+			at = close + 1;
+			return true;
+		} else {
+			out << c;
+			++at;
+		}
+	}
+	return false;
+}
+
+/// The rest of the pattern, after its last place.
+inline void format_rest(std::ostringstream& out, const std::string& pattern, std::size_t at) {
+	std::string spec;
+	static_cast<void>(format_next(out, pattern, at, spec));
+}
+
+/// The rest of the pattern, with `value` in its next place and `rest` in
+/// the places after it.
+template <typename T, typename... Rest>
+void format_rest(std::ostringstream& out, const std::string& pattern, std::size_t at, const T& value, const Rest&... rest) {
+	std::string spec;
+	if (format_next(out, pattern, at, spec)) {
+		out << format_value(format_place(spec), value);
+	}
+	format_rest(out, pattern, at, rest...);
+}
+
+/// Text from a pattern, as the format function of C++20 writes it: each
+/// `{}` or `{:spec}` is replaced by the next value, and `{{` and `}}` are
+/// braces of their own. The block checks the pattern: as many places as
+/// values, each spec `[[fill]align][0][width][.precision][letter]` fitting
+/// its value.
+template <typename... Values>
+std::string format(const std::string& pattern, const Values&... values) {
+	std::ostringstream out;
+	format_rest(out, pattern, 0, values...);
+	return out.str();
 }
 ";
 

@@ -642,11 +642,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - _format … with_ (wave W4): `std::format("pattern", values…)` from a
   pattern typed on the block, checked by the analyser (a place per value,
   `{}` or `{:spec}` fitting its value, values of the kinds `std::format`
-  takes: `B2C-E0306`, `B2C-E0312`, `B2C-E0314`). It needs C++20 and a
-  toolchain with `std::format`: the toolbox offers it only then, a C++17
-  project reports `B2C-E0703` (now reported, from the catalog's
-  `requires`), and a compiler without it gets a friendly message. The
-  block catalog has 89 blocks.
+  takes: `B2C-E0306`, `B2C-E0312`, `B2C-E0314`). Under C++17 it is
+  `b2c::format`, a `std::ostringstream` helper that writes the same text,
+  so the toolbox offers it whatever the standard; a C++20 project needs a
+  toolchain with `std::format`, and a compiler without it gets a friendly
+  message. The catalog stage now reports `B2C-E0703` from the catalog's
+  `requires` for a block with no older form (none of the catalog's yet).
+  The block catalog has 89 blocks.
 
 ### Changed
 
@@ -1091,6 +1093,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   are those of its value other than its default. `catalog.json` and the
   editor's definitions carry them the same way (an option's as a third
   element of its pair).
+- _format … with_ has its C++17 form, as 03 §3.7.4 has it: the generator
+  writes `b2c::format(pattern, values…)`, a `std::ostringstream` helper,
+  instead of `std::format`, and the block no longer reports `B2C-E0703`
+  (its catalog `requires` has `fallback = true`); the toolbox offers it
+  under C++17 and with any toolchain. The every-block project and the
+  catalog snapshot test build it under C++17 with every g++, GCC 11
+  included.
 
 ### Removed
 

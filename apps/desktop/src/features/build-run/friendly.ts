@@ -45,14 +45,15 @@ function first(quoted: readonly string[], fallback: string): string {
 /** The rules, in the order they are tried: patterns first, then options. */
 const RULES: readonly Rule[] = [
   {
-    // *format … with* (w4-editor-tools.md §7) on a g++ without `std::format`: GCC 11 and 12 have
-    // no `<format>` (`main.cpp:1:10: fatal error: format: No such file or directory`), and a
-    // C++17 build has no `std::format` (`'format' is not a member of 'std'`). Before the header
-    // rule below, which would send the student to a “use header” block.
+    // *format … with* (w4-editor-tools.md §7) in a C++20 project on a g++ without `std::format`:
+    // GCC 11 and 12 have no `<format>` (`main.cpp:1:10: fatal error: format: No such file or
+    // directory`), and a library without it may have the header but not the function (`'format'
+    // is not a member of 'std'`). C++17's form is a helper with no std::format (03 §3.7.4).
+    // Before the header rule below, which would send the student to a “use header” block.
     pattern:
       /^(?:(?:fatal error: )?format: No such file or directory|(?:error: )?[‘']format[’'] is not a member of [‘']std[’'])$/u,
     text: () =>
-      'This compiler has no std::format, which the “format … with” block needs: choose GCC 13 or newer on the toolchain page and C++20 or newer in the project settings, or use “join” instead.',
+      'This compiler has no std::format, which the “format … with” block uses with C++20: choose GCC 13 or newer on the toolchain page, or C++17 in the project settings, where the block needs no std::format, or use “join” instead.',
     notGeneratorBug: true,
     compilerAtPlace: true,
   },

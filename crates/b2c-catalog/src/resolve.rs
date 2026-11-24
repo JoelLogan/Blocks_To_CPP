@@ -297,7 +297,8 @@ impl Resolver<'_> {
 
     /// Reports a block every form of which needs a newer C++ than the
     /// project's, the catalog's `requires` without `fallback`
-    /// (`B2C-E0703`; w4-editor-tools.md §6.1): *format … with* needs C++20.
+    /// (`B2C-E0703`; w4-editor-tools.md §6.1). No core block needs it:
+    /// *format … with* has a C++17 form (03 §3.7.4).
     /// A toolchain capability is the build's to find out: the catalog stage
     /// does not know the toolchain.
     fn check_standard(&mut self, def: &BlockDef, location: &Location) {
@@ -1539,9 +1540,17 @@ repeat = { count = "catchCount" }
 
     #[test]
     fn a_block_that_needs_a_newer_standard_than_the_project_s_is_e0703() {
-        // *format … with* needs C++20 and has no older form; *contains*
-        // has one (`requires` with `fallback`), so it is never reported.
-        let resolve = |standard: &str| {
+        // *format … with* has an older form under C++17 (`requires` with
+        // `fallback`, 03 §3.7.4), so the core catalog's is never reported;
+        // the same block without its fallback is.
+        let mut strict = crate::core_catalog().clone();
+        strict
+            .blocks
+            .get_mut("text.format")
+            .and_then(|def| def.requires.as_mut())
+            .expect("text.format requires")
+            .fallback = false;
+        let resolve = |standard: &str, catalog: &crate::Catalog| {
             let value = serde_json::json!({
                 "format": "blocks2cpp/project",
                 "formatVersion": 1,
@@ -1556,9 +1565,10 @@ repeat = { count = "catchCount" }
                 }]}}]
             });
             let document = b2c_model::load(&serde_json::to_vec(&value).unwrap()).unwrap();
-            run(&document, crate::core_catalog()).diagnostics
+            run(&document, catalog).diagnostics
         };
-        let old = resolve("c++17");
+        assert_eq!(resolve("c++17", crate::core_catalog()), []);
+        let old = resolve("c++17", &strict);
         assert_eq!(
             codes_and_blocks(&old),
             [(codes::NEWER_STANDARD.to_owned(), "b2".to_owned())]
@@ -1567,8 +1577,8 @@ repeat = { count = "catchCount" }
             old[0].message,
             "The \"format\" block needs C++20 or newer, and this project is for C++17. Choose C++20 or newer in the project settings, or use other blocks."
         );
-        assert_eq!(resolve("c++20"), []);
-        assert_eq!(resolve("c++23"), []);
+        assert_eq!(resolve("c++20", &strict), []);
+        assert_eq!(resolve("c++23", &strict), []);
     }
 
     #[test]

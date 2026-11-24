@@ -79,6 +79,11 @@ impl Lowerer<'_> {
             (TextOp::Split, _) => helper("b2c::split", Helper::Split, self),
             (TextOp::Trim, _) => helper("b2c::trim", Helper::Trim, self),
             (TextOp::ReplaceAll, _) => helper("b2c::replace_all", Helper::ReplaceAll, self),
+            (TextOp::Format, _) if self.standard == CppStandard::Cpp17 => {
+                // `std::format` arrives with C++20: the helper writes the same
+                // text with a `std::ostringstream` (03 §3.7.4).
+                helper("b2c::format", Helper::Format, self)
+            }
             (TextOp::Format, _) => {
                 // `std::format("pattern", values…)` (*format … with*, C++20).
                 self.include("<format>");
@@ -414,6 +419,40 @@ pub(super) mod tests {
             lowerer.usage.helpers.iter().copied().collect::<Vec<_>>(),
             [Helper::StartsWith, Helper::EndsWith]
         );
+    }
+
+    #[test]
+    fn format_is_std_format_in_cpp20_and_a_helper_in_cpp17() {
+        let format = || {
+            call(
+                TextOp::Format,
+                vec![text("{} has {:.1f}"), var("s", Type::String), int("2")],
+                Type::String,
+            )
+        };
+        let program20 = program(CppStandard::Cpp20, &[("s", Type::String)]);
+        let mut lowerer20 = lowerer(&program20);
+        let cpp = lowerer20.expr(&format());
+        assert_eq!(
+            emit::expr_text(&cpp).trim_end(),
+            r#"std::format("{} has {:.1f}", s, 2)"#
+        );
+        assert!(lowerer20.usage.helpers.is_empty());
+        // C++17 has no `std::format`: the helper writes the same text with a
+        // `std::ostringstream` (03 §3.7.4), and `<format>` is not included.
+        let program17 = program(CppStandard::Cpp17, &[("s", Type::String)]);
+        let mut lowerer17 = lowerer(&program17);
+        let cpp = lowerer17.expr(&format());
+        assert_eq!(
+            emit::expr_text(&cpp).trim_end(),
+            r#"b2c::format("{} has {:.1f}", s, 2)"#
+        );
+        assert_eq!(
+            lowerer17.usage.helpers.iter().copied().collect::<Vec<_>>(),
+            [Helper::Format]
+        );
+        assert!(headers(&["<format>"]).is_subset(&lowerer20.item_headers.body));
+        assert!(headers(&["<format>"]).is_disjoint(&lowerer17.item_headers.body));
     }
 
     #[test]

@@ -115,33 +115,34 @@ describe('the requirements table', () => {
     expect(optionGate('var.change', 'OP', 'xor', mode())).toMatchObject({ reason: 'advanced' });
     expect(optionGate('var.change', 'OP', 'xor', mode({ showAdvanced: true })).allowed).toBe(true);
     expect(optionGate('var.change', 'OP', 'add', mode()).allowed).toBe(true);
-    expect(blockGate('text.format', mode({ standard: 'c++17' }))).toMatchObject({
-      reason: 'standard',
-      needs: 'c++20',
-    });
+    expect(optionGate('text.find', 'OP', 'starts', mode({ standard: 'c++17' })).allowed).toBe(true);
     expect(categoryGate('memory', mode())).toMatchObject({ reason: 'advanced' });
     expect(categoryGate('variables', mode()).allowed).toBe(true);
     expect(blockGate('var.declare', mode()).allowed).toBe(true);
     expect(typeGate('int', mode()).allowed).toBe(true);
   });
 
-  it('offers format … with from the catalog only with C++20 and std::format (w4-editor-tools.md §7)', () => {
+  it('offers format … with everywhere: C++17 has its helper (03 §3.7.4, w4-editor-tools.md §7)', () => {
     expect(AWAITED.has('block:text.format')).toBe(false);
-    expect(blockGate('text.format', mode()).allowed).toBe(true);
-    const old = { ...CAPABLE, stdFormat: false };
-    expect(blockGate('text.format', mode({ toolchain: old }))).toEqual({
-      allowed: false,
-      reason: 'toolchain',
-      needs: 'stdFormat',
+    expect(REQUIREMENTS.get('block:text.format')).toEqual({
+      standard: 'c++20',
+      capability: 'stdFormat',
+      fallback: true,
     });
-    // A toolchain not known yet refuses nothing; the build reports it.
+    expect(blockGate('text.format', mode()).allowed).toBe(true);
+    expect(blockGate('text.format', mode({ standard: 'c++17' })).allowed).toBe(true);
+    const old = { ...CAPABLE, stdFormat: false };
+    expect(blockGate('text.format', mode({ toolchain: old })).allowed).toBe(true);
     expect(blockGate('text.format', mode({ toolchain: null })).allowed).toBe(true);
     expect(BASIC_BLOCKS.has('text.format')).toBe(false);
   });
 
   it("refuses an option of a block that is itself refused, for the block's reason", () => {
-    const old = mode({ standard: 'c++17' });
-    expect(optionGate('text.format', 'ANY', 'x', old)).toEqual(blockGate('text.format', old));
+    const basic = mode();
+    expect(optionGate('program.check', 'ANY', 'x', basic)).toEqual(
+      blockGate('program.check', basic),
+    );
+    expect(optionGate('program.check', 'ANY', 'x', basic)).toMatchObject({ reason: 'advanced' });
   });
 
   /** Whether the block, option or category a row names is in the catalog (`null` for a type). */

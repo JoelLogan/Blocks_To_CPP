@@ -3372,7 +3372,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       { repeat: true },
     ],
     statementsNotInLabel: [],
-    help: 'Text from a pattern: each {} is replaced by the next value, in order, and {:.2f} shows a decimal number with 2 decimal places. Needs C++20 and a compiler that has std::format (GCC 13 or newer).',
+    help: 'Text from a pattern: each {} is replaced by the next value, in order, and {:.2f} shows a decimal number with 2 decimal places. With C++20 it is std::format, which needs GCC 13 or newer; with C++17 a helper writes the same text.',
     output: 'std::string',
     fields: [
       {
@@ -3404,9 +3404,9 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     order: [],
     placeVar: null,
     members: {},
-    headers: ['<format>'],
+    headers: [],
     optionHeaders: {},
-    requires: { standard: 'c++20', capability: 'stdFormat' },
+    requires: { standard: 'c++20', capability: 'stdFormat', fallback: true },
   },
   {
     id: 'text.join',
