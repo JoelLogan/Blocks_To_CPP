@@ -178,6 +178,10 @@ export interface RustFieldDef {
   readonly advanced?: readonly string[];
   /** What each listed value needs; written only when not empty. */
   readonly requires?: Readonly<Record<string, RustRequires>>;
+  /** `menu`: the words of the block menu's item that sets this checkbox; written only when set. */
+  readonly menu?: string;
+  /** `mark`: the words the block shows while a `menu` field is not at its default. */
+  readonly mark?: string;
 }
 
 /** `b2c_catalog::Repeat`. */
@@ -464,6 +468,8 @@ function fieldDef(value: unknown, path: string): RustFieldDef {
     'omitDefault',
     'advanced',
     'requires',
+    'menu',
+    'mark',
   ] as const;
   const o = object(value, path, keys);
   return {
@@ -477,6 +483,8 @@ function fieldDef(value: unknown, path: string): RustFieldDef {
     ...optional(o.omitDefault, `${path}.omitDefault`, (v, p) => ({ omitDefault: boolean(v, p) })),
     ...optional(o.advanced, `${path}.advanced`, (v, p) => ({ advanced: array(v, p, string) })),
     ...optional(o.requires, `${path}.requires`, (v, p) => ({ requires: record(v, p, requires) })),
+    ...optional(o.menu, `${path}.menu`, (v, p) => ({ menu: string(v, p) })),
+    ...optional(o.mark, `${path}.mark`, (v, p) => ({ mark: string(v, p) })),
   };
 }
 

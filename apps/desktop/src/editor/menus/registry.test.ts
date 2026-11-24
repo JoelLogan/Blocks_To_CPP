@@ -4,6 +4,7 @@
  * by default) and is undone with one Ctrl+Z, and Blockly's items put back when the last editor
  * detaches. The guessing game has 11 blocks and 11 expression slots (shadow blocks).
  */
+import { setOptionFilter } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -28,6 +29,7 @@ import {
   deleteLabel,
   installMenuItems,
   MENU_ITEM_IDS,
+  MENU_TOGGLE_ID,
   type MenuTarget,
 } from './registry';
 import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
@@ -218,6 +220,51 @@ describe('installing the menu items', () => {
     expect(precondition(MENU_ITEM_IDS.deleteAll, {})).toBe('hidden');
     // An empty canvas: nothing to delete.
     expect(precondition(MENU_ITEM_IDS.deleteAll, { workspace })).toBe('disabled');
+  });
+});
+
+describe('fast unchecked access (w4-editor-tools.md §7)', () => {
+  const item = `${MENU_TOGGLE_ID}_0`;
+  const appendSvg = (state: Blockly.serialization.blocks.State, on: Blockly.WorkspaceSvg) =>
+    Blockly.serialization.blocks.append(state, on) as Blockly.BlockSvg;
+
+  afterEach(() => {
+    setOptionFilter(null);
+  });
+
+  it('is an item of item of and set item, ticked while on, one undo step', async () => {
+    const workspace = renderedWorkspace();
+    attach(workspace);
+    const get = appendSvg({ type: 'coll.item' }, workspace);
+    const print = appendSvg({ type: 'io.print' }, workspace);
+    expect(precondition(item, { block: print })).toBe('hidden');
+    expect(precondition(item, { block: get })).toBe('enabled');
+    expect(label(item, { block: get })).toBe('Fast unchecked access ([] instead of .at())');
+    await eventsDelivered();
+    workspace.clearUndo();
+
+    choose(item, { block: get });
+    expect(get.getFieldValue('CHECKED')).toBe('FALSE');
+    expect(label(item, { block: get })).toBe('✓ Fast unchecked access ([] instead of .at())');
+    await eventsDelivered();
+    expect(workspace.getUndoStack()).toHaveLength(1);
+    workspace.undo(false);
+    expect(get.getFieldValue('CHECKED')).toBe('TRUE');
+  });
+
+  it('is offered only where the gate allows it, and always back to checked', () => {
+    const workspace = renderedWorkspace();
+    attach(workspace);
+    // The editor's gate (gating/install.ts): unchecked access needs advanced blocks shown.
+    setOptionFilter((_block, field, value) => !(field === 'CHECKED' && value === 'false'));
+    const set = appendSvg({ type: 'coll.set_item' }, workspace);
+    expect(precondition(item, { block: set })).toBe('hidden');
+    const unchecked = appendSvg({ type: 'coll.set_item', fields: { CHECKED: false } }, workspace);
+    expect(precondition(item, { block: unchecked })).toBe('enabled');
+    // A canvas without an editor offers nothing.
+    const other = renderedWorkspace();
+    const loose = appendSvg({ type: 'coll.item' }, other);
+    expect(precondition(item, { block: loose })).toBe('hidden');
   });
 });
 

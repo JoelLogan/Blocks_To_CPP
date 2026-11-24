@@ -26,6 +26,9 @@ const CSS = `
 .blocklyText.${B2C_CSS_CLASS.missingPack} {
   font-weight: bold;
 }
+.blocklyText.b2c-mark {
+  font-style: italic;
+}
 .b2c-type-picker {
   display: flex;
   flex-direction: column;

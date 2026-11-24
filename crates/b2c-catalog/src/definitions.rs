@@ -509,6 +509,35 @@ fn check_field(field: &FieldDef, problems: &mut Vec<String>) {
         ));
     }
     check_field_gates(field, problems);
+    check_menu_field(field, problems);
+}
+
+/// A `menu` field (w4-editor-tools.md §7): a checkbox shown once, written
+/// only away from its default, with the words of its menu item and of its
+/// mark; and a `mark` only with a `menu`.
+fn check_menu_field(field: &FieldDef, problems: &mut Vec<String>) {
+    let name = &field.name;
+    let Some(menu) = &field.menu else {
+        if field.mark.is_some() {
+            problems.push(format!("only a menu field has a mark ({name})"));
+        }
+        return;
+    };
+    let words = |text: &Option<String>| {
+        text.as_ref()
+            .is_some_and(|text| text.chars().any(char::is_alphabetic))
+    };
+    if field.kind != FieldKind::Checkbox
+        || field.repeat.is_some()
+        || field.default.is_none()
+        || !field.omit_default
+        || !words(&Some(menu.clone()))
+        || !words(&field.mark)
+    {
+        problems.push(format!(
+            "the menu field {name} is a checkbox shown once, with a default, omit_default = true, and words for its menu item and its mark"
+        ));
+    }
 }
 
 /// A field's `advanced` and `requires` (w4-editor-tools.md §6.1): only a
@@ -702,10 +731,19 @@ fn check_friendly_label(def: &BlockDef, problems: &mut Vec<String>) {
             LabelPiece::Text(_) => None,
         })
         .collect();
+    for field in def.field.iter().filter(|field| field.menu.is_some()) {
+        let name = field.name.as_str();
+        let in_cpp = label_pieces(&def.label.cpp).contains(&LabelPiece::Arg(name));
+        if shown.contains(name) || in_cpp {
+            problems.push(format!(
+                "the menu field {name} is set from the block's menu: leave %{name} out of the labels"
+            ));
+        }
+    }
     let parts = def
         .field
         .iter()
-        .filter(|field| field.repeat.is_none())
+        .filter(|field| field.repeat.is_none() && field.menu.is_none())
         .map(|field| ("field", field.name.as_str()))
         .chain(
             def.input
@@ -721,7 +759,11 @@ fn check_friendly_label(def: &BlockDef, problems: &mut Vec<String>) {
         }
     }
     let has_words = |piece: Option<&LabelPiece<'_>>| matches!(piece, Some(LabelPiece::Text(text)) if text.chars().any(char::is_alphabetic));
-    for field in def.field.iter().filter(|field| field.kind == FieldKind::Checkbox) {
+    for field in def
+        .field
+        .iter()
+        .filter(|field| field.kind == FieldKind::Checkbox && field.menu.is_none())
+    {
         let name = field.name.as_str();
         for (index, piece) in pieces.iter().enumerate() {
             if *piece != LabelPiece::Arg(name) {
@@ -776,6 +818,8 @@ mod tests {
                 omit_default: false,
                 advanced: Vec::new(),
                 requires: BTreeMap::new(),
+                menu: None,
+                mark: None,
             }],
             input: vec![InputDef {
                 name: "ITEM".into(),
@@ -924,6 +968,8 @@ mod tests {
                 omit_default: false,
                 advanced: Vec::new(),
                 requires: BTreeMap::new(),
+                menu: None,
+                mark: None,
             };
             d.label.friendly = label.into();
         };
@@ -1015,6 +1061,8 @@ mod tests {
             omit_default: false,
             advanced: Vec::new(),
             requires: BTreeMap::new(),
+            menu: None,
+            mark: None,
         };
         for (kind, default, types, ok) in [
             (FieldKind::Checkbox, Some(FieldDefault::Bool(true)), vec![], true),
@@ -1123,6 +1171,55 @@ mod tests {
         let json = serde_json::to_value(Requires::parse(&words(&["c++20", "fallback"])).expect("parses"))
             .expect("serialises");
         assert_eq!(json, serde_json::json!({"standard": "c++20", "fallback": true}));
+    }
+
+    #[test]
+    fn menu_fields() {
+        let menu_field = |change: fn(&mut FieldDef)| {
+            let mut field = FieldDef {
+                default: Some(FieldDefault::Bool(true)),
+                omit_default: true,
+                menu: Some("Fast unchecked access".into()),
+                mark: Some("unchecked".into()),
+                ..plain_field("CHECKED", FieldKind::Checkbox)
+            };
+            change(&mut field);
+            problems_after(move |d| d.field.push(field))
+        };
+        // Set from the menu: in neither label, and needing no words there.
+        assert_eq!(menu_field(|_| {}), Vec::<String>::new());
+        let rule = "the menu field CHECKED is a checkbox shown once, with a default, omit_default = true, and words for its menu item and its mark";
+        assert_eq!(menu_field(|f| f.omit_default = false), [rule]);
+        assert_eq!(menu_field(|f| f.mark = None), [rule]);
+        assert_eq!(menu_field(|f| f.menu = Some(String::from("[]"))), [rule]);
+        let labelled = problems_after(|d| {
+            d.label.cpp = format!("{} %CHECKED", d.label.cpp);
+            d.field.push(FieldDef {
+                default: Some(FieldDefault::Bool(true)),
+                omit_default: true,
+                menu: Some("Fast unchecked access".into()),
+                mark: Some("unchecked".into()),
+                ..plain_field("CHECKED", FieldKind::Checkbox)
+            });
+        });
+        assert_eq!(
+            labelled,
+            ["the menu field CHECKED is set from the block's menu: leave %CHECKED out of the labels"]
+        );
+        // A mark belongs to a menu field.
+        let mark = problems_after(|d| d.field[0].mark = Some("x".into()));
+        assert_eq!(mark, ["only a menu field has a mark (X)"]);
+        // The core catalog's: *item of* and *set item*.
+        let catalog = crate::core_catalog();
+        for id in ["coll.item", "coll.set_item"] {
+            let checked = field_def(&catalog.blocks[id], "CHECKED").expect("CHECKED");
+            assert_eq!(
+                (checked.default.clone(), checked.advanced.clone()),
+                (Some(FieldDefault::Bool(true)), vec![String::from("false")]),
+                "{id}"
+            );
+            assert!(checked.menu.is_some(), "{id}");
+        }
     }
 
     #[test]
@@ -1278,6 +1375,8 @@ mod tests {
             omit_default: false,
             advanced: Vec::new(),
             requires: BTreeMap::new(),
+            menu: None,
+            mark: None,
         }
     }
 
@@ -1557,6 +1656,8 @@ mod tests {
             omit_default: false,
             advanced: Vec::new(),
             requires: BTreeMap::new(),
+            menu: None,
+            mark: None,
             repeat: Some(Repeat {
                 count: "itemCount".into(),
                 plus: 0,

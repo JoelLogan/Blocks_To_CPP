@@ -20,6 +20,7 @@ import { registerB2cCss } from './css';
 import { blockLabelMode } from './labelMode';
 import { blockLabelParts, optionLabel, type LabelMode } from './labels';
 import { blockLayout, type BlockLayout, type LayoutItem } from './layout';
+import { applyMenuMarks } from './marks';
 import { MUTATOR_FOR_BLOCK } from './mutators';
 import { registerPlaceholderBlock } from './placeholder';
 import { applyShape } from './shape';
@@ -77,6 +78,7 @@ export function blockDefinition(def: BlockDefJson): { init: (this: Blockly.Block
       const mode = blockLabelMode();
       buildInputs(this, def, layoutIn(mode, multiModule()), mode);
       applyShownWhileTicked(this);
+      applyMenuMarks(this, def);
       applyShape(this, def.shape, def.namespaceMember === true);
       this.setStyle(blockStyleFor(def.category, def.shape));
       this.setTooltip(tooltip);

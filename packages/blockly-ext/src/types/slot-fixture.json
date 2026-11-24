@@ -14952,6 +14952,10 @@
           }
         ],
         "output": "bool",
+        "requires": {
+          "fallback": true,
+          "standard": "c++20"
+        },
         "shape": "predicate",
         "statement": [],
         "typeVars": {
@@ -36974,10 +36978,23 @@
               "name": "C"
             },
             "types": []
+          },
+          {
+            "advanced": [
+              "false"
+            ],
+            "default": true,
+            "kind": "checkbox",
+            "mark": "unchecked",
+            "menu": "Fast unchecked access ([] instead of .at())",
+            "name": "CHECKED",
+            "omitDefault": true,
+            "options": [],
+            "types": []
           }
         ],
         "headers": [],
-        "help": "The item at a position of a list or deque (the first is at 0), or the value for a key of a map. A position or key the collection does not have stops the program with an out-of-range error.",
+        "help": "The item at a position of a list or deque (the first is at 0), or the value for a key of a map. A position or key the collection does not have stops the program with an out-of-range error; with fast unchecked access (the block's menu), a wrong position of a list or deque is not caught.",
         "id": "coll.item",
         "input": [
           {
@@ -65563,10 +65580,23 @@
               "name": "C"
             },
             "types": []
+          },
+          {
+            "advanced": [
+              "false"
+            ],
+            "default": true,
+            "kind": "checkbox",
+            "mark": "unchecked",
+            "menu": "Fast unchecked access ([] instead of .at())",
+            "name": "CHECKED",
+            "omitDefault": true,
+            "options": [],
+            "types": []
           }
         ],
         "headers": [],
-        "help": "Changes the item at a position of a list or deque (the first is at 0), or sets the value for a key of a map, adding the key when the map does not have it yet. A position the list does not have stops the program with an out-of-range error.",
+        "help": "Changes the item at a position of a list or deque (the first is at 0), or sets the value for a key of a map, adding the key when the map does not have it yet. A position the list does not have stops the program with an out-of-range error; with fast unchecked access (the block's menu), it is not caught.",
         "id": "coll.set_item",
         "input": [
           {
@@ -126218,6 +126248,16 @@
                 "ends"
               ]
             ],
+            "requires": {
+              "ends": {
+                "fallback": true,
+                "standard": "c++20"
+              },
+              "starts": {
+                "fallback": true,
+                "standard": "c++20"
+              }
+            },
             "types": []
           }
         ],

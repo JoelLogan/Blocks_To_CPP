@@ -30,6 +30,14 @@ export {
 } from './labels';
 export { blockLabelMode, setBlockLabelMode } from './labelMode';
 export {
+  applyMenuMarks,
+  MARK_CLASS,
+  menuFieldDefs,
+  menuToggles,
+  toggleMenuField,
+  type MenuToggle,
+} from './marks';
+export {
   MUTATOR_FOR_BLOCK,
   MUTATOR_NAME,
   REPEAT_ANCHOR,

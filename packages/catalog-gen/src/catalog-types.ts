@@ -179,6 +179,13 @@ export interface FieldDefJson {
    * every value is basic.
    */
   readonly requirements?: Readonly<Record<string, RequirementJson>>;
+  /**
+   * On a checkbox set from the block's context menu instead of drawn on the block (*Fast unchecked
+   * access*, w4-editor-tools.md §7): the menu item's words. Such a field is in neither label.
+   */
+  readonly menu?: string;
+  /** With {@link menu}: the words the block shows while the field is not at its default. */
+  readonly mark?: string;
 }
 
 /** A C++ standard, as a requirement names it. */

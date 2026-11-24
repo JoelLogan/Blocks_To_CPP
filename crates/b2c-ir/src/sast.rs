@@ -38,6 +38,12 @@ pub enum CppStandard {
     Cpp26,
 }
 
+/// `skip_serializing_if` for flags that are on by default.
+#[allow(clippy::trivially_copy_pass_by_ref, reason = "the signature serde calls")]
+fn is_true(flag: &bool) -> bool {
+    *flag
+}
+
 /// Where a node came from.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct Origin {
@@ -558,6 +564,10 @@ pub enum CollectionChange {
         index: Expr,
         /// The new value.
         value: Expr,
+        /// `false` for *fast unchecked access*: `c[i] = x` on a list or
+        /// deque (w4-editor-tools.md §7). Written only when `false`.
+        #[serde(skip_serializing_if = "is_true")]
+        checked: bool,
     },
     /// `c.clear()`, or `c = {}` for an adaptor (*clear*).
     Clear,
@@ -579,7 +589,7 @@ impl CollectionChange {
     pub fn operands(&self) -> Vec<&Expr> {
         match self {
             Self::Add(value) | Self::RemoveAt(value) | Self::RemoveValue(value) => vec![value],
-            Self::SetItem { index, value } => vec![index, value],
+            Self::SetItem { index, value, .. } => vec![index, value],
             Self::Clear | Self::RemoveNext | Self::Sort { .. } => Vec::new(),
         }
     }
@@ -760,6 +770,11 @@ pub enum ExprKind {
         collection: Box<Expr>,
         /// The position (`int`) or the map's key.
         index: Box<Expr>,
+        /// `false` for *fast unchecked access*: `c[i]` on a list or deque
+        /// (w4-editor-tools.md §7); a map's item is `.at(k)` either way.
+        /// Written only when `false`.
+        #[serde(skip_serializing_if = "is_true")]
+        checked: bool,
     },
     /// The number of items (*length of*): `static_cast<int>(c.size())`.
     Size(Box<Expr>),
@@ -876,6 +891,7 @@ impl ExprKind {
             | Self::Item {
                 collection: lhs,
                 index: rhs,
+                ..
             }
             | Self::Contains {
                 collection: lhs,

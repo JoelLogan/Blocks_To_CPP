@@ -445,9 +445,13 @@ describe('blockLayout', () => {
     expect(wordsBefore('var.declare', 'CONST')).toBe('constant');
     expect(wordsBefore('io.print', 'NEWLINE')).toBe('new line');
     expect(wordsBefore('io.print', 'STREAM')).toBe('to');
-    // Every checkbox of the catalog has words right before it.
+    // Every checkbox of the catalog has words right before it, but those set from the block's menu
+    // (../src/blocks/marks.ts), which the block does not draw.
     for (const blockDef of BLOCK_DEFS) {
-      for (const field of blockDef.fields.filter((candidate) => candidate.kind === 'checkbox')) {
+      const drawn = blockDef.fields.filter(
+        (candidate) => candidate.kind === 'checkbox' && candidate.menu === undefined,
+      );
+      for (const field of drawn) {
         expect(wordsBefore(blockDef.id, field.name), `${blockDef.id}.${field.name}`).toMatch(
           /\p{L}/u,
         );

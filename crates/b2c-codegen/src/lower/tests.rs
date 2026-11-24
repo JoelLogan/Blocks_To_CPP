@@ -1212,6 +1212,9 @@ fn every_block_program_compiles_clean_and_runs(compilers: &[PathBuf], dir: &Path
             "// ---- End of Blocks2Cpp support helpers -----------------------------------\n\nusing namespace std;\n",
             "namespace shapes {\n\nint half(int n) {",
             "cout << \"half\" << \" \" << shapes::half(9) << '\\n';",
+            // *Fast unchecked access* on *set item* and *item of*
+            // (w4-editor-tools.md §7).
+            "numbers[0] = ",
         ] {
             assert!(source.contains(needle), "{needle} not in\n{source}");
         }

@@ -235,8 +235,10 @@ fn changes_lower_to_their_collection_ops() {
         ]
     );
     assert!(matches!(ops[0].1, CollectionChange::Add(value) if value.ty == Type::Int));
-    assert!(matches!(ops[4].1, CollectionChange::SetItem { index, value }
-        if index.ty == Type::String && value.ty == Type::Double));
+    assert!(
+        matches!(ops[4].1, CollectionChange::SetItem { index, value, checked: true }
+        if index.ty == Type::String && value.ty == Type::Double)
+    );
     assert!(matches!(ops[5].1, CollectionChange::Clear));
     assert!(matches!(ops[6].1, CollectionChange::RemoveAt(_)));
     assert!(matches!(ops[7].1, CollectionChange::RemoveValue(_)));

@@ -140,7 +140,10 @@ describe('the requirements table', () => {
     }
     if (option?.[1] !== undefined) {
       const field = catalogBlock(option[1])?.fields.find((f) => f.name === option[2]);
-      return field?.options.some(([, value]) => value === option[3]) === true;
+      // A checkbox's values are `true` and `false`.
+      const values =
+        field?.kind === 'checkbox' ? ['true', 'false'] : field?.options.map(([, v]) => v);
+      return values?.includes(option[3] ?? '') === true;
     }
     if (category?.[1] !== undefined) {
       return TOOLBOX.some((candidate) => candidate.id === category[1]);
@@ -217,7 +220,10 @@ describe('the requirements table', () => {
       for (const field of def.fields.filter((f) => f.kind === 'checkbox')) {
         const key = `${def.id}.${field.name}`;
         listed.add(key);
-        expect(BASIC_FIELDS.has(key), `${key} has no gating decision`).toBe(true);
+        // Basic, or gated by value in the catalog (unchecked access, w4-editor-tools.md §7).
+        const gated = field.requirements !== undefined;
+        expect(BASIC_FIELDS.has(key) || gated, `${key} has no gating decision`).toBe(true);
+        expect(BASIC_FIELDS.has(key) && gated, `${key} is both basic and gated`).toBe(false);
       }
     }
     expect(listed).toContain('func.define.SHARED');
@@ -256,6 +262,8 @@ describe('the requirements table', () => {
         'block:control.fallthrough',
         'block:program.check',
         'block:program.use_header',
+        'option:coll.item.CHECKED=false',
+        'option:coll.set_item.CHECKED=false',
         'option:text.find.OP=ends',
         'option:text.find.OP=starts',
         ...['and', 'or', 'xor', 'shl', 'shr'].map((value) => `option:var.change.OP=${value}`),

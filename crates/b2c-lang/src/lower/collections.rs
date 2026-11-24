@@ -212,9 +212,14 @@ impl Lowerer<'_> {
         self.report_fit(&typed, &typing, "INDEX", &index, &position);
         let item = self.item_subject(Some(&list));
         self.report_fit(&typed, &typing, "VALUE", &value, &item);
+        let checked = self.checkbox(block, "CHECKED", true);
         Some(StmtKind::CollectionOp {
             collection: list.sym,
-            op: CollectionChange::SetItem { index, value },
+            op: CollectionChange::SetItem {
+                index,
+                value,
+                checked,
+            },
         })
     }
 
@@ -485,10 +490,12 @@ impl Lowerer<'_> {
         self.report_field_fit(block, &typed, &typing, "LIST");
         let position = self.position_subject(Some(&list));
         self.report_fit(&typed, &typing, "INDEX", &index, &position);
+        let checked = self.checkbox(block, "CHECKED", true);
         Expr {
             kind: ExprKind::Item {
                 collection: Box::new(list.value()),
                 index: Box::new(index),
+                checked,
             },
             ty: typing.output.unwrap_or(Type::Error),
             origin,

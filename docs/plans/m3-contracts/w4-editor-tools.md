@@ -453,7 +453,10 @@ and a field's `requirements`.
   *set item*), *Use unchecked `[]`*, toggling a field (`CHECKED`); the
   menu item comes through `editor/menus/registry.ts`, gated as advanced
   (`option:coll.item.CHECKED=false`), and shown as `[]` vs `.at()` in the
-  C++ label mode.
+  C++ label mode. *Done by the coordinator* (§7.1): the catalog's `menu`
+  and `mark` keys describe the field, the item reads *Fast unchecked
+  access ([] instead of .at())*, and the block shows *unchecked* in both
+  label modes.
 
 ### 7.1 Corrections made by the coordinator
 
@@ -464,6 +467,9 @@ here with its reason.
 | Correction | Reason | Where |
 | --- | --- | --- |
 | `requires` is a list of words, not a table: `requires = ["c++20", "stdFormat"]`, with `"fallback"` for a form the generator writes before C++20 (`catalog.json` still writes an object, `{"standard": "c++20", "fallback": true}`) | the catalog reads a list of words with the reader it has for `headers`; a table, or a map of tables on a field, added about 20 KB to the WebAssembly core (2,016,903 bytes against 1,998,537) | §6.1 |
+| *Fast unchecked access* is a checkbox `CHECKED` (default ticked, `omit_default`, `advanced = ["false"]`) with two new catalog keys: `menu`, the menu item's words, and `mark`, the words the block shows while the field is away from its default (*unchecked*). blockly-ext hides the checkbox and draws the mark after it (`blocks/marks.ts`); `menus/registry.ts` adds one item per such field, ticked (✓) while on, offered where `optionOffered` allows the value it sets and always back to the default | the friendly-label rule needs every field drawn with words beside it; a field set from the menu is the exception, and saying so in the catalog keeps the rule, the layout and the menu generic | §7 |
+| The C++ label mode shows *unchecked* after `numbers.at(i)`, not `numbers[i]` | a C++ template is one form; giving the mode a second template per field value is more than the mark needs, and the C++ panel shows the code | §7 |
+| A map's *item of* stays `.at(k)` when unchecked; *set item* on a map was `[]` already | `m[k]` adds a missing key and does not compile on a read-only map | §7 |
 | An option's `advanced` and `requires` are keys of its field, by value (`advanced = ["and", "or", "xor", "shl", "shr"]` on *change*'s `OP`; `requires = { starts = ["c++20", "fallback"] }` on *find*'s), and also apply to a checkbox's `"true"` and `"false"`; `BLOCK_DEFS` merges each into one requirement, a block's `requirement` and a field's `requirements` by value, the shape of `gate.ts`'s `Requirement`. A requirement names a standard newer than C++17 or a capability, and a field's default is never a value the editor could hide | an option is a `[label, value]` pair, which has no room for keys; per-value keys on the field are how its `headers` are written already | §6.1 |
 
 ## 8. Tests
@@ -574,6 +580,13 @@ On `m3/w4-editor-tools`, from `8a3d8ec`, on 2026-10-28 to 2026-10-30.
   block and option rows from them and keeps by hand only the categories,
   the types and `block:text.format` (AWAITED). The generated C++ is
   unchanged. The WebAssembly core grew by 3,968 bytes (1,998,537).
+* The unchecked `[]` index (§7): `CHECKED` on *item of* and *set item*,
+  `[]` for a list's or deque's position in the generator (the SAST's
+  `checked`), the block's mark and menu item; the every-block project uses
+  it, so every g++ compiles it. The golden C++ of the examples is
+  unchanged. The core is 2,002,695 bytes (+4,158). No E2E flow: the
+  flows run against the built app under xvfb, which this session does not
+  build; the menu item and the mark are covered in Vitest.
 
 **Not done, and why.**
 

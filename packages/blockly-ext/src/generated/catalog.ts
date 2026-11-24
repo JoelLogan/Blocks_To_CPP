@@ -179,6 +179,13 @@ export interface FieldDefJson {
    * every value is basic.
    */
   readonly requirements?: Readonly<Record<string, RequirementJson>>;
+  /**
+   * On a checkbox set from the block's context menu instead of drawn on the block (*Fast unchecked
+   * access*, w4-editor-tools.md §7): the menu item's words. Such a field is in neither label.
+   */
+  readonly menu?: string;
+  /** With {@link menu}: the words the block shows while the field is not at its default. */
+  readonly mark?: string;
 }
 
 /** A C++ standard, as a requirement names it. */
@@ -615,7 +622,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     label: { friendly: 'item %INDEX of %LIST', cpp: '%LIST.at(%INDEX)' },
     labelParts: [{ text: 'item' }, { arg: 'INDEX' }, { text: 'of' }, { arg: 'LIST' }],
     statementsNotInLabel: [],
-    help: 'The item at a position of a list or deque (the first is at 0), or the value for a key of a map. A position or key the collection does not have stops the program with an out-of-range error.',
+    help: "The item at a position of a list or deque (the first is at 0), or the value for a key of a map. A position or key the collection does not have stops the program with an out-of-range error; with fast unchecked access (the block's menu), a wrong position of a list or deque is not caught.",
     output: 'elem(C)',
     fields: [
       {
@@ -626,6 +633,19 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         default: null,
         type: { kind: 'var', name: 'C' },
         repeat: null,
+      },
+      {
+        name: 'CHECKED',
+        kind: 'checkbox',
+        options: [],
+        types: [],
+        default: true,
+        type: null,
+        repeat: null,
+        omitDefault: true,
+        requirements: { false: { advanced: true } },
+        menu: 'Fast unchecked access ([] instead of .at())',
+        mark: 'unchecked',
       },
     ],
     inputs: [
@@ -871,7 +891,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       { arg: 'VALUE' },
     ],
     statementsNotInLabel: [],
-    help: 'Changes the item at a position of a list or deque (the first is at 0), or sets the value for a key of a map, adding the key when the map does not have it yet. A position the list does not have stops the program with an out-of-range error.',
+    help: "Changes the item at a position of a list or deque (the first is at 0), or sets the value for a key of a map, adding the key when the map does not have it yet. A position the list does not have stops the program with an out-of-range error; with fast unchecked access (the block's menu), it is not caught.",
     output: null,
     fields: [
       {
@@ -882,6 +902,19 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         default: null,
         type: { kind: 'var', name: 'C' },
         repeat: null,
+      },
+      {
+        name: 'CHECKED',
+        kind: 'checkbox',
+        options: [],
+        types: [],
+        default: true,
+        type: null,
+        repeat: null,
+        omitDefault: true,
+        requirements: { false: { advanced: true } },
+        menu: 'Fast unchecked access ([] instead of .at())',
+        mark: 'unchecked',
       },
     ],
     inputs: [

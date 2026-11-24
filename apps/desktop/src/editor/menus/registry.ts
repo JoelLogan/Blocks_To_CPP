@@ -11,11 +11,17 @@
  * - The block menu's *Delete* (`blockDelete`) keeps Blockly's action but counts the same way.
  * - *Clean up blocks*, Undo, Redo, Collapse and Expand stay Blockly's own (Undo and Redo wait for
  *   Blockly's events: ../sync/undo.ts).
+ * - A block with a field set from its menu (the catalog's `menu`: *Fast unchecked access* on *item
+ *   of* and *set item*, docs/plans/m3-contracts/w4-editor-tools.md §7) gets an item per such field,
+ *   ticked (✓) while the field is away from its default. It flips the field as one undo step, and
+ *   is offered only where the gate allows the value it sets (*Show advanced blocks* for unchecked
+ *   access); turning a field back to its default is always offered.
  *
  * The registry is global, while each editor has its own canvas: the changes are made when the
  * first editor attaches and Blockly's items are put back when the last one detaches. A menu goes
  * to the editor of the canvas it was opened on.
  */
+import { menuToggles, optionOffered, toggleMenuField } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
 import {
@@ -25,6 +31,12 @@ import {
   longestChainFrom,
 } from '../clipboard/chains';
 import { descendantsOf } from '../sync/traverse';
+
+/** The ID of the block menu's items for the fields set from the menu (one per field of a block). */
+export const MENU_TOGGLE_ID = 'b2c_menu_toggle';
+
+/** How many fields set from the menu one block has at most. */
+const MAX_MENU_TOGGLES = 2;
 
 /** The IDs of Blockly's items that the editor removes or replaces. */
 export const MENU_ITEM_IDS = {
@@ -192,6 +204,44 @@ function deleteBlockItem(original: ActionItem): ActionItem {
   };
 }
 
+/** The block menu's item for the `index`-th field of a block set from its menu. */
+function menuToggleItem(index: number): ActionItem {
+  const toggleAt = (scope: Blockly.ContextMenuRegistry.Scope) => {
+    const block = scope.block;
+    if (block === undefined || targetOf(block.workspace) === null) {
+      return null;
+    }
+    return menuToggles(block)[index] ?? null;
+  };
+  return {
+    id: `${MENU_TOGGLE_ID}_${String(index)}`,
+    scopeType: Blockly.ContextMenuRegistry.ScopeType.BLOCK,
+    weight: 4 + index / 10,
+    displayText: (scope) => {
+      const toggle = toggleAt(scope);
+      return toggle === null ? '' : `${toggle.on ? '✓ ' : ''}${toggle.text}`;
+    },
+    preconditionFn: (scope) => {
+      const toggle = toggleAt(scope);
+      const block = scope.block;
+      if (toggle === null || block === undefined) {
+        return 'hidden';
+      }
+      // Back to the default is always offered; away from it only where the gate allows it.
+      if (!toggle.on && !optionOffered(block, toggle.field, toggle.next)) {
+        return 'hidden';
+      }
+      return block.isEditable() ? 'enabled' : 'disabled';
+    },
+    callback: (scope) => {
+      const toggle = toggleAt(scope);
+      if (toggle !== null && scope.block !== undefined) {
+        toggleMenuField(scope.block, toggle.field);
+      }
+    },
+  };
+}
+
 /** The registry's action item `id`, or `null`. */
 function actionItem(id: string): ActionItem | null {
   const item = Blockly.ContextMenuRegistry.registry.getItem(id);
@@ -215,9 +265,18 @@ function adjustBlocklyItems(): () => void {
     menu.unregister(MENU_ITEM_IDS.deleteBlock);
     menu.register(deleteBlockItem(deleteBlock));
   }
+  const toggleIds: string[] = [];
+  for (let index = 0; index < MAX_MENU_TOGGLES; index += 1) {
+    const item = menuToggleItem(index);
+    if (menu.getItem(item.id) !== null) {
+      menu.unregister(item.id);
+    }
+    menu.register(item);
+    toggleIds.push(item.id);
+  }
 
   return () => {
-    for (const id of [MENU_ITEM_IDS.deleteAll, MENU_ITEM_IDS.deleteBlock]) {
+    for (const id of [MENU_ITEM_IDS.deleteAll, MENU_ITEM_IDS.deleteBlock, ...toggleIds]) {
       if (menu.getItem(id) !== null) {
         menu.unregister(id);
       }

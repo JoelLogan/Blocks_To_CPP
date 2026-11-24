@@ -424,6 +424,18 @@ pub struct FieldDef {
         skip_serializing_if = "BTreeMap::is_empty"
     )]
     pub requires: BTreeMap<String, Vec<String>>,
+    /// `menu` on a checkbox: the field is set from the block's context menu,
+    /// with these words, instead of being drawn on the block (*Fast
+    /// unchecked access*, w4-editor-tools.md §7). Such a field is shown once,
+    /// has a default and `omit_default`, a `mark`, and appears in neither
+    /// label. Written only when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub menu: Option<String>,
+    /// `mark`: the words a block shows where a `menu` field sits while it
+    /// holds something other than its default (`unchecked`). Written only
+    /// when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mark: Option<String>,
 }
 
 /// A field's default.

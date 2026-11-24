@@ -376,7 +376,7 @@
       },
       "lowering": "builtin",
       "headers": [],
-      "help": "The item at a position of a list or deque (the first is at 0), or the value for a key of a map. A position or key the collection does not have stops the program with an out-of-range error.",
+      "help": "The item at a position of a list or deque (the first is at 0), or the value for a key of a map. A position or key the collection does not have stops the program with an out-of-range error; with fast unchecked access (the block's menu), a wrong position of a list or deque is not caught.",
       "field": [
         {
           "name": "LIST",
@@ -388,6 +388,19 @@
             "kind": "var",
             "name": "C"
           }
+        },
+        {
+          "name": "CHECKED",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": true,
+          "omitDefault": true,
+          "advanced": [
+            "false"
+          ],
+          "menu": "Fast unchecked access ([] instead of .at())",
+          "mark": "unchecked"
         }
       ],
       "input": [
@@ -716,7 +729,7 @@
       },
       "lowering": "builtin",
       "headers": [],
-      "help": "Changes the item at a position of a list or deque (the first is at 0), or sets the value for a key of a map, adding the key when the map does not have it yet. A position the list does not have stops the program with an out-of-range error.",
+      "help": "Changes the item at a position of a list or deque (the first is at 0), or sets the value for a key of a map, adding the key when the map does not have it yet. A position the list does not have stops the program with an out-of-range error; with fast unchecked access (the block's menu), it is not caught.",
       "field": [
         {
           "name": "LIST",
@@ -728,6 +741,19 @@
             "kind": "var",
             "name": "C"
           }
+        },
+        {
+          "name": "CHECKED",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": true,
+          "omitDefault": true,
+          "advanced": [
+            "false"
+          ],
+          "menu": "Fast unchecked access ([] instead of .at())",
+          "mark": "unchecked"
         }
       ],
       "input": [

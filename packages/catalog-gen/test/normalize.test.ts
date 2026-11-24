@@ -171,6 +171,8 @@ describe('normalize', () => {
               types: [],
               default: true,
               advanced: ['false'],
+              menu: 'Go fast',
+              mark: 'fast',
             },
           ],
         }),
@@ -186,6 +188,7 @@ describe('normalize', () => {
       c: { advanced: true, standard: 'c++23' },
     });
     expect(gated?.fields[1]?.requirements).toEqual({ false: { advanced: true } });
+    expect(gated?.fields[1]).toMatchObject({ menu: 'Go fast', mark: 'fast' });
     // A basic block and field carry no key.
     expect(block('text.show')).not.toHaveProperty('requirement');
     for (const field of block('text.show').fields) {

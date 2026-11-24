@@ -78,6 +78,8 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
       repeat: repeat(field.repeat ?? null),
       ...(field.omitDefault === true ? { omitDefault: true as const } : {}),
       ...fieldRequirements(field),
+      ...(field.menu === undefined ? {} : { menu: field.menu }),
+      ...(field.mark === undefined ? {} : { mark: field.mark }),
     })),
     inputs: block.input.map((input): InputDefJson => ({
       name: input.name,

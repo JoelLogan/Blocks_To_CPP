@@ -57,6 +57,7 @@ impl Collections for Builder {
             ExprKind::Item {
                 collection: Box::new(collection),
                 index: Box::new(index),
+                checked: true,
             },
             ty,
         )
@@ -126,6 +127,7 @@ fn forms_program() -> Program {
             CollectionChange::SetItem {
                 index: b.int("0"),
                 value: b.int("4"),
+                checked: true,
             },
         ),
         b.op(&xs, CollectionChange::RemoveAt(b.get(&i))),
@@ -191,6 +193,7 @@ fn forms_program() -> Program {
             CollectionChange::SetItem {
                 index: b.str("Ann"),
                 value: b.int("30"),
+                checked: true,
             },
         ),
         b.op(
@@ -198,6 +201,7 @@ fn forms_program() -> Program {
             CollectionChange::SetItem {
                 index: b.str("Bob"),
                 value: b.int("25"),
+                checked: true,
             },
         ),
         b.line(vec![b.item(&ages, b.str("Bob")), b.contains(&ages, b.str("Ann"))]),
@@ -321,6 +325,69 @@ fn builds_and_prints(program: &Program, form: &str, expected: &str) {
             assert!(run.status.success(), "{flag}: {}", run.stderr());
             assert_eq!(run.stdout(), expected, "{flag}\n{source}");
         }
+    }
+}
+
+/// An *item of* with *fast unchecked access* (w4-editor-tools.md §7).
+fn unchecked_item(b: &Builder, collection: &SymbolId, index: Expr) -> Expr {
+    let mut item = b.item(collection, index);
+    if let ExprKind::Item { checked, .. } = &mut item.kind {
+        *checked = false;
+    }
+    item
+}
+
+#[test]
+fn fast_unchecked_access_indexes_lists_and_deques_but_keeps_a_map_s_at() {
+    let b = Builder::new();
+    let numbers = b.var("numbers", list(Type::Int));
+    let letters = b.var("letters", lib(LibType::Deque, vec![Type::Char]));
+    let ages = b.var("ages", lib(LibType::Map, vec![Type::String, Type::Int]));
+    let i = b.var("i", Type::Int);
+    let set = |collection: &SymbolId, index: Expr, value: Expr| {
+        b.op(
+            collection,
+            CollectionChange::SetItem {
+                index,
+                value,
+                checked: false,
+            },
+        )
+    };
+    let body = vec![
+        b.declare(
+            &numbers,
+            Some(b.list_of(&list(Type::Int), vec![b.int("1"), b.int("2"), b.int("3")])),
+        ),
+        b.declare(
+            &letters,
+            Some(b.list_of(
+                &lib(LibType::Deque, vec![Type::Char]),
+                vec![b.chr("a"), b.chr("b")],
+            )),
+        ),
+        b.declare(&ages, None),
+        b.declare(&i, Some(b.int("1"))),
+        set(&numbers, b.get(&i), b.int("20")),
+        set(&letters, b.int("0"), b.chr("z")),
+        set(&ages, b.str("Ann"), b.int("30")),
+        b.line(vec![
+            unchecked_item(&b, &numbers, b.get(&i)),
+            unchecked_item(&b, &numbers, b.int("2")),
+            unchecked_item(&b, &letters, b.int("0")),
+            unchecked_item(&b, &ages, b.str("Ann")),
+        ]),
+    ];
+    let main = b.main(body);
+    let program = b.program(vec![main]);
+    for form in [
+        "numbers[static_cast<std::size_t>(i)] = 20;",
+        "letters[0] = 'z';",
+        "ages[\"Ann\"] = 30;",
+        "numbers[static_cast<std::size_t>(i)] << \" \" << numbers[2] << \" \" << letters[0]",
+        "ages.at(\"Ann\")",
+    ] {
+        builds_and_prints(&program, form, "20 3 z 30\n");
     }
 }
 

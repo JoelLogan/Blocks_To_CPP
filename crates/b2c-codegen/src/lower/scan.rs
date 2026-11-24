@@ -656,6 +656,7 @@ mod tests {
             ExprKind::Item {
                 collection: Box::new(var("s_items", list())),
                 index: Box::new(int(0)),
+                checked: true,
             },
             Type::Int,
         );

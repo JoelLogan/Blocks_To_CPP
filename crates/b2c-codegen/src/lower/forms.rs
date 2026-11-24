@@ -13,7 +13,7 @@ use crate::cast::{BindingStyle, CExpr, CStmtKind, CType, RangeBinding};
 
 /// Whether a type's items are found by an `int` position (types.md §1.4,
 /// `index`): a vector, a deque or a string. A map's items are found by key.
-fn indexed_by_position(ty: &Type) -> bool {
+pub(super) fn indexed_by_position(ty: &Type) -> bool {
     match ty {
         Type::String => true,
         Type::Lib(app) => matches!(app.ty(), LibType::Vector | LibType::Deque),
@@ -53,6 +53,22 @@ impl Lowerer<'_> {
             lowered
         };
         CExpr::method(object, "at", vec![index])
+    }
+
+    /// `c[i]`, *fast unchecked access* to a list's or a deque's item
+    /// (w4-editor-tools.md §7): as [`Self::element_at`], with `[]` for
+    /// `.at()`, so a wrong position is not caught.
+    pub(super) fn unchecked_element(&mut self, container: &Expr, index: &Expr) -> CExpr {
+        let object = self.library_object(container);
+        let lowered = self.expr(index);
+        let index = if matches!(index.kind, ExprKind::Int(_)) {
+            lowered
+        } else {
+            let size = CType::Size;
+            self.note_type(&size);
+            CExpr::cast(size, lowered)
+        };
+        CExpr::index(object, index)
     }
 
     /// `static_cast<int>(c.size())` (*length of*, types.md §1.5 and §5.2):

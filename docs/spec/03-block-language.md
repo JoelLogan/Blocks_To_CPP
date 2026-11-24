@@ -810,8 +810,14 @@ such as the list *contains* looks for (`std::vector<int>{1, 2}`). **In M3**
 M4's `std` pack, whose metadata it lists.
 
 Indexing is bounds-checked (`.at()`) by default. A block context-menu option,
-*fast unchecked access*, switches to `[]` (wave W4; until then every index
-is checked). Indexing is always zero-based, as
+*fast unchecked access*, switches *item of* and *set item* to `[]` on a list
+or deque (`c[static_cast<std::size_t>(i)]`), so a wrong position is not
+caught; a map's *item of* stays `c.at(k)`, since `[]` would add the key. It
+is offered with *Show advanced blocks* (and always to switch back), ticked
+(✓) in the menu while on, and the block shows *unchecked* after its parts in
+both label modes (the field `CHECKED`, written into a project only when
+unticked). **In M3** (wave W4) it is built as described. Indexing is always
+zero-based, as
 in C++, and tooltips say so. Sizes and indexes are `int`, as M3 has no
 unsigned types, so the generated code casts them
 (`static_cast<int>(c.size())`, `c.at(static_cast<std::size_t>(i))`; a
@@ -1233,7 +1239,11 @@ type  = "T"                            # converts to T
   field whose class no listed type fits may list none (`types = []`): its
   menu then holds only the module's own types, it has no default, and it
   may be absent from a block (the analyser reports the missing choice,
-  `B2C-E0430`). Unknown keys are errors.
+  `B2C-E0430`). A checkbox with `menu = "…"` is set from the block's
+  context menu with those words instead of being drawn on the block, and
+  shows its `mark` (`unchecked`) while away from its default; it is shown
+  once, has a default and `omit_default`, and is in neither label (wave W4,
+  *fast unchecked access*). Unknown keys are errors.
 * **Gating keys** (wave W4,
   [w4-editor-tools.md §6.1](../plans/m3-contracts/w4-editor-tools.md#61-the-catalogs-gating-keys)).
   `advanced = true` on a block offers it only with *Show advanced blocks*;

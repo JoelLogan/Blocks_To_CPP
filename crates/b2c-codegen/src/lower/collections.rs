@@ -11,6 +11,7 @@ use b2c_ir::ids::SymbolId;
 use b2c_ir::sast::{Block, CollectionChange, CppStandard, Expr, ExprKind, RangeMode, StmtKind, UnaryOp};
 use b2c_ir::types::{LibType, Type, TypeFn};
 
+use super::forms::indexed_by_position;
 use super::{Lowerer, name_expr, scan};
 use crate::cast::{AssignOp, BinOp, BindingStyle, CExpr, CExprKind, CStmtKind, CType};
 use crate::helpers::Helper;
@@ -96,7 +97,17 @@ impl Lowerer<'_> {
     /// of*.
     pub(super) fn collection_expr(&mut self, expr: &Expr) -> CExpr {
         match &expr.kind {
-            ExprKind::Item { collection, index } => self.element_at(collection, index),
+            ExprKind::Item {
+                collection,
+                index,
+                checked,
+            } => {
+                if *checked || !indexed_by_position(&collection.ty) {
+                    self.element_at(collection, index)
+                } else {
+                    self.unchecked_element(collection, index)
+                }
+            }
             ExprKind::Size(collection) => self.size_of(collection),
             ExprKind::IsEmpty(collection) => {
                 let object = self.library_object(collection);
@@ -177,13 +188,21 @@ impl Lowerer<'_> {
                 };
                 call(method, vec![value])
             }
-            CollectionChange::SetItem { index, value } => {
+            CollectionChange::SetItem {
+                index,
+                value,
+                checked,
+            } => {
                 let target = if lib == LibType::Map {
                     let key = self.expr(index);
                     CExpr::index(object, key)
-                } else {
+                } else if *checked {
                     let position = self.position(index);
                     CExpr::method(object, "at", vec![position])
+                } else {
+                    // *Fast unchecked access* (w4-editor-tools.md §7).
+                    let position = self.position(index);
+                    CExpr::index(object, position)
                 };
                 CStmtKind::AssignTo {
                     target,
