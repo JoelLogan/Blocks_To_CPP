@@ -2,6 +2,8 @@
 
 * Status: Accepted
 * Date: 2026-10-05
+* Amended on 2026-11-24: the size budget follows ADR-0003's amendment,
+  2,100,000 bytes.
 
 ## Context
 
@@ -46,9 +48,9 @@ fetched and never put in a `data:` URL.
   then writes the base64 chunk.
 * `initCore()` imports the chunk on first use and is idempotent. After a
   WebAssembly trap, `resetCore()` instantiates a fresh module.
-* **Size budget:** at most 2,000,000 bytes for the `wasm-opt -Oz` output (the
-  stricter reading of ADR-0003's 2 MB), checked in CI; the gzip size is
-  reported only.
+* **Size budget:** at most 2,100,000 bytes for the `wasm-opt -Oz` output
+  (ADR-0003, as amended on 2026-11-24; 2,000,000 before), checked in CI; the
+  gzip size is reported only.
 
 ## Consequences
 

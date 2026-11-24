@@ -2,6 +2,10 @@
 
 * Status: Accepted
 * Date: 2026-10-02
+* Amended on 2026-11-24 (owner decision, M3): the WASM size budget is
+  2,100,000 bytes after `wasm-opt -Oz`, up from 2 MB. M3's language,
+  multi-module and parked-stack work left 5.4 KB of the old budget; a
+  saving pass on the core follows as its own package.
 
 ## Context
 
@@ -45,6 +49,7 @@ would only cover one copy.
 * The compiler crates must stay free of I/O, threads, clocks and randomness.
   This is enforced by a CI check that builds them for WASM.
 * The CSP includes `'wasm-unsafe-eval'` (WASM compilation only, not JS `eval`).
-* WASM size is budgeted (≤ 2 MB after `wasm-opt -Oz`) and checked in CI.
+* WASM size is budgeted (≤ 2,100,000 bytes after `wasm-opt -Oz`, as amended)
+  and checked in CI.
 * The backend always regenerates C++ from the BDM natively, so compromising the
   webview cannot change what is compiled beyond what the blocks express.

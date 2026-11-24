@@ -992,8 +992,8 @@ severity: `W0510` set to `error` is still `W0510`.
   (`WebAssembly.instantiate` through wasm-bindgen's init), which
   `'wasm-unsafe-eval'` allows; they are never fetched and never put in a
   `data:` URL. After a WebAssembly trap the module is instantiated afresh.
-* **Size budget:** at most 2,000,000 bytes after `wasm-opt -Oz`, checked in
-  CI; the gzip size is reported only.
+* **Size budget:** at most 2,100,000 bytes after `wasm-opt -Oz` (ADR-0003, as
+  amended), checked in CI; the gzip size is reported only.
 * **Freshness:** the core is built from source, not committed, so its build
   records a SHA-256 of its inputs in `pkg/build-info.json` (the crates
   compiled into it and their `Cargo.lock` entries, the workspace manifest,

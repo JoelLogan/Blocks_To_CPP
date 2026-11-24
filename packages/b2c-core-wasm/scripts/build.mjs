@@ -42,8 +42,8 @@ import {
   computeFingerprint,
 } from './build-info.mjs';
 
-/** The size budget for the optimised module (ADR-0003: at most 2 MB after wasm-opt -Oz). */
-const SIZE_BUDGET_BYTES = 2_000_000;
+/** The size budget for the optimised module (ADR-0003 as amended: 2,100,000 bytes after wasm-opt -Oz). */
+const SIZE_BUDGET_BYTES = 2_100_000;
 
 /**
  * The limit for a module built without wasm-opt (B2C_SKIP_WASM_OPT=1): the budget plus wasm-opt's

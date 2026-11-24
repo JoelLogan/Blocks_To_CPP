@@ -168,7 +168,7 @@ missing or unsuitable, with how to get it. It then runs `cargo build --profile w
 writes `pkg/` (not committed): `glue.js`, `pkg-bytes.js`, `b2c_core_wasm_bg.wasm`, `sizes.json`
 and, last, `build-info.json`. It stops when the CLI version differs from `Cargo.lock`, when the
 crate's exports differ from `src/glue.d.ts` (change `EXPECTED_EXPORTS` in the script with them),
-or when the module is over the **size budget of 2,000,000 bytes after `wasm-opt -Oz`** (the gzip
+or when the module is over the **size budget of 2,100,000 bytes after `wasm-opt -Oz`** (the gzip
 size is reported only).
 
 | Variable            | Effect                                                                                           |

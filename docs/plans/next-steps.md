@@ -568,9 +568,10 @@ main thread's preview task is often shorter than the 4 ms it looked for;
   see both. Fixing it changes `ScopeIndex::visible` and both lookups (Rust
   and TypeScript), so it was left as it is and is put to the owner
   (w3-modules.md §7.1).
-- **WebAssembly size:** the core is 1,988,376 bytes after `wasm-opt`,
-  against the 2,000,000-byte budget of ADR-0003; the next wave's growth
-  will need a saving or a decision on the budget.
+- **WebAssembly size:** the core is 1,994,569 bytes after `wasm-opt`
+  (after M3-4). The owner decided on 2026-11-24 to raise the budget to
+  2,100,000 bytes (ADR-0003 and ADR-0010 amended) and to follow with a
+  saving pass on the core as its own package (§3.10).
 - **Analysis time:** it grows faster than linearly with the module count
   when every module has globals: 128 modules take 0.56 s and 256 take
   1.5 s (the layout of 64 modules sharing structs, functions and globals is
@@ -604,15 +605,20 @@ agent and a review):
    (`constexpr`, `static`), _format … with_ and the unchecked `[]` index
    from a block's context menu, and the catalog's `advanced` and `requires`
    keys. `block:text.format` stays AWAITED until then.
-3. **W5's leftovers** (w5-worker.md §11, w5-performance.md §14): the
+3. **A saving pass on the WebAssembly core** (owner decision of
+   2026-11-24, with the budget raised to 2,100,000 bytes): measure what
+   the module spends its bytes on and trim it, so the budget can come back
+   down.
+4. **W5's leftovers** (w5-worker.md §11, w5-performance.md §14): the
    clipboard arguments with their copy, paste and duplicate measurements
    (ADR-0016 §1), `coreMemory()` and the nightly security case of
    worker.md, RD-15, and the first run of `building.yml` (M3-7), which runs
-   weekly and has not run yet.
-4. **The spec sections** still owed: worker.md §11 and 08 §8.8's
+   weekly and has not run yet: GitHub dispatches only a workflow that is on
+   the default branch, so it first runs after the merge into `main`.
+5. **The spec sections** still owed: worker.md §11 and 08 §8.8's
    `WORKER_CSP`, w4-appearance-expert.md §8, w4-editor-tools.md §9, and
    w3-export-run.md §10 (listed in §3.9).
-5. **W6, the close-out** (§3.4).
+6. **W6, the close-out** (§3.4).
 
 **For the owner:** W4A-4 (the title bar) and W4A-5 (the _View_ menu) from
 w4-appearance-expert.md, and the scope query's shadowing of another
