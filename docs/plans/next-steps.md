@@ -608,10 +608,11 @@ agent and a review):
    2026-11-24:_ the four pieces, each a commit, with the corrections in
    w4-editor-tools.md §7.1; `block:text.format` is the catalog's now, and
    the WebAssembly core is 2,011,983 bytes.
-3. **Back to the contracts** (owner decision of 2026-11-24: no deviations
-   from a contract). Each correction row a package recorded instead of
-   building what its contract says is reworked to the contract, with tests
-   that fail first. From w4-editor-tools.md §7.1:
+3. **Back to the contracts** (owner decision of 2026-11-24: nothing in a
+   contract disappears without the owner hearing of it). Each correction
+   row a package recorded instead of building what its contract says is put
+   to the owner with its reason; what the owner does not accept is reworked
+   to the contract, with tests that fail first. From w4-editor-tools.md §7.1:
    - `requires` as the contract's table, not a list of words (about 20 KB
      of the WebAssembly core, which the saving pass must make room for);
    - an option's `advanced` and `requires` in the contract's shape;
@@ -629,9 +630,10 @@ agent and a review):
 
    Then the same sweep for the correction rows of w3-modules.md §7.1,
    w5-performance.md §10.1 (M3-4's nine) and the earlier waves' contracts:
-   each one either reworked to the contract or put to the owner. **From
-   now on**, a package that finds its contract cannot be built as written
-   stops and asks the owner instead of recording a correction.
+   each one put to the owner and then kept or reworked. **From now on**, a
+   package that finds its contract cannot be built as written stops and
+   asks the owner, with its reason, instead of recording a correction on
+   its own; a deviation stands only once the owner has accepted it.
 4. **A saving pass on the WebAssembly core** (owner decision of
    2026-11-24, with the budget raised to 2,100,000 bytes): measure what
    the module spends its bytes on and trim it, so the budget can come back
