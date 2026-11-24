@@ -358,8 +358,9 @@ the tests.
   generated `catalog.ts`; `gating/table.ts` then reads them and keeps only
   the categories and types. The analyser's `E0703` reads the same keys
   (06 §6.10).
-  *Done by the coordinator* (2026-11-24): as a list of words, `requires =
-  ["c++20", "fallback"]`, and an option's keys on its field, by value
+  *Done by the coordinator* (2026-11-24), first as a list of words with an
+  option's keys on its field, then reworked to this shape the same day: the
+  table, and an option's keys on the option
   ([w4-editor-tools.md §7.1](w4-editor-tools.md#71-corrections-made-by-the-coordinator)).
 
 ## 7. Tests

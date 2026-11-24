@@ -612,21 +612,22 @@ agent and a review):
    contract disappears without the owner hearing of it). Each correction
    row a package recorded instead of building what its contract says is put
    to the owner with its reason; what the owner does not accept is reworked
-   to the contract, with tests that fail first. From w4-editor-tools.md §7.1:
-   - `requires` as the contract's table, not a list of words (about 20 KB
-     of the WebAssembly core, which the saving pass must make room for);
-   - an option's `advanced` and `requires` in the contract's shape;
-   - _format … with_'s pattern as a value input, not a text field;
-   - _format … with_'s `std::ostringstream` form under C++17 (03 §3.7.4);
-   - the gate's reason in the tooltip of a block the gate refuses;
-   - the ⚙ popover on _global_ as well as _create_, holding the _constant_
-     tick (03 §3.7.2);
-   - a `constexpr` decimal number readable in another `constexpr` value
-     (L10 telling `constexpr` doubles apart);
-   - the C++ label mode showing `numbers[i]` for unchecked access;
-   - a map's unchecked _item of_ as the contract writes it; `m[k]` on a
-     read-only map does not compile, so if the contract cannot be followed
-     there, the owner decides, not the package.
+   to the contract, with tests that fail first. From w4-editor-tools.md §7.1,
+   the owner decided on 2026-11-24:
+   - _accepted as built_: a map's unchecked _item of_ keeps `.at(k)`; the
+     _constant_ tick stays on _create_ beside the ⚙; _format … with_'s
+     pattern is a text field; a refused block's tooltip has no gate reason;
+     the ⚙ popover is on _create_ only; the C++ label mode shows the
+     _unchecked_ mark;
+   - _reworked to the contract_ (_done on 2026-11-24_, each a commit with
+     tests that failed first): `requires` as the contract's table
+     (`e0c8cb3`; the WebAssembly core grew by 21,618 bytes); an option's
+     `advanced` and `requires` on the option (`6cee821`); _format … with_'s
+     `std::ostringstream` form under C++17, `b2c::format`, with no
+     `B2C-E0703` there (`247dfba`); and a `constexpr` decimal number read in
+     another `constexpr` value accepted, as C++ accepts it (`56be472`). The
+     golden C++ of the examples is unchanged; the core is 2,039,597 bytes
+     after the four.
 
    Then the same sweep for the correction rows of w3-modules.md §7.1,
    w5-performance.md §10.1 (M3-4's nine) and the earlier waves' contracts:
