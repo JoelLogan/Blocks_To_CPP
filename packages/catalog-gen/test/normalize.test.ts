@@ -143,6 +143,56 @@ describe('normalize', () => {
     expect(fieldsOf()?.[0]).not.toHaveProperty('omitDefault');
   });
 
+  it('merges advanced and requires into requirements (w4-editor-tools.md §6.1)', () => {
+    const gated = model((c) =>
+      c.blocks.push(
+        rustBlock('x.gated', {
+          label: { friendly: 'thing %OP fast %FAST', cpp: 'thing' },
+          advanced: true,
+          requires: { standard: 'c++20', capability: 'stdFormat' },
+          field: [
+            {
+              name: 'OP',
+              kind: 'dropdown',
+              options: [
+                ['a', 'a'],
+                ['b', 'b'],
+                ['c', 'c'],
+              ],
+              types: [],
+              default: 'a',
+              advanced: ['c'],
+              requires: { b: { standard: 'c++20', fallback: true }, c: { standard: 'c++23' } },
+            },
+            {
+              name: 'FAST',
+              kind: 'checkbox',
+              options: [],
+              types: [],
+              default: true,
+              advanced: ['false'],
+            },
+          ],
+        }),
+      ),
+    ).blocks.at(-1);
+    expect(gated?.requirement).toEqual({
+      advanced: true,
+      standard: 'c++20',
+      capability: 'stdFormat',
+    });
+    expect(gated?.fields[0]?.requirements).toEqual({
+      b: { standard: 'c++20', fallback: true },
+      c: { advanced: true, standard: 'c++23' },
+    });
+    expect(gated?.fields[1]?.requirements).toEqual({ false: { advanced: true } });
+    // A basic block and field carry no key.
+    expect(block('text.show')).not.toHaveProperty('requirement');
+    for (const field of block('text.show').fields) {
+      expect(field).not.toHaveProperty('requirements');
+    }
+  });
+
   it('marks a namespace member and a mouth for definitions (w3-modules.md §2.12)', () => {
     const blockOf = (member?: boolean, definitions?: boolean) =>
       model((c) =>

@@ -4,13 +4,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use b2c_ir::sast::CppStandard;
 use b2c_ir::sig::TypePattern;
 use b2c_ir::types::Type;
 use b2c_model::Token;
 use b2c_model::limits::MAX_VARIADIC_PARTS;
 
 use crate::schema::{
-    BlockDef, CatalogFile, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, InputDef, Shape,
+    BlockDef, CatalogFile, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, InputDef, Requires, Shape,
     is_part_name,
 };
 use crate::{CATALOG_VERSION, Catalog, signature};
@@ -254,6 +255,9 @@ pub(crate) fn check_block(def: &BlockDef) -> Vec<String> {
         problems.push(String::from(
             "reporter and predicate blocks cannot have statement inputs",
         ));
+    }
+    if !def.requires.is_empty() {
+        check_requires("the block", &def.requires, &mut problems);
     }
     check_namespace_parts(def, &mut problems);
     check_output(def, &mut problems);
@@ -504,6 +508,76 @@ fn check_field(field: &FieldDef, problems: &mut Vec<String>) {
             "the field {SHARED_FIELD} is a checkbox shown once, unticked by default, with omit_default = true"
         ));
     }
+    check_field_gates(field, problems);
+}
+
+/// A field's `advanced` and `requires` (w4-editor-tools.md §6.1): only a
+/// dropdown's options or a checkbox's `true` and `false`, each listed once,
+/// and never the default, which a block from the toolbox starts with.
+fn check_field_gates(field: &FieldDef, problems: &mut Vec<String>) {
+    let name = &field.name;
+    if field.advanced.is_empty() && field.requires.is_empty() {
+        return;
+    }
+    let values: Vec<&str> = match field.kind {
+        FieldKind::Dropdown => field.options.iter().map(|[_, value]| value.as_str()).collect(),
+        FieldKind::Checkbox => vec!["true", "false"],
+        _ => {
+            problems.push(format!(
+                "only a dropdown's or a checkbox's values can be advanced or require something ({name})"
+            ));
+            return;
+        }
+    };
+    let default = match &field.default {
+        Some(FieldDefault::Text(text)) => Some(text.clone()),
+        Some(FieldDefault::Bool(flag)) => Some(flag.to_string()),
+        None => None,
+    };
+    let gated = field.advanced.iter().chain(field.requires.keys());
+    for value in gated {
+        if !values.contains(&value.as_str()) {
+            problems.push(format!("{name} has no value {value:?} to gate"));
+        }
+    }
+    if !all_unique(&field.advanced) {
+        problems.push(format!("{name} lists an advanced value twice"));
+    }
+    for (value, requires) in &field.requires {
+        check_requires(&format!("{name}={value}"), requires, problems);
+    }
+    let refused = |value: &String| {
+        field.advanced.contains(value)
+            || field
+                .requires
+                .get(value)
+                .is_some_and(|words| Requires::refuses(words))
+    };
+    if default.as_ref().is_some_and(refused) {
+        problems.push(format!(
+            "the default of {name} is gated, so a block from the toolbox could start with a value the editor hides"
+        ));
+    }
+}
+
+/// A `requires` names a standard newer than C++17 (the oldest a project
+/// can target) or a capability, and `fallback` only beside one of them.
+fn check_requires(what: &str, words: &[String], problems: &mut Vec<String>) {
+    let requires = match Requires::parse(words) {
+        Ok(requires) => requires,
+        Err(error) => {
+            problems.push(format!("{what} requires {error}"));
+            return;
+        }
+    };
+    if requires.standard.is_none() && requires.capability.is_none() {
+        problems.push(format!(
+            "{what} requires nothing: name a standard or a capability"
+        ));
+    }
+    if requires.standard == Some(CppStandard::Cpp17) {
+        problems.push(format!("{what} requires C++17, which every project has"));
+    }
 }
 
 /// The name of a definition's *share with other modules* checkbox
@@ -700,6 +774,8 @@ mod tests {
                 headers: BTreeMap::new(),
                 repeat: None,
                 omit_default: false,
+                advanced: Vec::new(),
+                requires: BTreeMap::new(),
             }],
             input: vec![InputDef {
                 name: "ITEM".into(),
@@ -744,6 +820,8 @@ mod tests {
                 },
             ],
             namespace_member: false,
+            advanced: false,
+            requires: Vec::new(),
         }
     }
 
@@ -844,6 +922,8 @@ mod tests {
                 headers: BTreeMap::new(),
                 repeat: None,
                 omit_default: false,
+                advanced: Vec::new(),
+                requires: BTreeMap::new(),
             };
             d.label.friendly = label.into();
         };
@@ -933,6 +1013,8 @@ mod tests {
             headers: BTreeMap::new(),
             repeat: None,
             omit_default: false,
+            advanced: Vec::new(),
+            requires: BTreeMap::new(),
         };
         for (kind, default, types, ok) in [
             (FieldKind::Checkbox, Some(FieldDefault::Bool(true)), vec![], true),
@@ -970,6 +1052,94 @@ mod tests {
             let problems = problems_after(|d| d.field[0] = field(kind, default, types));
             assert_eq!(problems.is_empty(), ok, "{kind:?}: {problems:?}");
         }
+    }
+
+    #[test]
+    fn advanced_and_requires_keys() {
+        let words = |list: &[&str]| list.iter().map(|word| (*word).to_owned()).collect::<Vec<_>>();
+        // A block, and a dropdown's value other than its default.
+        let ok = problems_after(|d| {
+            d.advanced = true;
+            d.requires = words(&["c++20", "stdFormat"]);
+            d.field[0].advanced = vec!["b".into()];
+            d.field[0].requires = BTreeMap::from([("b".into(), words(&["c++20", "fallback"]))]);
+        });
+        assert_eq!(ok, Vec::<String>::new());
+        // A requirement names something newer than C++17, in known words.
+        let nothing = problems_after(|d| d.requires = words(&["fallback"]));
+        assert_eq!(
+            nothing,
+            ["the block requires nothing: name a standard or a capability"]
+        );
+        let old = problems_after(|d| d.requires = words(&["c++17"]));
+        assert_eq!(old, ["the block requires C++17, which every project has"]);
+        let unknown = problems_after(|d| d.requires = words(&["c++20", "gcc13"]));
+        assert_eq!(
+            unknown,
+            ["the block requires \"gcc13\" is not a standard, a capability or \"fallback\", or repeats one"]
+        );
+        let twice = problems_after(|d| d.requires = words(&["c++20", "c++23"]));
+        assert_eq!(twice.len(), 1, "{twice:?}");
+        // Only options the field has, each once, and never the default
+        // unless the code generator has a fallback for it.
+        let unknown = problems_after(|d| d.field[0].advanced = vec!["c".into()]);
+        assert_eq!(unknown, ["X has no value \"c\" to gate"]);
+        let twice = problems_after(|d| d.field[0].advanced = vec!["b".into(), "b".into()]);
+        assert_eq!(twice, ["X lists an advanced value twice"]);
+        let default_rule = "the default of X is gated, so a block from the toolbox could start with a value the editor hides";
+        assert_eq!(
+            problems_after(|d| d.field[0].advanced = vec!["a".into()]),
+            [default_rule]
+        );
+        let hidden =
+            problems_after(|d| d.field[0].requires = BTreeMap::from([("a".into(), words(&["c++20"]))]));
+        assert_eq!(hidden, [default_rule]);
+        let kept = problems_after(|d| {
+            d.field[0].requires = BTreeMap::from([("a".into(), words(&["c++20", "fallback"]))]);
+        });
+        assert_eq!(kept, Vec::<String>::new());
+        // A checkbox's values are `true` and `false`; other kinds have none.
+        let checkbox = problems_after(|d| {
+            d.label.friendly = format!("{} fast %TICK", d.label.friendly);
+            d.field.push(FieldDef {
+                default: Some(FieldDefault::Bool(true)),
+                advanced: vec!["false".into()],
+                ..plain_field("TICK", FieldKind::Checkbox)
+            });
+        });
+        assert_eq!(checkbox, Vec::<String>::new());
+        let text = problems_after(|d| {
+            d.label.friendly = format!("{} %WORD", d.label.friendly);
+            d.field.push(FieldDef {
+                advanced: vec!["x".into()],
+                ..plain_field("WORD", FieldKind::Text)
+            });
+        });
+        assert_eq!(
+            text,
+            ["only a dropdown's or a checkbox's values can be advanced or require something (WORD)"]
+        );
+        // `catalog.json` writes the words as an object.
+        let json = serde_json::to_value(Requires::parse(&words(&["c++20", "fallback"])).expect("parses"))
+            .expect("serialises");
+        assert_eq!(json, serde_json::json!({"standard": "c++20", "fallback": true}));
+    }
+
+    #[test]
+    fn the_core_catalog_gates_what_w4e_1_decided() {
+        let catalog = crate::core_catalog();
+        for id in ["program.use_header", "program.check", "control.fallthrough"] {
+            assert!(catalog.blocks[id].advanced, "{id}");
+        }
+        let change = field_def(&catalog.blocks["var.change"], "OP").expect("OP");
+        assert_eq!(change.advanced, ["and", "or", "xor", "shl", "shr"]);
+        let contains = Requires::parse(&catalog.blocks["coll.contains"].requires).expect("requires");
+        assert_eq!(
+            (contains.standard, contains.fallback),
+            (Some(CppStandard::Cpp20), true)
+        );
+        let find = field_def(&catalog.blocks["text.find"], "OP").expect("OP");
+        assert_eq!(find.requires.keys().collect::<Vec<_>>(), ["ends", "starts"]);
     }
 
     #[test]
@@ -1106,6 +1276,8 @@ mod tests {
             headers: BTreeMap::new(),
             repeat: None,
             omit_default: false,
+            advanced: Vec::new(),
+            requires: BTreeMap::new(),
         }
     }
 
@@ -1383,6 +1555,8 @@ mod tests {
             members: None,
             headers: BTreeMap::new(),
             omit_default: false,
+            advanced: Vec::new(),
+            requires: BTreeMap::new(),
             repeat: Some(Repeat {
                 count: "itemCount".into(),
                 plus: 0,

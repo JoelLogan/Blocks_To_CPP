@@ -1,13 +1,16 @@
 /**
- * What each gated block, dropdown option, type and toolbox category needs (./gate.ts). Anything
- * not listed is always offered.
+ * What each gated block, dropdown option, checkbox value, type and toolbox category needs
+ * (./gate.ts). Anything not listed is always offered.
  *
- * The rows come from the plans until the catalog carries them itself (the W4 contract,
- * docs/plans/m3-contracts/w4-appearance-expert.md §6.4): then this table is generated from the
- * catalog and keeps only what the catalog does not describe. A row may name a block or an option
- * that does not exist yet; it is listed in {@link AWAITED} with the work that brings it, so that a
- * row left behind by a renamed block shows up in the tests.
+ * Blocks and their fields' values carry their requirements in the catalog (`advanced` and
+ * `requires`, docs/plans/m3-contracts/w4-editor-tools.md §6.1), which the generated `BLOCK_DEFS`
+ * hold: this table reads them, and keeps by hand only what the catalog does not describe, the
+ * toolbox categories and the types. A hand row may name a block or a category that does not exist
+ * yet; it is listed in {@link AWAITED} with the work that brings it, so that a row left behind by a
+ * renamed block shows up in the tests.
  */
+import { BLOCK_DEFS } from '@blocks2cpp/blockly-ext';
+
 import type { Requirement } from './gate';
 
 /** What a requirement is about. */
@@ -26,26 +29,11 @@ export function requirementKey(kind: RequirementKind, ...parts: string[]): strin
 }
 
 const ADVANCED: Requirement = Object.freeze({ advanced: true });
-/** C++20's form, with an older one codegen writes for C++17: offered whatever the standard. */
-const CPP20_WITH_FALLBACK: Requirement = Object.freeze({ standard: 'c++20', fallback: true });
 
-/** The rows, as [kind, key parts, requirement]. */
-const ROWS: readonly (readonly [RequirementKind, readonly string[], Requirement])[] = [
-  // The bitwise compound assignments of *change* (M3-8, w2.md §1.9).
-  ...['and', 'or', 'xor', 'shl', 'shr'].map(
-    (value) => ['option', ['var.change', 'OP', value], ADVANCED] as const,
-  ),
-  // Rarely needed blocks (decision W4E-1, docs/plans/m3-contracts/w4-editor-tools.md §2.1): the
-  // blocks add their headers themselves, `static_assert` is an organisation block, and a case
-  // without falling through is the beginner's form.
-  ['block', ['program.use_header'], ADVANCED],
-  ['block', ['program.check'], ADVANCED],
-  ['block', ['control.fallthrough'], ADVANCED],
-  // C++20 members with a C++17 form (`b2c::starts_with`, `count`): documented, never hidden.
-  ['option', ['text.find', 'OP', 'starts'], CPP20_WITH_FALLBACK],
-  ['option', ['text.find', 'OP', 'ends'], CPP20_WITH_FALLBACK],
-  ['block', ['coll.contains'], CPP20_WITH_FALLBACK],
-  // *format … with* (03 §3.7.4, w2.md §1.10): std::format, with no older form.
+/** The rows the catalog does not describe, as [kind, key parts, requirement]. */
+const HAND_ROWS: readonly (readonly [RequirementKind, readonly string[], Requirement])[] = [
+  // *format … with* (03 §3.7.4, w2.md §1.10): std::format, with no older form. Its block brings
+  // the requirement with it (w4-editor-tools.md §7); until then the row waits here.
   ['block', ['text.format'], { standard: 'c++20', capability: 'stdFormat' }],
   // The advanced categories of 03 §3.7.
   ['category', ['memory'], ADVANCED],
@@ -54,10 +42,36 @@ const ROWS: readonly (readonly [RequirementKind, readonly string[], Requirement]
   ['category', ['raw'], ADVANCED],
 ];
 
+/**
+ * The rows of the catalog: each block's `requirement` and each field's `requirements` by value
+ * (the catalog's `advanced` and `requires`: W4E-1's advanced blocks and *change*'s bitwise forms,
+ * the C++20 members with a C++17 form, w4-editor-tools.md §2.1).
+ */
+function catalogRows(): (readonly [string, Requirement])[] {
+  const rows: (readonly [string, Requirement])[] = [];
+  for (const def of BLOCK_DEFS) {
+    if (def.requirement !== undefined) {
+      rows.push([requirementKey('block', def.id), def.requirement]);
+    }
+    for (const field of def.fields) {
+      for (const [value, requirement] of Object.entries(field.requirements ?? {})) {
+        rows.push([requirementKey('option', def.id, field.name, value), requirement]);
+      }
+    }
+  }
+  return rows;
+}
+
+/** The keys of the rows read from the catalog. */
+export const CATALOG_ROW_KEYS: ReadonlySet<string> = new Set(catalogRows().map(([key]) => key));
+
 /** Every requirement, by {@link requirementKey}. */
-export const REQUIREMENTS: ReadonlyMap<string, Requirement> = new Map(
-  ROWS.map(([kind, parts, requirement]) => [requirementKey(kind, ...parts), requirement]),
-);
+export const REQUIREMENTS: ReadonlyMap<string, Requirement> = new Map([
+  ...catalogRows(),
+  ...HAND_ROWS.map(
+    ([kind, parts, requirement]) => [requirementKey(kind, ...parts), requirement] as const,
+  ),
+]);
 
 /**
  * Rows whose block, option or category is not in the catalog yet, with the work that brings it.
@@ -75,9 +89,8 @@ export const AWAITED: ReadonlyMap<string, string> = new Map([
 /**
  * The audit of the catalog (w4-editor-tools.md §2.1): every block, dropdown option, checkbox
  * ({@link BASIC_FIELDS}) and type field type that has no row was checked and is offered always. A
- * test fails for a catalog block, option, checkbox or type that is neither here nor in a row, so a
- * block added later needs a decision; the catalog's own `advanced` and `requires` keys will replace
- * this list (§6.1).
+ * test fails for a catalog block, option, checkbox or type that is neither here nor in a row (the
+ * catalog's `advanced` and `requires`, §6.1), so a block added later needs a decision.
  */
 export const BASIC_BLOCKS: ReadonlySet<string> = new Set([
   // Collections.

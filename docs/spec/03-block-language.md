@@ -1234,6 +1234,23 @@ type  = "T"                            # converts to T
   menu then holds only the module's own types, it has no default, and it
   may be absent from a block (the analyser reports the missing choice,
   `B2C-E0430`). Unknown keys are errors.
+* **Gating keys** (wave W4,
+  [w4-editor-tools.md §6.1](../plans/m3-contracts/w4-editor-tools.md#61-the-catalogs-gating-keys)).
+  `advanced = true` on a block offers it only with *Show advanced blocks*;
+  `requires = ["c++20", "stdFormat"]` lists the oldest standard and the
+  toolchain capability every form of it needs, and `"fallback"` when the
+  generator writes an older form, which keeps it offered whatever the
+  standard or the toolchain (`requires = ["c++20", "fallback"]`). On a
+  dropdown or a checkbox, `advanced` lists the values offered only with
+  advanced blocks (`advanced = ["and", "or"]`; a checkbox's values are
+  `"true"` and `"false"`) and `requires` maps a value to its list
+  (`requires = { starts = ["c++20", "fallback"] }`). A requirement names a
+  standard newer than C++17 or a capability, each word once; a gated value
+  is one the field has, and a field's default is never one the editor could
+  hide. `catalog.json` writes a requirement as an object (`{"standard":
+  "c++20", "fallback": true}`). The editor's gating service reads these keys
+  ([04 §4.2](04-user-interface.md#42-toolbox)); toolbox categories and
+  types keep their rows in the editor (`gating/table.ts`).
 * **Signatures** ([ADR-0017](../adr/0017-open-type-representation.md),
   [ADR-0018](../adr/0018-slot-typing.md)). `where` names each type variable
   (a capital letter and an optional digit: `T`, `K`, `C`, `T2`) and its
@@ -1362,7 +1379,8 @@ type  = "T"                            # converts to T
   primitives and library types, with their arity, label and header), and
   each block its signature keys: `typeVars` (`where`), `output` as the
   pattern's text, `order` (the parts with a pattern, in catalog order),
-  `placeVar`, `members`, `headers` and `optionHeaders`; each part's `type`
+  `placeVar`, `members`, `headers` and `optionHeaders`, and the gating
+  keys `advanced` and `requires` (a block's and a field's); each part's `type`
   as tagged JSON (`{"kind": "var", "name": "T"}`), an input's `assign` and a
   row's `typeClass`. Each key is left out while empty. Which fields are
   references or declarations and which inputs repeat, the editor reads from

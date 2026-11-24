@@ -16,6 +16,7 @@ import {
   BASIC_OPTIONS,
   BASIC_TYPES,
   blockGate,
+  CATALOG_ROW_KEYS,
   blockLabelParts,
   categoryGate,
   CPP_OPTION_LABELS,
@@ -246,6 +247,32 @@ describe('the requirements table', () => {
     const old = mode({ standard: 'c++17' });
     expect(blockGate('coll.contains', old).allowed).toBe(true);
     expect(optionGate('text.find', 'OP', 'starts', old).allowed).toBe(true);
+  });
+
+  it("reads the blocks' and options' rows from the catalog's advanced and requires keys", () => {
+    expect([...CATALOG_ROW_KEYS].sort()).toEqual(
+      [
+        'block:coll.contains',
+        'block:control.fallthrough',
+        'block:program.check',
+        'block:program.use_header',
+        'option:text.find.OP=ends',
+        'option:text.find.OP=starts',
+        ...['and', 'or', 'xor', 'shl', 'shr'].map((value) => `option:var.change.OP=${value}`),
+      ].sort(),
+    );
+    expect(REQUIREMENTS.get('block:program.check')).toEqual({ advanced: true });
+    expect(REQUIREMENTS.get('option:text.find.OP=starts')).toEqual({
+      standard: 'c++20',
+      fallback: true,
+    });
+    // By hand: only categories, types and the rows still waiting for their block.
+    for (const key of REQUIREMENTS.keys()) {
+      if (!CATALOG_ROW_KEYS.has(key)) {
+        const hand = key.startsWith('category:') || key.startsWith('type:') || AWAITED.has(key);
+        expect(hand, `${key} belongs in the catalog`).toBe(true);
+      }
+    }
   });
 
   it('builds its keys', () => {

@@ -144,6 +144,10 @@
       ],
       "statement": [],
       "extra": [],
+      "requires": {
+        "standard": "c++20",
+        "fallback": true
+      },
       "order": [
         {
           "field": "LIST"
@@ -932,7 +936,8 @@
       "field": [],
       "input": [],
       "statement": [],
-      "extra": []
+      "extra": [],
+      "advanced": true
     },
     {
       "id": "control.for_range",
@@ -3080,7 +3085,8 @@
         }
       ],
       "statement": [],
-      "extra": []
+      "extra": [],
+      "advanced": true
     },
     {
       "id": "program.exit",
@@ -3220,7 +3226,8 @@
       ],
       "input": [],
       "statement": [],
-      "extra": []
+      "extra": [],
+      "advanced": true
     },
     {
       "id": "program.use_namespace",
@@ -3394,7 +3401,17 @@
             ]
           ],
           "types": [],
-          "default": "contains"
+          "default": "contains",
+          "requires": {
+            "ends": {
+              "standard": "c++20",
+              "fallback": true
+            },
+            "starts": {
+              "standard": "c++20",
+              "fallback": true
+            }
+          }
         }
       ],
       "input": [
@@ -4330,7 +4347,14 @@
             ]
           ],
           "types": [],
-          "default": "add"
+          "default": "add",
+          "advanced": [
+            "and",
+            "or",
+            "xor",
+            "shl",
+            "shr"
+          ]
         }
       ],
       "input": [

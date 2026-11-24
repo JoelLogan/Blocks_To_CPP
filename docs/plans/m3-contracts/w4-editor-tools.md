@@ -409,6 +409,11 @@ true }`, in `catalog/core/*.toml`, `b2c-catalog`'s schema and
 `BLOCK_DEFS`. Then `gating/table.ts` reads them for blocks and options and
 keeps only categories and types; the audit test reads the catalog. The rows
 of §2.1 are the values to write. `E0703` (06 §6.10) reads the same keys.
+*Done by the coordinator* (§7.1): `requires` is a list of words
+(`requires = ["c++20", "fallback"]`), an option's keys sit on its field, by
+value (`advanced = ["and", "or"]`, `requires = { starts = ["c++20",
+"fallback"] }`), and `BLOCK_DEFS` carries them as a block's `requirement`
+and a field's `requirements`.
 
 ### 6.2 Types in the picker (`fields/type.ts`, `symbols.ts`)
 
@@ -449,6 +454,17 @@ of §2.1 are the values to write. `E0703` (06 §6.10) reads the same keys.
   menu item comes through `editor/menus/registry.ts`, gated as advanced
   (`option:coll.item.CHECKED=false`), and shown as `[]` vs `.at()` in the
   C++ label mode.
+
+### 7.1 Corrections made by the coordinator
+
+Where the coordinator's pieces (next-steps.md §3.10 item 2) show this
+contract wrong, it is corrected in place and the correction is recorded
+here with its reason.
+
+| Correction | Reason | Where |
+| --- | --- | --- |
+| `requires` is a list of words, not a table: `requires = ["c++20", "stdFormat"]`, with `"fallback"` for a form the generator writes before C++20 (`catalog.json` still writes an object, `{"standard": "c++20", "fallback": true}`) | the catalog reads a list of words with the reader it has for `headers`; a table, or a map of tables on a field, added about 20 KB to the WebAssembly core (2,016,903 bytes against 1,998,537) | §6.1 |
+| An option's `advanced` and `requires` are keys of its field, by value (`advanced = ["and", "or", "xor", "shl", "shr"]` on *change*'s `OP`; `requires = { starts = ["c++20", "fallback"] }` on *find*'s), and also apply to a checkbox's `"true"` and `"false"`; `BLOCK_DEFS` merges each into one requirement, a block's `requirement` and a field's `requirements` by value, the shape of `gate.ts`'s `Requirement`. A requirement names a standard newer than C++17 or a capability, and a field's default is never a value the editor could hide | an option is a `[label, value]` pair, which has no room for keys; per-value keys on the field are how its `headers` are written already | §6.1 |
 
 ## 8. Tests
 
@@ -549,13 +565,23 @@ On `m3/w4-editor-tools`, from `8a3d8ec`, on 2026-10-28 to 2026-10-30.
   *Copy bug report* (`ad7361e`), the E2E flow and the fixes it and CI found
   (`167de44`, `ee2d2a2`).
 
+**The coordinator's pieces** (next-steps.md §3.10 item 2), on
+`ccr-01f82d9b-v70u20` from `adaae91`, 2026-11-24; corrections in §7.1.
+
+* The catalog's gating keys (§6.1): `advanced` and `requires` on blocks
+  and, by value, on dropdowns and checkboxes, checked by `b2c-catalog`,
+  exported in `catalog.json` and `BLOCK_DEFS`; `gating/table.ts` reads its
+  block and option rows from them and keeps by hand only the categories,
+  the types and `block:text.format` (AWAITED). The generated C++ is
+  unchanged. The WebAssembly core grew by 3,968 bytes (1,998,537).
+
 **Not done, and why.**
 
 * Quick Insert reads a fixed set of one-liners (W4E-4); full statement
   parsing waits for expression slots and a parser call in
   `b2c-core-wasm` (W5's).
-* The catalog's `advanced`/`requires` keys and the spec sections (§6.1,
-  §9): the coordinator's paths.
+* The spec sections (§9): the coordinator's paths. The catalog's
+  `advanced`/`requires` keys (§6.1) are done by the coordinator (above).
 * The ⚙ popover, *format … with* and the `[]` index: the coordinator's
   (§7 lists what the editor needs).
 * The friendly rules are checked against GCC 13's messages (recorded) and

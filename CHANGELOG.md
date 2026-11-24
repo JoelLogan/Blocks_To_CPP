@@ -622,6 +622,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   modules and namespaces, fuzz seeds and dictionary entries for them, and
   the native benchmark's 8-module case `pipeline/preview-modules`
   (reported).
+- The catalog's gating keys (wave W4): `advanced = true` and `requires =
+  ["c++20", "stdFormat"]` (with `"fallback"` for a form the generator writes
+  for older standards) on a block, and `advanced` and `requires` by value on
+  a dropdown or a checkbox, checked when the catalog
+  loads and exported in `catalog.json` and the editor's definitions. The
+  editor's gating table reads its block and option rows from them and keeps
+  only categories and types by hand.
 
 ### Changed
 

@@ -141,6 +141,17 @@ export interface RustBlockDef {
    * export writes the key only when it is true.
    */
   readonly namespaceMember?: boolean;
+  /** `advanced = true` (w4-editor-tools.md §6.1); the export writes the key only when it is true. */
+  readonly advanced?: boolean;
+  /** `requires`: what every form of the block needs; written only when present. */
+  readonly requires?: RustRequires;
+}
+
+/** `b2c_catalog::Requires`. */
+export interface RustRequires {
+  readonly standard?: 'c++17' | 'c++20' | 'c++23' | 'c++26';
+  readonly capability?: 'stdFormat';
+  readonly fallback?: boolean;
 }
 
 /** `b2c_catalog::FieldDef`. */
@@ -163,6 +174,10 @@ export interface RustFieldDef {
    * default (w3-modules.md §6 W3M-D11); the export writes the key only when it is true.
    */
   readonly omitDefault?: boolean;
+  /** The values offered only with advanced blocks shown; written only when not empty. */
+  readonly advanced?: readonly string[];
+  /** What each listed value needs; written only when not empty. */
+  readonly requires?: Readonly<Record<string, RustRequires>>;
 }
 
 /** `b2c_catalog::Repeat`. */
@@ -381,6 +396,8 @@ function blockDef(value: unknown, path: string): RustBlockDef {
     'members',
     'optionHeaders',
     'namespaceMember',
+    'advanced',
+    'requires',
   ] as const;
   const o = object(value, path, keys);
   const label = object(o.label, `${path}.label`, ['friendly', 'cpp']);
@@ -417,6 +434,21 @@ function blockDef(value: unknown, path: string): RustBlockDef {
     ...optional(o.namespaceMember, `${path}.namespaceMember`, (v, p) => ({
       namespaceMember: boolean(v, p),
     })),
+    ...optional(o.advanced, `${path}.advanced`, (v, p) => ({ advanced: boolean(v, p) })),
+    ...optional(o.requires, `${path}.requires`, (v, p) => ({ requires: requires(v, p) })),
+  };
+}
+
+const STANDARDS = ['c++17', 'c++20', 'c++23', 'c++26'] as const;
+
+function requires(value: unknown, path: string): RustRequires {
+  const o = object(value, path, ['standard', 'capability', 'fallback']);
+  return {
+    ...optional(o.standard, `${path}.standard`, (v, p) => ({ standard: oneOf(v, p, STANDARDS) })),
+    ...optional(o.capability, `${path}.capability`, (v, p) => ({
+      capability: oneOf(v, p, ['stdFormat'] as const),
+    })),
+    ...optional(o.fallback, `${path}.fallback`, (v, p) => ({ fallback: boolean(v, p) })),
   };
 }
 
@@ -430,6 +462,8 @@ function fieldDef(value: unknown, path: string): RustFieldDef {
     'type',
     'repeat',
     'omitDefault',
+    'advanced',
+    'requires',
   ] as const;
   const o = object(value, path, keys);
   return {
@@ -441,6 +475,8 @@ function fieldDef(value: unknown, path: string): RustFieldDef {
     ...optional(o.type, `${path}.type`, (v, p) => ({ type: pattern(v, p, 0) })),
     ...optional(o.repeat, `${path}.repeat`, (v, p) => ({ repeat: nullable(v, p, repeat) })),
     ...optional(o.omitDefault, `${path}.omitDefault`, (v, p) => ({ omitDefault: boolean(v, p) })),
+    ...optional(o.advanced, `${path}.advanced`, (v, p) => ({ advanced: array(v, p, string) })),
+    ...optional(o.requires, `${path}.requires`, (v, p) => ({ requires: record(v, p, requires) })),
   };
 }
 

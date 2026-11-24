@@ -88,6 +88,7 @@ shape = "statement"
 label = { friendly = "go on into the next case", cpp = "[[fallthrough]];" }
 lowering = "builtin"
 help = "Put last in a case of a switch: after this case's blocks, the next case's blocks run too, without checking its value."
+advanced = true
 
 [[block]]
 id = "control.wait"

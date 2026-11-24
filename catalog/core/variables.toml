@@ -129,6 +129,7 @@ name = "OP"
 kind = "dropdown"
 options = [["by", "add"], ["down by", "sub"], ["times", "mul"], ["divided by", "div"], ["mod", "mod"], ["add to the end", "append"], ["bitwise and", "and"], ["bitwise or", "or"], ["bitwise xor", "xor"], ["shifted left by", "shl"], ["shifted right by", "shr"]]
 default = "add"
+advanced = ["and", "or", "xor", "shl", "shr"]
 
 # Any value, so that text can be added to the end of a text variable; the
 # analyser checks it against the operator and the variable.

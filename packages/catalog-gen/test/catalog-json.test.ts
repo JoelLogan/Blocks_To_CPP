@@ -67,8 +67,13 @@ describe('readCatalogJson', () => {
     ],
     [
       'an unknown block key',
-      (c) => c.blocks.push(rustBlock('x.y', { requires: 'c++20' })),
-      'blocks[5] has the unknown key "requires"',
+      (c) => c.blocks.push(rustBlock('x.y', { needs: 'c++20' })),
+      'blocks[5] has the unknown key "needs"',
+    ],
+    [
+      'a requirement of an unknown standard',
+      (c) => c.blocks.push(rustBlock('x.y', { requires: { standard: 'c++98' } })),
+      'blocks[5].requires.standard should be one of c++17',
     ],
     [
       'a bad shape',

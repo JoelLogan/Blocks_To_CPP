@@ -11,6 +11,7 @@ import type {
   InputDefJson,
   OutputType,
   PartNameJson,
+  RequirementJson,
   PresetJson,
   RepeatJson,
   StatementDefJson,
@@ -24,8 +25,10 @@ import {
   type CatalogJson,
   type RustBlockDef,
   type RustExtraDef,
+  type RustFieldDef,
   type RustPartName,
   type RustPreset,
+  type RustRequires,
   type RustRepeat,
   type RustToken,
   type RustToolboxCategory,
@@ -74,6 +77,7 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
       type: field.type ?? null,
       repeat: repeat(field.repeat ?? null),
       ...(field.omitDefault === true ? { omitDefault: true as const } : {}),
+      ...fieldRequirements(field),
     })),
     inputs: block.input.map((input): InputDefJson => ({
       name: input.name,
@@ -105,7 +109,42 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
       ]),
     ),
     ...(block.namespaceMember === true ? { namespaceMember: true as const } : {}),
+    ...blockRequirement(block),
   };
+}
+
+/** A `requires` table and an `advanced` flag as one requirement; `null` when it needs nothing. */
+function requirement(
+  advanced: boolean,
+  requires: RustRequires | undefined,
+): RequirementJson | null {
+  const merged: RequirementJson = {
+    ...(advanced ? { advanced: true as const } : {}),
+    ...(requires?.standard === undefined ? {} : { standard: requires.standard }),
+    ...(requires?.capability === undefined ? {} : { capability: requires.capability }),
+    ...(requires?.fallback === true ? { fallback: true as const } : {}),
+  };
+  return Object.keys(merged).length === 0 ? null : merged;
+}
+
+function blockRequirement(block: RustBlockDef): { requirement?: RequirementJson } {
+  const merged = requirement(block.advanced === true, block.requires);
+  return merged === null ? {} : { requirement: merged };
+}
+
+/** A field's `advanced` values and `requires` table, by value, in the order of its options. */
+function fieldRequirements(field: RustFieldDef): {
+  requirements?: Readonly<Record<string, RequirementJson>>;
+} {
+  const advanced = new Set(field.advanced ?? []);
+  const requires = field.requires ?? {};
+  const values =
+    field.kind === 'checkbox' ? ['true', 'false'] : field.options.map(([, value]) => value);
+  const entries = values.flatMap((value) => {
+    const merged = requirement(advanced.has(value), requires[value]);
+    return merged === null ? [] : [[value, merged] as const];
+  });
+  return entries.length === 0 ? {} : { requirements: Object.fromEntries(entries) };
 }
 
 /**

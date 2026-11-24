@@ -201,6 +201,7 @@ name = "OP"
 kind = "dropdown"
 options = [["contains", "contains"], ["starts with", "starts"], ["ends with", "ends"]]
 default = "contains"
+requires = { starts = ["c++20", "fallback"], ends = ["c++20", "fallback"] }
 
 [[block.input]]
 name = "TEXT"

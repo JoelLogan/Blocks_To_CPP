@@ -55,6 +55,7 @@ shape = "definition"
 label = { friendly = "use header %HEADER", cpp = "#include %HEADER" }
 lowering = "builtin"
 help = "Includes a header of the C++ standard library, such as <cmath>, in the module's code, wherever the block is. The blocks add the headers they need themselves; this is for a header they don't name."
+advanced = true
 
 [[block.field]]
 name = "HEADER"
@@ -106,6 +107,7 @@ shape = "statement"
 label = { friendly = "check at compile time %COND message %MESSAGE", cpp = "static_assert(%COND, %MESSAGE);" }
 lowering = "builtin"
 help = "Checks a condition when the program is built, not when it runs: if it is false, the program doesn't build and the message says why. The condition may use only numbers, characters, true/false values and constants with fixed values."
+advanced = true
 
 [[block.field]]
 name = "MESSAGE"
