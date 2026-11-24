@@ -176,7 +176,7 @@ fn instance(def: &BlockDef, index: usize) -> Value {
         };
         for name in names {
             let value = match field.kind {
-                FieldKind::Dropdown => json!(field.options[0][1]),
+                FieldKind::Dropdown => json!(field.options[0].value),
                 FieldKind::Checkbox => json!(true),
                 FieldKind::Text => json!("a"),
                 FieldKind::Number => json!("1"),

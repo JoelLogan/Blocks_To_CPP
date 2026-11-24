@@ -82,7 +82,7 @@ fn texts() -> Vec<String> {
                 .flat_map(|f| {
                     f.options
                         .iter()
-                        .map(|[_, v]| v.clone())
+                        .map(|option| option.value.clone())
                         .chain(f.types.iter().cloned())
                 })
                 .collect()

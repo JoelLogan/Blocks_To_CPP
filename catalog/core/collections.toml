@@ -43,14 +43,15 @@ kind = "symbol_ref"
 type = "C"
 
 # *Fast unchecked access* (w4-editor-tools.md §7): `[]` instead of `.at()` on
-# a list or deque, set from the block's menu with advanced blocks shown. A
+# a list or deque, set from the block's menu with advanced blocks shown
+# (`advanced` gates the value other than the default, unticked). A
 # compatible change (catalog 1.3.0): a block without the field is checked.
 [[block.field]]
 name = "CHECKED"
 kind = "checkbox"
 default = true
 omit_default = true
-advanced = ["false"]
+advanced = true
 menu = "Fast unchecked access ([] instead of .at())"
 mark = "unchecked"
 
@@ -75,14 +76,15 @@ kind = "symbol_ref"
 type = "C"
 
 # *Fast unchecked access* (w4-editor-tools.md §7): `[]` instead of `.at()` on
-# a list or deque, set from the block's menu with advanced blocks shown. A
+# a list or deque, set from the block's menu with advanced blocks shown
+# (`advanced` gates the value other than the default, unticked). A
 # compatible change (catalog 1.3.0): a block without the field is checked.
 [[block.field]]
 name = "CHECKED"
 kind = "checkbox"
 default = true
 omit_default = true
-advanced = ["false"]
+advanced = true
 menu = "Fast unchecked access ([] instead of .at())"
 mark = "unchecked"
 

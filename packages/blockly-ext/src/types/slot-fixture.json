@@ -36980,9 +36980,7 @@
             "types": []
           },
           {
-            "advanced": [
-              "false"
-            ],
+            "advanced": true,
             "default": true,
             "kind": "checkbox",
             "mark": "unchecked",
@@ -65582,9 +65580,7 @@
             "types": []
           },
           {
-            "advanced": [
-              "false"
-            ],
+            "advanced": true,
             "default": true,
             "kind": "checkbox",
             "mark": "unchecked",
@@ -126239,25 +126235,23 @@
                 "contains",
                 "contains"
               ],
-              [
-                "starts with",
-                "starts"
-              ],
-              [
-                "ends with",
-                "ends"
-              ]
-            ],
-            "requires": {
-              "ends": {
-                "fallback": true,
-                "standard": "c++20"
+              {
+                "label": "starts with",
+                "requires": {
+                  "fallback": true,
+                  "standard": "c++20"
+                },
+                "value": "starts"
               },
-              "starts": {
-                "fallback": true,
-                "standard": "c++20"
+              {
+                "label": "ends with",
+                "requires": {
+                  "fallback": true,
+                  "standard": "c++20"
+                },
+                "value": "ends"
               }
-            },
+            ],
             "types": []
           }
         ],
@@ -173259,9 +173253,7 @@
             "types": []
           },
           {
-            "advanced": [
-              "true"
-            ],
+            "advanced": true,
             "default": false,
             "kind": "checkbox",
             "mark": "static",

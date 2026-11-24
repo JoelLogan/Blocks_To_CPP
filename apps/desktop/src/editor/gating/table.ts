@@ -9,7 +9,7 @@
  * yet; it is listed in {@link AWAITED} with the work that brings it, so that a row left behind by a
  * renamed block shows up in the tests.
  */
-import { BLOCK_DEFS } from '@blocks2cpp/blockly-ext';
+import { BLOCK_DEFS, type RequiresJson } from '@blocks2cpp/blockly-ext';
 
 import type { Requirement } from './gate';
 
@@ -39,25 +39,42 @@ const HAND_ROWS: readonly (readonly [RequirementKind, readonly string[], Require
   ['category', ['raw'], ADVANCED],
 ];
 
+/** The catalog's `advanced` flag and `requires` table, merged into one requirement. */
+function merged(
+  advanced: true | undefined,
+  requires: RequiresJson | undefined,
+): Requirement | null {
+  if (advanced !== true && requires === undefined) {
+    return null;
+  }
+  return { ...(advanced === true ? { advanced } : {}), ...requires };
+}
+
 /**
- * The rows of the catalog: each block's `advanced` and `requires`, merged into one requirement, and
- * each field's `requirements` by value (W4E-1's advanced blocks and *change*'s bitwise forms, the
- * C++20 members with a C++17 form, w4-editor-tools.md §2.1; *format … with*, which needs C++20 and
- * `std::format`, §7).
+ * The rows of the catalog, each from its `advanced` and `requires` (W4E-1's advanced blocks and
+ * *change*'s bitwise forms, the C++20 members with a C++17 form, w4-editor-tools.md §2.1; *format …
+ * with*, which needs C++20 and `std::format`, §7): a block's, a dropdown option's (the third
+ * element of its pair), and a checkbox's, which are those of its value other than its default
+ * (*fast unchecked access*, `static`).
  */
 function catalogRows(): (readonly [string, Requirement])[] {
   const rows: (readonly [string, Requirement])[] = [];
   for (const def of BLOCK_DEFS) {
-    if (def.advanced === true || def.requires !== undefined) {
-      const requirement: Requirement = {
-        ...(def.advanced === true ? { advanced: true as const } : {}),
-        ...def.requires,
-      };
-      rows.push([requirementKey('block', def.id), requirement]);
+    const block = merged(def.advanced, def.requires);
+    if (block !== null) {
+      rows.push([requirementKey('block', def.id), block]);
     }
     for (const field of def.fields) {
-      for (const [value, requirement] of Object.entries(field.requirements ?? {})) {
-        rows.push([requirementKey('option', def.id, field.name, value), requirement]);
+      for (const [, value, gating] of field.options) {
+        const option = merged(gating?.advanced, gating?.requires);
+        if (option !== null) {
+          rows.push([requirementKey('option', def.id, field.name, value), option]);
+        }
+      }
+      const checkbox = field.kind === 'checkbox' ? merged(field.advanced, field.requires) : null;
+      if (checkbox !== null) {
+        const value = String(field.default !== true);
+        rows.push([requirementKey('option', def.id, field.name, value), checkbox]);
       }
     }
   }

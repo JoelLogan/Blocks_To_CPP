@@ -108,7 +108,43 @@ describe('readCatalogJson', () => {
             field: [{ name: 'A', kind: 'dropdown', options: [['a']], types: [], default: null }],
           }),
         ),
-      'blocks[5].field[0].options[0] should be a [label, value] pair',
+      'blocks[5].field[0].options[0] should be a [label, value] pair or an option table',
+    ],
+    [
+      'an option table with an unknown key',
+      (c) =>
+        c.blocks.push(
+          rustBlock('x.y', {
+            field: [
+              {
+                name: 'A',
+                kind: 'dropdown',
+                options: [{ label: 'a', value: 'a', hidden: true }],
+                types: [],
+                default: null,
+              },
+            ],
+          }),
+        ),
+      'blocks[5].field[0].options[0] has the unknown key "hidden"',
+    ],
+    [
+      "an option's requirement of an unknown standard",
+      (c) =>
+        c.blocks.push(
+          rustBlock('x.y', {
+            field: [
+              {
+                name: 'A',
+                kind: 'dropdown',
+                options: [{ label: 'a', value: 'a', requires: { standard: 'c++98' } }],
+                types: [],
+                default: null,
+              },
+            ],
+          }),
+        ),
+      'blocks[5].field[0].options[0].requires.standard should be one of c++17',
     ],
     [
       'a numeric default',

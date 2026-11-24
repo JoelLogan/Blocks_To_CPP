@@ -47,7 +47,7 @@ name = "STATIC"
 kind = "checkbox"
 default = false
 omit_default = true
-advanced = ["true"]
+advanced = true
 popover = "static: keeps its value from one call of the function to the next"
 mark = "static"
 
@@ -147,9 +147,20 @@ kind = "symbol_ref"
 [[block.field]]
 name = "OP"
 kind = "dropdown"
-options = [["by", "add"], ["down by", "sub"], ["times", "mul"], ["divided by", "div"], ["mod", "mod"], ["add to the end", "append"], ["bitwise and", "and"], ["bitwise or", "or"], ["bitwise xor", "xor"], ["shifted left by", "shl"], ["shifted right by", "shr"]]
+options = [
+    ["by", "add"],
+    ["down by", "sub"],
+    ["times", "mul"],
+    ["divided by", "div"],
+    ["mod", "mod"],
+    ["add to the end", "append"],
+    { label = "bitwise and", value = "and", advanced = true },
+    { label = "bitwise or", value = "or", advanced = true },
+    { label = "bitwise xor", value = "xor", advanced = true },
+    { label = "shifted left by", value = "shl", advanced = true },
+    { label = "shifted right by", value = "shr", advanced = true },
+]
 default = "add"
-advanced = ["and", "or", "xor", "shl", "shr"]
 
 # Any value, so that text can be added to the end of a text variable; the
 # analyser checks it against the operator and the variable.

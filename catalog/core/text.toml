@@ -234,9 +234,12 @@ help = "Whether a text contains another text, starts with it or ends with it."
 [[block.field]]
 name = "OP"
 kind = "dropdown"
-options = [["contains", "contains"], ["starts with", "starts"], ["ends with", "ends"]]
+options = [
+    ["contains", "contains"],
+    { label = "starts with", value = "starts", requires = { standard = "c++20", fallback = true } },
+    { label = "ends with", value = "ends", requires = { standard = "c++20", fallback = true } },
+]
 default = "contains"
-requires = { starts = { standard = "c++20", fallback = true }, ends = { standard = "c++20", fallback = true } }
 
 [[block.input]]
 name = "TEXT"

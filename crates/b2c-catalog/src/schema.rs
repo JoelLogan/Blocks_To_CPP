@@ -293,9 +293,10 @@ pub struct FieldDef {
     pub name: String,
     /// Kind of value.
     pub kind: FieldKind,
-    /// Dropdown options as `[label, value]` pairs.
+    /// Dropdown options: `[label, value]` pairs, or tables with an
+    /// option's gating keys ([`OptionDef`]).
     #[serde(default)]
-    pub options: Vec<[String; 2]>,
+    pub options: Vec<OptionDef>,
     /// The types a `type` field always offers, its menu's first choices, in
     /// C++ syntax (`int`, `std::string`, `auto`, `std::vector<int>`).
     /// `catalog.json` writes each as a type term (types.md §3.1).
@@ -349,17 +350,17 @@ pub struct FieldDef {
         skip_serializing_if = "is_false"
     )]
     pub omit_default: bool,
-    /// `advanced` on a dropdown or a checkbox: the values the editor offers
-    /// only with *Show advanced blocks* (`advanced = ["and", "or"]`; a
-    /// checkbox's values are `"true"` and `"false"`). A block that already
-    /// holds one keeps it. Written only when not empty.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub advanced: Vec<String>,
-    /// `requires` on a dropdown or a checkbox: what each listed value needs,
-    /// as a block's [`Requires`] (`requires = { starts = { standard =
-    /// "c++20", fallback = true } }`). Written only when not empty.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub requires: BTreeMap<String, Requires>,
+    /// `advanced = true` on a checkbox: the editor offers the value other
+    /// than its default only with *Show advanced blocks* (`static` on
+    /// *create*). A dropdown's options carry their own ([`OptionDef`]).
+    /// Written only when set.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub advanced: bool,
+    /// `requires` on a checkbox: what the value other than its default
+    /// needs ([`Requires`]). A dropdown's options carry their own. Written
+    /// only when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<Requires>,
     /// `menu` on a checkbox: the field is set from the block's context menu,
     /// with these words, instead of being drawn on the block (*Fast
     /// unchecked access*, w4-editor-tools.md §7). Such a field is shown once,
@@ -386,6 +387,105 @@ impl FieldDef {
     /// when it is set there rather than drawn on the block.
     pub fn set_aside(&self) -> Option<&str> {
         self.menu.as_deref().or(self.popover.as_deref())
+    }
+}
+
+/// One option of a dropdown: its label, its value, and the gating keys of
+/// w4-editor-tools.md §6.1 on the option itself. A catalog file writes an
+/// option without keys as a `["label", "value"]` pair and one with keys as a
+/// table (`{ label = "bitwise and", value = "and", advanced = true }`, or
+/// `requires = { standard = "c++20", fallback = true }`); `catalog.json`
+/// writes them the same way.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct OptionDef {
+    /// The words the menu shows.
+    pub label: String,
+    /// The value stored in a project.
+    pub value: String,
+    /// `advanced = true`: offered only with *Show advanced blocks*.
+    pub advanced: bool,
+    /// `requires`: what the option needs ([`Requires`]).
+    pub requires: Option<Requires>,
+}
+
+impl OptionDef {
+    /// An option without gating keys.
+    pub fn new(label: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            value: value.into(),
+            ..Self::default()
+        }
+    }
+
+    /// Whether the option has a gating key.
+    pub fn is_gated(&self) -> bool {
+        self.advanced || self.requires.is_some()
+    }
+}
+
+/// An option written as a table.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OptionTable {
+    label: String,
+    value: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    advanced: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    requires: Option<Requires>,
+}
+
+impl Serialize for OptionDef {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.is_gated() {
+            OptionTable {
+                label: self.label.clone(),
+                value: self.value.clone(),
+                advanced: self.advanced,
+                requires: self.requires.clone(),
+            }
+            .serialize(serializer)
+        } else {
+            [&self.label, &self.value].serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for OptionDef {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = OptionDef;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a [label, value] pair or a table with label and value")
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<OptionDef, A::Error> {
+                let label: String = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let value: String = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                    return Err(serde::de::Error::invalid_length(3, &self));
+                }
+                Ok(OptionDef::new(label, value))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<OptionDef, A::Error> {
+                let table = OptionTable::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(OptionDef {
+                    label: table.label,
+                    value: table.value,
+                    advanced: table.advanced,
+                    requires: table.requires,
+                })
+            }
+        }
+        deserializer.deserialize_any(Visitor)
     }
 }
 

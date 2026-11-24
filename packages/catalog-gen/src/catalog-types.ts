@@ -151,8 +151,11 @@ export interface RepeatJson {
 export interface FieldDefJson {
   readonly name: string;
   readonly kind: FieldKind;
-  /** Dropdown options as [label, value] pairs. */
-  readonly options: readonly (readonly [label: string, value: string])[];
+  /**
+   * Dropdown options as [label, value] pairs, with a third element holding the option's gating keys
+   * when it has any (the catalog's `advanced` and `requires` on the option, w4-editor-tools.md §6.1).
+   */
+  readonly options: readonly OptionJson[];
   /**
    * The types a `type` field offers first, as the field's values: a name stays itself, any other
    * type is its term's key (canonical compact JSON, types.md §3.2).
@@ -174,11 +177,12 @@ export interface FieldDefJson {
    */
   readonly omitDefault?: true;
   /**
-   * What some of a dropdown's options or a checkbox's values (`'true'`, `'false'`) need, by value
-   * (the catalog's `advanced` and `requires` on the field, w4-editor-tools.md §6.1); absent when
-   * every value is basic.
+   * On a checkbox: present and `true` when its value other than its default is offered only with
+   * *Show advanced blocks* (the catalog's `advanced`, w4-editor-tools.md §6.1).
    */
-  readonly requirements?: Readonly<Record<string, RequirementJson>>;
+  readonly advanced?: true;
+  /** On a checkbox: what its value other than its default needs (the catalog's `requires`). */
+  readonly requires?: RequiresJson;
   /**
    * On a checkbox set from the block's context menu instead of drawn on the block (*Fast unchecked
    * access*, w4-editor-tools.md §7): the menu item's words. Such a field is in neither label.
@@ -210,13 +214,16 @@ export interface RequiresJson {
   readonly fallback?: true;
 }
 
-/**
- * What a field's value needs beyond the basic editor (the catalog's `advanced` and `requires` on
- * the field, w4-editor-tools.md §6.1): advanced blocks shown, and its {@link RequiresJson}.
- */
-export interface RequirementJson extends RequiresJson {
+/** A dropdown option's gating keys (the catalog's `advanced` and `requires` on the option). */
+export interface OptionGatingJson {
   readonly advanced?: true;
+  readonly requires?: RequiresJson;
 }
+
+/** A dropdown option: its label and value, and its gating keys when it has any. */
+export type OptionJson =
+  | readonly [label: string, value: string]
+  | readonly [label: string, value: string, gating: OptionGatingJson];
 
 /** A value-input definition. */
 export interface InputDefJson {

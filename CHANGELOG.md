@@ -624,10 +624,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   (reported).
 - The catalog's gating keys (wave W4): `advanced = true` and `requires =
   { standard = "c++20", capability = "stdFormat" }` (with `fallback = true`
-  for a form the generator writes for older standards) on a block, and
-  `advanced` and `requires` by value on a dropdown or a checkbox, checked
-  when the catalog loads and exported in `catalog.json` and the editor's
-  definitions. The
+  for a form the generator writes for older standards) on a block, on a
+  dropdown option and on a checkbox, checked when the catalog loads and
+  exported in `catalog.json` and the editor's definitions. The
   editor's gating table reads its block and option rows from them and keeps
   only categories and types by hand.
 - _Fast unchecked access_ (wave W4): the block menu of _item of_ and _set
@@ -1085,6 +1084,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   definitions, which keep a block's `advanced` and `requires` as the catalog
   writes them; the editor's gating table merges them. The WebAssembly core
   is 2,033,601 bytes (+21,618).
+- A dropdown option's `advanced` and `requires` sit on the option, as the W4
+  contract has them (`{ label = "bitwise and", value = "and", advanced =
+  true }`), not on its field by value; an option without them stays a
+  `["label", "value"]` pair. A checkbox's `advanced = true` and `requires`
+  are those of its value other than its default. `catalog.json` and the
+  editor's definitions carry them the same way (an option's as a third
+  element of its pair).
 
 ### Removed
 

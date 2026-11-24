@@ -396,9 +396,7 @@
           "types": [],
           "default": true,
           "omitDefault": true,
-          "advanced": [
-            "false"
-          ],
+          "advanced": true,
           "menu": "Fast unchecked access ([] instead of .at())",
           "mark": "unchecked"
         }
@@ -749,9 +747,7 @@
           "types": [],
           "default": true,
           "omitDefault": true,
-          "advanced": [
-            "false"
-          ],
+          "advanced": true,
           "menu": "Fast unchecked access ([] instead of .at())",
           "mark": "unchecked"
         }
@@ -3417,27 +3413,25 @@
               "contains",
               "contains"
             ],
-            [
-              "starts with",
-              "starts"
-            ],
-            [
-              "ends with",
-              "ends"
-            ]
+            {
+              "label": "starts with",
+              "value": "starts",
+              "requires": {
+                "standard": "c++20",
+                "fallback": true
+              }
+            },
+            {
+              "label": "ends with",
+              "value": "ends",
+              "requires": {
+                "standard": "c++20",
+                "fallback": true
+              }
+            }
           ],
           "types": [],
-          "default": "contains",
-          "requires": {
-            "ends": {
-              "standard": "c++20",
-              "fallback": true
-            },
-            "starts": {
-              "standard": "c++20",
-              "fallback": true
-            }
-          }
+          "default": "contains"
         }
       ],
       "input": [
@@ -4407,36 +4401,34 @@
               "add to the end",
               "append"
             ],
-            [
-              "bitwise and",
-              "and"
-            ],
-            [
-              "bitwise or",
-              "or"
-            ],
-            [
-              "bitwise xor",
-              "xor"
-            ],
-            [
-              "shifted left by",
-              "shl"
-            ],
-            [
-              "shifted right by",
-              "shr"
-            ]
+            {
+              "label": "bitwise and",
+              "value": "and",
+              "advanced": true
+            },
+            {
+              "label": "bitwise or",
+              "value": "or",
+              "advanced": true
+            },
+            {
+              "label": "bitwise xor",
+              "value": "xor",
+              "advanced": true
+            },
+            {
+              "label": "shifted left by",
+              "value": "shl",
+              "advanced": true
+            },
+            {
+              "label": "shifted right by",
+              "value": "shr",
+              "advanced": true
+            }
           ],
           "types": [],
-          "default": "add",
-          "advanced": [
-            "and",
-            "or",
-            "xor",
-            "shl",
-            "shr"
-          ]
+          "default": "add"
         }
       ],
       "input": [
@@ -4534,9 +4526,7 @@
           "types": [],
           "default": false,
           "omitDefault": true,
-          "advanced": [
-            "true"
-          ],
+          "advanced": true,
           "popover": "static: keeps its value from one call of the function to the next",
           "mark": "static"
         }

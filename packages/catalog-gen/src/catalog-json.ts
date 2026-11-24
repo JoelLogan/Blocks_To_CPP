@@ -154,11 +154,27 @@ export interface RustRequires {
   readonly fallback?: boolean;
 }
 
+/**
+ * `b2c_catalog::OptionDef`: a `[label, value]` pair, or a table when the option has gating keys
+ * (w4-editor-tools.md §6.1).
+ */
+export type RustOption = readonly [string, string] | RustOptionTable;
+
+/** An option with its gating keys. */
+export interface RustOptionTable {
+  readonly label: string;
+  readonly value: string;
+  /** Written only when true. */
+  readonly advanced?: boolean;
+  /** Written only when present. */
+  readonly requires?: RustRequires;
+}
+
 /** `b2c_catalog::FieldDef`. */
 export interface RustFieldDef {
   readonly name: string;
   readonly kind: FieldKind;
-  readonly options: readonly (readonly [string, string])[];
+  readonly options: readonly RustOption[];
   /** The types offered first, as type terms (types.md §4.1). */
   readonly types: readonly RustTypeJson[];
   readonly default: string | boolean | null;
@@ -174,10 +190,13 @@ export interface RustFieldDef {
    * default (w3-modules.md §6 W3M-D11); the export writes the key only when it is true.
    */
   readonly omitDefault?: boolean;
-  /** The values offered only with advanced blocks shown; written only when not empty. */
-  readonly advanced?: readonly string[];
-  /** What each listed value needs; written only when not empty. */
-  readonly requires?: Readonly<Record<string, RustRequires>>;
+  /**
+   * On a checkbox: its value other than its default is offered only with advanced blocks shown;
+   * written only when true. A dropdown's options carry their own.
+   */
+  readonly advanced?: boolean;
+  /** On a checkbox: what its value other than its default needs; written only when present. */
+  readonly requires?: RustRequires;
   /** `menu`: the words of the block menu's item that sets this checkbox; written only when set. */
   readonly menu?: string;
   /** `popover`: the words of the ⚙ popover's tick that sets this checkbox; written only when set. */
@@ -484,19 +503,28 @@ function fieldDef(value: unknown, path: string): RustFieldDef {
     ...optional(o.type, `${path}.type`, (v, p) => ({ type: pattern(v, p, 0) })),
     ...optional(o.repeat, `${path}.repeat`, (v, p) => ({ repeat: nullable(v, p, repeat) })),
     ...optional(o.omitDefault, `${path}.omitDefault`, (v, p) => ({ omitDefault: boolean(v, p) })),
-    ...optional(o.advanced, `${path}.advanced`, (v, p) => ({ advanced: array(v, p, string) })),
-    ...optional(o.requires, `${path}.requires`, (v, p) => ({ requires: record(v, p, requires) })),
+    ...optional(o.advanced, `${path}.advanced`, (v, p) => ({ advanced: boolean(v, p) })),
+    ...optional(o.requires, `${path}.requires`, (v, p) => ({ requires: requires(v, p) })),
     ...optional(o.menu, `${path}.menu`, (v, p) => ({ menu: string(v, p) })),
     ...optional(o.popover, `${path}.popover`, (v, p) => ({ popover: string(v, p) })),
     ...optional(o.mark, `${path}.mark`, (v, p) => ({ mark: string(v, p) })),
   };
 }
 
-function option(value: unknown, path: string): readonly [string, string] {
+function option(value: unknown, path: string): RustOption {
+  if (!Array.isArray(value)) {
+    const o = object(value, path, ['label', 'value', 'advanced', 'requires']);
+    return {
+      label: string(o.label, `${path}.label`),
+      value: string(o.value, `${path}.value`),
+      ...optional(o.advanced, `${path}.advanced`, (v, p) => ({ advanced: boolean(v, p) })),
+      ...optional(o.requires, `${path}.requires`, (v, p) => ({ requires: requires(v, p) })),
+    };
+  }
   const pair = array(value, path, string);
   const [label, optionValue] = pair;
   if (pair.length !== 2 || label === undefined || optionValue === undefined) {
-    throw new CatalogJsonError(path, 'should be a [label, value] pair');
+    throw new CatalogJsonError(path, 'should be a [label, value] pair or an option table');
   }
   return [label, optionValue];
 }

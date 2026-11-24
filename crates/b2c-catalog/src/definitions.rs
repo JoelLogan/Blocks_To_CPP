@@ -467,11 +467,11 @@ fn check_field(field: &FieldDef, problems: &mut Vec<String>) {
     }
     match field.kind {
         FieldKind::Dropdown => {
-            let values: Vec<&String> = field.options.iter().map(|[_, value]| value).collect();
+            let values: Vec<&String> = field.options.iter().map(|option| &option.value).collect();
             let labels_ok = field
                 .options
                 .iter()
-                .all(|[label, value]| !label.is_empty() && !value.is_empty());
+                .all(|option| !option.label.is_empty() && !option.value.is_empty());
             if values.is_empty() || !labels_ok || !all_unique(&values) {
                 problems.push(format!(
                     "the dropdown {name} needs options with distinct, non-empty values"
@@ -545,48 +545,52 @@ fn check_menu_field(field: &FieldDef, problems: &mut Vec<String>) {
     }
 }
 
-/// A field's `advanced` and `requires` (w4-editor-tools.md §6.1): only a
-/// dropdown's options or a checkbox's `true` and `false`, each listed once,
-/// and never the default, which a block from the toolbox starts with.
+/// The gating keys of a field (w4-editor-tools.md §6.1): a dropdown's
+/// options carry their own `advanced` and `requires`, and a checkbox's keys
+/// are those of its value other than its default; no other field has them.
+/// The default is never gated, since a block from the toolbox starts with
+/// it.
 fn check_field_gates(field: &FieldDef, problems: &mut Vec<String>) {
     let name = &field.name;
-    if field.advanced.is_empty() && field.requires.is_empty() {
-        return;
-    }
-    let values: Vec<&str> = match field.kind {
-        FieldKind::Dropdown => field.options.iter().map(|[_, value]| value.as_str()).collect(),
-        FieldKind::Checkbox => vec!["true", "false"],
-        _ => {
-            problems.push(format!(
-                "only a dropdown's or a checkbox's values can be advanced or require something ({name})"
-            ));
-            return;
+    let field_keys = field.advanced || field.requires.is_some();
+    match field.kind {
+        FieldKind::Dropdown => {
+            if field_keys {
+                problems.push(format!(
+                    "the dropdown {name} has advanced or requires: write them on its options"
+                ));
+            }
+            let default = match &field.default {
+                Some(FieldDefault::Text(text)) => Some(text.as_str()),
+                _ => None,
+            };
+            for option in field.options.iter().filter(|option| option.is_gated()) {
+                if let Some(requires) = &option.requires {
+                    check_requires(&format!("{name}={}", option.value), requires, problems);
+                }
+                let refused = option.advanced || option.requires.as_ref().is_some_and(Requires::refuses);
+                if refused && default == Some(option.value.as_str()) {
+                    problems.push(format!(
+                        "the default of {name} is gated, so a block from the toolbox could start with a value the editor hides"
+                    ));
+                }
+            }
         }
-    };
-    let default = match &field.default {
-        Some(FieldDefault::Text(text)) => Some(text.clone()),
-        Some(FieldDefault::Bool(flag)) => Some(flag.to_string()),
-        None => None,
-    };
-    let gated = field.advanced.iter().chain(field.requires.keys());
-    for value in gated {
-        if !values.contains(&value.as_str()) {
-            problems.push(format!("{name} has no value {value:?} to gate"));
+        FieldKind::Checkbox if field_keys => {
+            if !matches!(field.default, Some(FieldDefault::Bool(_))) {
+                problems.push(format!(
+                    "the checkbox {name} has advanced or requires, which gate the value other than its default: give it a default"
+                ));
+            }
+            if let Some(requires) = &field.requires {
+                check_requires(name, requires, problems);
+            }
         }
-    }
-    if !all_unique(&field.advanced) {
-        problems.push(format!("{name} lists an advanced value twice"));
-    }
-    for (value, requires) in &field.requires {
-        check_requires(&format!("{name}={value}"), requires, problems);
-    }
-    let refused = |value: &String| {
-        field.advanced.contains(value) || field.requires.get(value).is_some_and(Requires::refuses)
-    };
-    if default.as_ref().is_some_and(refused) {
-        problems.push(format!(
-            "the default of {name} is gated, so a block from the toolbox could start with a value the editor hides"
-        ));
+        FieldKind::Checkbox => {}
+        _ if field_keys => problems.push(format!(
+            "only a dropdown's options or a checkbox can be advanced or require something ({name})"
+        )),
+        _ => {}
     }
 }
 
@@ -615,7 +619,7 @@ pub(crate) const SHARED_FIELD: &str = "SHARED";
 pub(crate) fn field_value_fits(field: &FieldDef, value: &FieldDefault) -> bool {
     match (field.kind, value) {
         (FieldKind::Dropdown, FieldDefault::Text(text)) => {
-            field.options.iter().any(|[_, option]| option == text)
+            field.options.iter().any(|option| &option.value == text)
         }
         (FieldKind::Checkbox, FieldDefault::Bool(_)) | (FieldKind::Text, FieldDefault::Text(_)) => true,
         (FieldKind::Number, FieldDefault::Text(text)) => !text.is_empty(),
@@ -782,7 +786,9 @@ fn all_unique<T: Ord>(items: &[T]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{Capability, Category, Label, Lowering, Repeat, Shape, StatementDef, TypeClass};
+    use crate::schema::{
+        Capability, Category, Label, Lowering, OptionDef, Repeat, Shape, StatementDef, TypeClass,
+    };
 
     fn def() -> BlockDef {
         BlockDef {
@@ -802,7 +808,7 @@ mod tests {
             field: vec![FieldDef {
                 name: "X".into(),
                 kind: FieldKind::Dropdown,
-                options: vec![["a".into(), "a".into()], ["b".into(), "b".into()]],
+                options: vec![OptionDef::new("a", "a"), OptionDef::new("b", "b")],
                 types: vec![],
                 default: Some(FieldDefault::Text("a".into())),
                 pattern: None,
@@ -810,8 +816,8 @@ mod tests {
                 headers: BTreeMap::new(),
                 repeat: None,
                 omit_default: false,
-                advanced: Vec::new(),
-                requires: BTreeMap::new(),
+                advanced: false,
+                requires: None,
                 menu: None,
                 popover: None,
                 mark: None,
@@ -961,8 +967,8 @@ mod tests {
                 headers: BTreeMap::new(),
                 repeat: None,
                 omit_default: false,
-                advanced: Vec::new(),
-                requires: BTreeMap::new(),
+                advanced: false,
+                requires: None,
                 menu: None,
                 popover: None,
                 mark: None,
@@ -1041,7 +1047,7 @@ mod tests {
         assert!(!problems_after(|d| d.field[0].default = text("c")).is_empty());
         assert!(!problems_after(|d| d.field[0].default = Some(FieldDefault::Bool(true))).is_empty());
         assert!(!problems_after(|d| d.field[0].options.clear()).is_empty());
-        assert!(!problems_after(|d| d.field[0].options[1][1] = "a".into()).is_empty());
+        assert!(!problems_after(|d| d.field[0].options[1].value = "a".into()).is_empty());
         assert!(!problems_after(|d| d.field[0].types = vec!["int".into()]).is_empty());
         assert!(problems_after(|d| d.field[0].default = None).is_empty());
         let field = |kind, default, types: Vec<String>| FieldDef {
@@ -1055,8 +1061,8 @@ mod tests {
             headers: BTreeMap::new(),
             repeat: None,
             omit_default: false,
-            advanced: Vec::new(),
-            requires: BTreeMap::new(),
+            advanced: false,
+            requires: None,
             menu: None,
             popover: None,
             mark: None,
@@ -1113,8 +1119,8 @@ mod tests {
                 capability: Some(Capability::StdFormat),
                 ..cpp20(false)
             });
-            d.field[0].advanced = vec!["b".into()];
-            d.field[0].requires = BTreeMap::from([("b".into(), cpp20(true))]);
+            d.field[0].options[1].advanced = true;
+            d.field[0].options[1].requires = Some(cpp20(true));
         });
         assert_eq!(ok, Vec::<String>::new());
         // A requirement names something newer than C++17.
@@ -1148,47 +1154,99 @@ mod tests {
         assert!(read("standard = \"c++98\"").is_err());
         assert!(read("capability = \"gcc13\"").is_err());
         assert!(read("standard = \"c++20\"\nnewer = true").is_err());
-        // Only options the field has, each once, and never the default
-        // unless the code generator has a fallback for it.
-        let unknown = problems_after(|d| d.field[0].advanced = vec!["c".into()]);
-        assert_eq!(unknown, ["X has no value \"c\" to gate"]);
-        let twice = problems_after(|d| d.field[0].advanced = vec!["b".into(), "b".into()]);
-        assert_eq!(twice, ["X lists an advanced value twice"]);
+        // A dropdown's keys are its options', and never its default's unless
+        // the code generator has a fallback for it.
+        let on_field = problems_after(|d| d.field[0].advanced = true);
+        assert_eq!(
+            on_field,
+            ["the dropdown X has advanced or requires: write them on its options"]
+        );
         let default_rule = "the default of X is gated, so a block from the toolbox could start with a value the editor hides";
         assert_eq!(
-            problems_after(|d| d.field[0].advanced = vec!["a".into()]),
+            problems_after(|d| d.field[0].options[0].advanced = true),
             [default_rule]
         );
-        let hidden = problems_after(|d| d.field[0].requires = BTreeMap::from([("a".into(), cpp20(false))]));
+        let hidden = problems_after(|d| d.field[0].options[0].requires = Some(cpp20(false)));
         assert_eq!(hidden, [default_rule]);
-        let kept = problems_after(|d| {
-            d.field[0].requires = BTreeMap::from([("a".into(), cpp20(true))]);
-        });
+        let kept = problems_after(|d| d.field[0].options[0].requires = Some(cpp20(true)));
         assert_eq!(kept, Vec::<String>::new());
-        // A checkbox's values are `true` and `false`; other kinds have none.
-        let checkbox = problems_after(|d| {
-            d.label.friendly = format!("{} fast %TICK", d.label.friendly);
-            d.field.push(FieldDef {
-                default: Some(FieldDefault::Bool(true)),
-                advanced: vec!["false".into()],
-                ..plain_field("TICK", FieldKind::Checkbox)
+        let old_option = problems_after(|d| {
+            d.field[0].options[1].requires = Some(Requires {
+                standard: Some(CppStandard::Cpp17),
+                ..Requires::default()
             });
         });
-        assert_eq!(checkbox, Vec::<String>::new());
+        assert_eq!(old_option, ["X=b requires C++17, which every project has"]);
+        // A checkbox's keys gate its value other than its default, so it has
+        // one; other kinds have none.
+        let checkbox = |default: Option<bool>| {
+            problems_after(move |d| {
+                d.label.friendly = format!("{} fast %TICK", d.label.friendly);
+                d.field.push(FieldDef {
+                    default: default.map(FieldDefault::Bool),
+                    advanced: true,
+                    ..plain_field("TICK", FieldKind::Checkbox)
+                });
+            })
+        };
+        assert_eq!(checkbox(Some(true)), Vec::<String>::new());
+        assert_eq!(
+            checkbox(None),
+            [
+                "the checkbox TICK has advanced or requires, which gate the value other than its default: give it a default"
+            ]
+        );
         let text = problems_after(|d| {
             d.label.friendly = format!("{} %WORD", d.label.friendly);
             d.field.push(FieldDef {
-                advanced: vec!["x".into()],
+                advanced: true,
                 ..plain_field("WORD", FieldKind::Text)
             });
         });
         assert_eq!(
             text,
-            ["only a dropdown's or a checkbox's values can be advanced or require something (WORD)"]
+            ["only a dropdown's options or a checkbox can be advanced or require something (WORD)"]
         );
         // `catalog.json` writes the table as an object.
         let json = serde_json::to_value(cpp20(true)).expect("serialises");
         assert_eq!(json, serde_json::json!({"standard": "c++20", "fallback": true}));
+    }
+
+    #[test]
+    fn option_tables() {
+        let cpp20 = Requires {
+            standard: Some(CppStandard::Cpp20),
+            fallback: true,
+            ..Requires::default()
+        };
+        // An option carries its own keys, written as a table; one without
+        // keys is a pair.
+        let options: CatalogFile = toml::from_str(
+            "[[block]]\nid = \"x.y\"\nversion = 1\ncategory = \"text\"\nshape = \"statement\"\n\
+             label = { friendly = \"y %OP\", cpp = \"y();\" }\nlowering = \"builtin\"\nhelp = \"Y.\"\n\
+             [[block.field]]\nname = \"OP\"\nkind = \"dropdown\"\ndefault = \"a\"\noptions = [\
+             [\"A\", \"a\"], { label = \"B\", value = \"b\", advanced = true, \
+             requires = { standard = \"c++20\", fallback = true } }]\n",
+        )
+        .expect("parses");
+        let read = &options.block[0].field[0].options;
+        assert_eq!(read[0], OptionDef::new("A", "a"));
+        assert_eq!(
+            read[1],
+            OptionDef {
+                advanced: true,
+                requires: Some(cpp20.clone()),
+                ..OptionDef::new("B", "b")
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(read).expect("serialises"),
+            serde_json::json!([["A", "a"], {"label": "B", "value": "b", "advanced": true, "requires": {"standard": "c++20", "fallback": true}}])
+        );
+        let parse_option = |text: &str| toml::from_str::<BTreeMap<String, OptionDef>>(&format!("o = {text}"));
+        assert!(parse_option("[\"A\"]").is_err());
+        assert!(parse_option("[\"A\", \"a\", \"x\"]").is_err());
+        assert!(parse_option("{ label = \"A\", value = \"a\", hidden = true }").is_err());
     }
 
     #[test]
@@ -1245,15 +1303,15 @@ mod tests {
                 tick.popover.is_some() && tick.default == Some(FieldDefault::Bool(false)),
                 "{name}"
             );
-            assert_eq!(tick.advanced == ["true"], advanced, "{name}");
+            assert_eq!(tick.advanced, advanced, "{name}");
         }
         // The core catalog's: *item of* and *set item*.
         let catalog = crate::core_catalog();
         for id in ["coll.item", "coll.set_item"] {
             let checked = field_def(&catalog.blocks[id], "CHECKED").expect("CHECKED");
             assert_eq!(
-                (checked.default.clone(), checked.advanced.clone()),
-                (Some(FieldDefault::Bool(true)), vec![String::from("false")]),
+                (checked.default.clone(), checked.advanced),
+                (Some(FieldDefault::Bool(true)), true),
                 "{id}"
             );
             assert!(checked.menu.is_some(), "{id}");
@@ -1267,7 +1325,13 @@ mod tests {
             assert!(catalog.blocks[id].advanced, "{id}");
         }
         let change = field_def(&catalog.blocks["var.change"], "OP").expect("OP");
-        assert_eq!(change.advanced, ["and", "or", "xor", "shl", "shr"]);
+        let advanced: Vec<&str> = change
+            .options
+            .iter()
+            .filter(|option| option.advanced)
+            .map(|option| option.value.as_str())
+            .collect();
+        assert_eq!(advanced, ["and", "or", "xor", "shl", "shr"]);
         let contains = catalog.blocks["coll.contains"]
             .requires
             .clone()
@@ -1277,7 +1341,13 @@ mod tests {
             (Some(CppStandard::Cpp20), true)
         );
         let find = field_def(&catalog.blocks["text.find"], "OP").expect("OP");
-        assert_eq!(find.requires.keys().collect::<Vec<_>>(), ["ends", "starts"]);
+        let requiring: Vec<&str> = find
+            .options
+            .iter()
+            .filter(|option| option.requires.as_ref().is_some_and(|r| r.fallback))
+            .map(|option| option.value.as_str())
+            .collect();
+        assert_eq!(requiring, ["starts", "ends"]);
     }
 
     #[test]
@@ -1414,8 +1484,8 @@ mod tests {
             headers: BTreeMap::new(),
             repeat: None,
             omit_default: false,
-            advanced: Vec::new(),
-            requires: BTreeMap::new(),
+            advanced: false,
+            requires: None,
             menu: None,
             popover: None,
             mark: None,
@@ -1682,7 +1752,7 @@ mod tests {
             name: name.into(),
             kind,
             options: if kind == FieldKind::Dropdown {
-                vec![["a".into(), "a".into()]]
+                vec![OptionDef::new("a", "a")]
             } else {
                 vec![]
             },
@@ -1696,8 +1766,8 @@ mod tests {
             members: None,
             headers: BTreeMap::new(),
             omit_default: false,
-            advanced: Vec::new(),
-            requires: BTreeMap::new(),
+            advanced: false,
+            requires: None,
             menu: None,
             popover: None,
             mark: None,

@@ -151,8 +151,11 @@ export interface RepeatJson {
 export interface FieldDefJson {
   readonly name: string;
   readonly kind: FieldKind;
-  /** Dropdown options as [label, value] pairs. */
-  readonly options: readonly (readonly [label: string, value: string])[];
+  /**
+   * Dropdown options as [label, value] pairs, with a third element holding the option's gating keys
+   * when it has any (the catalog's `advanced` and `requires` on the option, w4-editor-tools.md §6.1).
+   */
+  readonly options: readonly OptionJson[];
   /**
    * The types a `type` field offers first, as the field's values: a name stays itself, any other
    * type is its term's key (canonical compact JSON, types.md §3.2).
@@ -174,11 +177,12 @@ export interface FieldDefJson {
    */
   readonly omitDefault?: true;
   /**
-   * What some of a dropdown's options or a checkbox's values (`'true'`, `'false'`) need, by value
-   * (the catalog's `advanced` and `requires` on the field, w4-editor-tools.md §6.1); absent when
-   * every value is basic.
+   * On a checkbox: present and `true` when its value other than its default is offered only with
+   * *Show advanced blocks* (the catalog's `advanced`, w4-editor-tools.md §6.1).
    */
-  readonly requirements?: Readonly<Record<string, RequirementJson>>;
+  readonly advanced?: true;
+  /** On a checkbox: what its value other than its default needs (the catalog's `requires`). */
+  readonly requires?: RequiresJson;
   /**
    * On a checkbox set from the block's context menu instead of drawn on the block (*Fast unchecked
    * access*, w4-editor-tools.md §7): the menu item's words. Such a field is in neither label.
@@ -210,13 +214,16 @@ export interface RequiresJson {
   readonly fallback?: true;
 }
 
-/**
- * What a field's value needs beyond the basic editor (the catalog's `advanced` and `requires` on
- * the field, w4-editor-tools.md §6.1): advanced blocks shown, and its {@link RequiresJson}.
- */
-export interface RequirementJson extends RequiresJson {
+/** A dropdown option's gating keys (the catalog's `advanced` and `requires` on the option). */
+export interface OptionGatingJson {
   readonly advanced?: true;
+  readonly requires?: RequiresJson;
 }
+
+/** A dropdown option: its label and value, and its gating keys when it has any. */
+export type OptionJson =
+  | readonly [label: string, value: string]
+  | readonly [label: string, value: string, gating: OptionGatingJson];
 
 /** A value-input definition. */
 export interface InputDefJson {
@@ -662,7 +669,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         type: null,
         repeat: null,
         omitDefault: true,
-        requirements: { false: { advanced: true } },
+        advanced: true,
         menu: 'Fast unchecked access ([] instead of .at())',
         mark: 'unchecked',
       },
@@ -931,7 +938,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         type: null,
         repeat: null,
         omitDefault: true,
-        requirements: { false: { advanced: true } },
+        advanced: true,
         menu: 'Fast unchecked access ([] instead of .at())',
         mark: 'unchecked',
       },
@@ -3313,17 +3320,13 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         kind: 'dropdown',
         options: [
           ['contains', 'contains'],
-          ['starts with', 'starts'],
-          ['ends with', 'ends'],
+          ['starts with', 'starts', { requires: { standard: 'c++20', fallback: true } }],
+          ['ends with', 'ends', { requires: { standard: 'c++20', fallback: true } }],
         ],
         types: [],
         default: 'contains',
         type: null,
         repeat: null,
-        requirements: {
-          starts: { standard: 'c++20', fallback: true },
-          ends: { standard: 'c++20', fallback: true },
-        },
       },
     ],
     inputs: [
@@ -4152,23 +4155,16 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
           ['divided by', 'div'],
           ['mod', 'mod'],
           ['add to the end', 'append'],
-          ['bitwise and', 'and'],
-          ['bitwise or', 'or'],
-          ['bitwise xor', 'xor'],
-          ['shifted left by', 'shl'],
-          ['shifted right by', 'shr'],
+          ['bitwise and', 'and', { advanced: true }],
+          ['bitwise or', 'or', { advanced: true }],
+          ['bitwise xor', 'xor', { advanced: true }],
+          ['shifted left by', 'shl', { advanced: true }],
+          ['shifted right by', 'shr', { advanced: true }],
         ],
         types: [],
         default: 'add',
         type: null,
         repeat: null,
-        requirements: {
-          and: { advanced: true },
-          or: { advanced: true },
-          xor: { advanced: true },
-          shl: { advanced: true },
-          shr: { advanced: true },
-        },
       },
     ],
     inputs: [
@@ -4272,7 +4268,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         type: null,
         repeat: null,
         omitDefault: true,
-        requirements: { true: { advanced: true } },
+        advanced: true,
         popover: 'static: keeps its value from one call of the function to the next',
         mark: 'static',
       },

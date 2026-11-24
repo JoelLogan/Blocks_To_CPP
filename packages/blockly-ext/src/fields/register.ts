@@ -73,7 +73,11 @@ export function createCatalogField(
       // table (B2C-E0607).
       return new B2cTextField(textDefault ?? '');
     case 'dropdown':
-      return new B2cDropdownField(def.options, textDefault);
+      // The menu shows each option's label and stores its value; its gating keys are the editor's.
+      return new B2cDropdownField(
+        def.options.map(([label, value]) => [label, value] as const),
+        textDefault,
+      );
     case 'checkbox':
       return new B2cCheckboxField(def.default === true);
     case 'namespace':

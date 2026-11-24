@@ -143,10 +143,15 @@ export function createModeField(mode: ParamMode): Blockly.Field {
   );
 }
 
+/** A dropdown's options as the menu's [label, value] pairs, without their gating keys. */
+function optionPairs(def: FieldDefJson): (readonly [string, string])[] {
+  return def.options.map(([label, value]) => [label, value] as const);
+}
+
 /** The field that joins repeated parts, as its catalog definition describes it. */
 export function createJoinField(def: FieldDefJson): Blockly.Field {
   const value = typeof def.default === 'string' ? def.default : (def.options[0]?.[1] ?? '');
-  return createDropdownField(def.options, value, 'Operator');
+  return createDropdownField(optionPairs(def), value, 'Operator');
 }
 
 /** The kinds of field that may be repeated (docs/plans/m3-contracts/w2.md §2.1). */
@@ -189,6 +194,6 @@ export function createMemberField(def: FieldDefJson, decl: Decl): Blockly.Field 
       return field;
     }
     default:
-      return createDropdownField(def.options, text ?? def.options[0]?.[1] ?? '', 'Choice');
+      return createDropdownField(optionPairs(def), text ?? def.options[0]?.[1] ?? '', 'Choice');
   }
 }

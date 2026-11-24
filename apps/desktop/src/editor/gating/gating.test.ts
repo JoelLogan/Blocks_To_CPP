@@ -234,8 +234,8 @@ describe('the requirements table', () => {
       for (const field of def.fields.filter((f) => f.kind === 'checkbox')) {
         const key = `${def.id}.${field.name}`;
         listed.add(key);
-        // Basic, or gated by value in the catalog (unchecked access, w4-editor-tools.md §7).
-        const gated = field.requirements !== undefined;
+        // Basic, or gated in the catalog (unchecked access, `static`, w4-editor-tools.md §7).
+        const gated = field.advanced !== undefined || field.requires !== undefined;
         expect(BASIC_FIELDS.has(key) || gated, `${key} has no gating decision`).toBe(true);
         expect(BASIC_FIELDS.has(key) && gated, `${key} is both basic and gated`).toBe(false);
       }
@@ -290,6 +290,10 @@ describe('the requirements table', () => {
       standard: 'c++20',
       fallback: true,
     });
+    // An option's keys are on the option; a checkbox's gate its value other than its default.
+    expect(REQUIREMENTS.get('option:var.change.OP=xor')).toEqual({ advanced: true });
+    expect(REQUIREMENTS.get('option:var.declare.STATIC=true')).toEqual({ advanced: true });
+    expect(REQUIREMENTS.get('option:coll.item.CHECKED=false')).toEqual({ advanced: true });
     // By hand: only categories, types and the rows still waiting for their block.
     for (const key of REQUIREMENTS.keys()) {
       if (!CATALOG_ROW_KEYS.has(key)) {

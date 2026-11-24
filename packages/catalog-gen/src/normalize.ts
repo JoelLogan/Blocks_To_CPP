@@ -9,9 +9,10 @@ import type {
   ExtraDefJson,
   FieldDefJson,
   InputDefJson,
+  OptionGatingJson,
+  OptionJson,
   OutputType,
   PartNameJson,
-  RequirementJson,
   PresetJson,
   RepeatJson,
   RequiresJson,
@@ -26,7 +27,8 @@ import {
   type CatalogJson,
   type RustBlockDef,
   type RustExtraDef,
-  type RustFieldDef,
+  type RustOption,
+  type RustOptionTable,
   type RustPartName,
   type RustPreset,
   type RustRequires,
@@ -72,13 +74,14 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
     fields: block.field.map((field): FieldDefJson => ({
       name: field.name,
       kind: field.kind,
-      options: field.options.map(([label, value]) => [label, value] as const),
+      options: field.options.map(option),
       types: field.types.map(typeKey),
       default: field.default,
       type: field.type ?? null,
       repeat: repeat(field.repeat ?? null),
       ...(field.omitDefault === true ? { omitDefault: true as const } : {}),
-      ...fieldRequirements(field),
+      ...(field.advanced === true ? { advanced: true as const } : {}),
+      ...optionalRequires(field.requires),
       ...(field.menu === undefined ? {} : { menu: field.menu }),
       ...(field.popover === undefined ? {} : { popover: field.popover }),
       ...(field.mark === undefined ? {} : { mark: field.mark }),
@@ -117,18 +120,19 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
   };
 }
 
-/** A `requires` table and an `advanced` flag as one requirement; `null` when it needs nothing. */
-function requirement(
-  advanced: boolean,
-  requires: RustRequires | undefined,
-): RequirementJson | null {
-  const merged: RequirementJson = {
-    ...(advanced ? { advanced: true as const } : {}),
+/** A `requires` table, with only the keys that say something; `null` when it says nothing. */
+function requiresJson(requires: RustRequires | undefined): RequiresJson | null {
+  const table: RequiresJson = {
     ...(requires?.standard === undefined ? {} : { standard: requires.standard }),
     ...(requires?.capability === undefined ? {} : { capability: requires.capability }),
     ...(requires?.fallback === true ? { fallback: true as const } : {}),
   };
-  return Object.keys(merged).length === 0 ? null : merged;
+  return Object.keys(table).length === 0 ? null : table;
+}
+
+function optionalRequires(requires: RustRequires | undefined): { requires?: RequiresJson } {
+  const table = requiresJson(requires);
+  return table === null ? {} : { requires: table };
 }
 
 /** A block's `advanced` flag and `requires` table, each written only when present. */
@@ -136,26 +140,26 @@ function blockRequirement(block: RustBlockDef): {
   advanced?: true;
   requires?: RequiresJson;
 } {
-  const requires = requirement(false, block.requires);
   return {
     ...(block.advanced === true ? { advanced: true as const } : {}),
-    ...(requires === null ? {} : { requires }),
+    ...optionalRequires(block.requires),
   };
 }
 
-/** A field's `advanced` values and `requires` table, by value, in the order of its options. */
-function fieldRequirements(field: RustFieldDef): {
-  requirements?: Readonly<Record<string, RequirementJson>>;
-} {
-  const advanced = new Set(field.advanced ?? []);
-  const requires = field.requires ?? {};
-  const values =
-    field.kind === 'checkbox' ? ['true', 'false'] : field.options.map(([, value]) => value);
-  const entries = values.flatMap((value) => {
-    const merged = requirement(advanced.has(value), requires[value]);
-    return merged === null ? [] : [[value, merged] as const];
-  });
-  return entries.length === 0 ? {} : { requirements: Object.fromEntries(entries) };
+/** A dropdown option as a pair, with its gating keys as a third element when it has any. */
+function option(value: RustOption): OptionJson {
+  if (Array.isArray(value)) {
+    const [label, optionValue] = value as readonly [string, string];
+    return [label, optionValue];
+  }
+  const table = value as RustOptionTable;
+  const gating: OptionGatingJson = {
+    ...(table.advanced === true ? { advanced: true as const } : {}),
+    ...optionalRequires(table.requires),
+  };
+  return Object.keys(gating).length === 0
+    ? [table.label, table.value]
+    : [table.label, table.value, gating];
 }
 
 /**

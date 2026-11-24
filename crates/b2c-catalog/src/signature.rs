@@ -150,7 +150,7 @@ fn check_headers(def: &BlockDef, problems: &mut Vec<String>) {
             continue;
         }
         for (option, headers) in &field.headers {
-            if !field.options.iter().any(|[_, value]| value == option) {
+            if !field.options.iter().any(|choice| &choice.value == option) {
                 problems.push(format!(
                     "the dropdown {name} has headers for {option:?}, which is not one of its option values"
                 ));

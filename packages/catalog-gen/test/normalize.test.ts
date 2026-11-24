@@ -143,7 +143,7 @@ describe('normalize', () => {
     expect(fieldsOf()?.[0]).not.toHaveProperty('omitDefault');
   });
 
-  it('merges advanced and requires into requirements (w4-editor-tools.md §6.1)', () => {
+  it('keeps advanced and requires on blocks, options and checkboxes (w4-editor-tools.md §6.1)', () => {
     const gated = model((c) =>
       c.blocks.push(
         rustBlock('x.gated', {
@@ -156,13 +156,12 @@ describe('normalize', () => {
               kind: 'dropdown',
               options: [
                 ['a', 'a'],
-                ['b', 'b'],
-                ['c', 'c'],
+                { label: 'b', value: 'b', requires: { standard: 'c++20', fallback: true } },
+                { label: 'c', value: 'c', advanced: true, requires: { standard: 'c++23' } },
+                { label: 'd', value: 'd' },
               ],
               types: [],
               default: 'a',
-              advanced: ['c'],
-              requires: { b: { standard: 'c++20', fallback: true }, c: { standard: 'c++23' } },
             },
             {
               name: 'FAST',
@@ -170,7 +169,7 @@ describe('normalize', () => {
               options: [],
               types: [],
               default: true,
-              advanced: ['false'],
+              advanced: true,
               menu: 'Go fast',
               mark: 'fast',
             },
@@ -191,18 +190,25 @@ describe('normalize', () => {
     expect(gated?.advanced).toBe(true);
     expect(gated?.requires).toEqual({ standard: 'c++20', capability: 'stdFormat' });
     expect(gated).not.toHaveProperty('requirement');
-    expect(gated?.fields[0]?.requirements).toEqual({
-      b: { standard: 'c++20', fallback: true },
-      c: { advanced: true, standard: 'c++23' },
-    });
-    expect(gated?.fields[1]?.requirements).toEqual({ false: { advanced: true } });
+    // An option keeps its keys as a third element; one without keys stays a pair.
+    expect(gated?.fields[0]?.options).toEqual([
+      ['a', 'a'],
+      ['b', 'b', { requires: { standard: 'c++20', fallback: true } }],
+      ['c', 'c', { advanced: true, requires: { standard: 'c++23' } }],
+      ['d', 'd'],
+    ]);
+    expect(gated?.fields[0]).not.toHaveProperty('advanced');
+    // A checkbox's keys are its value's other than the default.
+    expect(gated?.fields[1]?.advanced).toBe(true);
+    expect(gated?.fields[1]).not.toHaveProperty('requires');
     expect(gated?.fields[1]).toMatchObject({ menu: 'Go fast', mark: 'fast' });
     expect(gated?.fields[2]).toMatchObject({ popover: 'Kept', mark: 'kept' });
     // A basic block and field carry no key.
     expect(block('text.show')).not.toHaveProperty('advanced');
     expect(block('text.show')).not.toHaveProperty('requires');
     for (const field of block('text.show').fields) {
-      expect(field).not.toHaveProperty('requirements');
+      expect(field).not.toHaveProperty('advanced');
+      expect(field).not.toHaveProperty('requires');
     }
   });
 

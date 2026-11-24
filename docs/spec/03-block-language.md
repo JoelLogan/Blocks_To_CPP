@@ -1263,16 +1263,20 @@ type  = "T"                            # converts to T
   oldest standard and the toolchain capability every form of it needs, and
   `fallback = true` that the generator writes an older form, which keeps it
   offered whatever the standard or the toolchain (`requires = { standard =
-  "c++20", fallback = true }`). On a dropdown or a checkbox, `advanced`
-  lists the values offered only with advanced blocks (`advanced = ["and",
-  "or"]`; a checkbox's values are `"true"` and `"false"`) and `requires`
-  maps a value to its table (`requires = { starts = { standard = "c++20",
-  fallback = true } }`). A requirement names a standard newer than C++17 or
-  a capability, and has no other keys; a gated value is one the field has,
-  and a field's default is never one the editor could hide. `catalog.json`
-  writes a requirement as the same table (`{"standard": "c++20",
-  "fallback": true}`), and the editor's definitions keep a block's
-  `advanced` and `requires`. The editor's gating service reads these keys
+  "c++20", fallback = true }`). A dropdown option carries the same keys:
+  an option without them is a `["label", "value"]` pair and one with them a
+  table (`{ label = "bitwise and", value = "and", advanced = true }`, `{
+  label = "starts with", value = "starts", requires = { standard = "c++20",
+  fallback = true } }`); a dropdown has no keys of its own. On a checkbox,
+  which has one value besides its default, `advanced = true` and `requires`
+  are that value's (*fast unchecked access* is unticked, `static` ticked),
+  so a gated checkbox has a default. A requirement names a standard newer
+  than C++17 or a capability, and has no other keys; a field's default is
+  never a value the editor could hide. `catalog.json` writes the keys as
+  the catalog does (an option as a pair or an object, a requirement as
+  `{"standard": "c++20", "fallback": true}`), and the editor's definitions
+  keep them on the block, on the option (a third element of its pair) and
+  on the checkbox. The editor's gating service reads these keys
   ([04 §4.2](04-user-interface.md#42-toolbox)); toolbox categories and
   types keep their rows in the editor (`gating/table.ts`).
 * **Signatures** ([ADR-0017](../adr/0017-open-type-representation.md),

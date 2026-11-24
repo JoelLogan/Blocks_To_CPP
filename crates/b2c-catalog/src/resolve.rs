@@ -639,14 +639,14 @@ impl Resolver<'_> {
     ) {
         let problem = match (field.kind, value) {
             (FieldKind::Dropdown, FieldValue::Text(text))
-                if field.options.iter().any(|[_, option]| option == text) =>
+                if field.options.iter().any(|option| &option.value == text) =>
             {
                 return;
             }
             (FieldKind::Dropdown, _) => format!(
                 "The field {name} is {}, but it must be one of {}.",
                 describe_field(value),
-                list(field.options.iter().map(|[_, option]| option.as_str()))
+                list(field.options.iter().map(|option| option.value.as_str()))
             ),
             (FieldKind::Checkbox, FieldValue::Bool(_))
             | (FieldKind::Text, FieldValue::Text(_))
@@ -1268,8 +1268,8 @@ repeat = { count = "catchCount" }
         let print = catalog.blocks.get_mut("io.print").unwrap();
         print.version = 2;
         for option in &mut print.field.iter_mut().find(|f| f.name == "SEP").unwrap().options {
-            if option[1] == "space" {
-                option[1] = String::from("spaces");
+            if option.value == "space" {
+                option.value = String::from("spaces");
             }
         }
         catalog

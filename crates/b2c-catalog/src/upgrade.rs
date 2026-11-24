@@ -798,7 +798,7 @@ pub(crate) fn newer_catalog_problem(def: &BlockDef, block: &Block) -> Option<Str
         match value {
             FieldValue::Text(text)
                 if field.kind == FieldKind::Dropdown
-                    && !field.options.iter().any(|[_, option]| option == text) =>
+                    && !field.options.iter().any(|option| &option.value == text) =>
             {
                 Some(format!("the choice {} in its field {}", quote(text), quote(name)))
             }
