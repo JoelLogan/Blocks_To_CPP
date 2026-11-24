@@ -307,6 +307,7 @@ impl<'d> Lowerer<'d> {
                 },
                 &mut self.diags,
                 &mut self.constants,
+                &mut self.constexprs,
             );
         }
         let shared = self.shared_blocks.contains(id);
@@ -326,6 +327,11 @@ impl<'d> Lowerer<'d> {
             if shared && constant && !constexpr {
                 self.extern_constants
                     .insert(def.symbol.clone(), self.module_index);
+            }
+            if constexpr {
+                // Printed `constexpr`, so a constant expression may read it,
+                // a decimal number too.
+                self.constexprs.insert(def.symbol.clone());
             }
             if let ItemKind::Global(def) = &mut item.kind {
                 def.constexpr = constexpr;

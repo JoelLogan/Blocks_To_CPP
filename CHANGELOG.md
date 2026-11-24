@@ -1367,3 +1367,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   (`create`); they now name the type as its menu shows it (`create list of
   Student variable`), and a type the project does not declare as `unknown
   type`.
+- A `constexpr` decimal number (the ⚙ popover's), or a global decimal
+  constant written `constexpr`, read in another `constexpr` value was
+  reported as not fixed when the program is built (`B2C-E0424`), though C++
+  accepts it; the analyser now tells it apart from a `const` decimal
+  number, which C++ does not accept there. A global decimal constant whose
+  value reads such a constant is now written `constexpr` too.

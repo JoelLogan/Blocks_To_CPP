@@ -186,6 +186,7 @@ pub struct Constant {
 pub fn constant_value(expr: &Expr, constants: &BTreeMap<SymbolId, Constant>) -> Option<Constant> {
     Folder {
         constants,
+        constexprs: None,
         diags: None,
         context: None,
     }
@@ -219,14 +220,16 @@ pub(crate) struct Seen<'a> {
 }
 
 /// Checks one lowered item and records its `const` variables' values in
-/// `constants`. The item's nesting must have been checked (`nesting.rs`),
-/// which bounds the recursion.
+/// `constants`, and its `constexpr` ones in `constexprs` too. The item's
+/// nesting must have been checked (`nesting.rs`), which bounds the
+/// recursion.
 pub(crate) fn check_item(
     item: &Item,
     symbols: &SymbolTable,
     seen: Seen<'_>,
     diags: &mut Diags,
     constants: &mut BTreeMap<SymbolId, Constant>,
+    constexprs: &mut BTreeSet<SymbolId>,
 ) {
     let Seen { unchecked, opaque } = seen;
     let (body, ret) = match &item.kind {
@@ -243,6 +246,7 @@ pub(crate) fn check_item(
                 },
                 diags,
                 constants,
+                constexprs,
                 ret: Type::Void,
             };
             let Some(init) = &global.init else { return };
@@ -272,6 +276,7 @@ pub(crate) fn check_item(
                 },
                 diags,
                 constants,
+                constexprs,
                 ret: Type::Void,
             };
             for (field, value) in &def.defaults {
@@ -290,6 +295,7 @@ pub(crate) fn check_item(
         },
         diags,
         constants,
+        constexprs,
         ret,
     };
     // A function's default values convert to their parameters' types
@@ -321,6 +327,8 @@ struct Checker<'a> {
     context: Context<'a>,
     diags: &'a mut Diags,
     constants: &'a mut BTreeMap<SymbolId, Constant>,
+    /// The constants declared `constexpr` so far (see [`Folder`]).
+    constexprs: &'a mut BTreeSet<SymbolId>,
     /// The item's return type: what a `return` converts its value to.
     ret: Type,
 }
@@ -334,6 +342,7 @@ impl Checker<'_> {
     fn eval_into(&mut self, expr: &Expr, into: Option<&Type>) -> Option<Constant> {
         Folder {
             constants: &*self.constants,
+            constexprs: Some(&*self.constexprs),
             diags: Some(&mut *self.diags),
             context: Some(self.context),
         }
@@ -379,6 +388,9 @@ impl Checker<'_> {
                 let value = self.eval_into(init, self.type_of(stmt, &decl.symbol).as_ref());
                 if decl.is_constexpr && self.constexpr_type(stmt, ty.as_ref()) {
                     let fixed = value.as_ref().is_some_and(|value| value.constant_expression);
+                    if fixed {
+                        self.constexprs.insert(decl.symbol.clone());
+                    }
                     if !fixed && init.ty != Type::Error {
                         self.diags.error(
                             codes::NOT_CONSTANT,
@@ -732,6 +744,10 @@ fn decimal_shown(value: f64) -> String {
 /// The evaluation of one expression.
 struct Folder<'a, 'd> {
     constants: &'a BTreeMap<SymbolId, Constant>,
+    /// The constants declared `constexpr` (the ⚙ popover, or a global
+    /// constant printed `constexpr`), which C++ lets a constant expression
+    /// read whatever their type; `None` knows none.
+    constexprs: Option<&'a BTreeSet<SymbolId>>,
     /// Where reports go; `None` evaluates without reporting.
     diags: Option<&'d mut Diags>,
     /// The symbols and unchecked blocks while checking; `None` evaluates
@@ -932,17 +948,19 @@ impl Folder<'_, '_> {
     }
 
     /// A `const` variable with a known value. Only an integral one is a
-    /// constant expression in C++ (a `const double` needs `constexpr`).
-    /// Another module's shared constant that its header declares `extern
-    /// const` is no constant expression where its definition is not seen.
+    /// constant expression in C++, or one declared `constexpr` (a `const
+    /// double` is not, a `constexpr double` is). Another module's shared
+    /// constant that its header declares `extern const` is no constant
+    /// expression where its definition is not seen.
     fn variable(&self, sym: &SymbolId, ty: &Type) -> Option<Constant> {
         let constant = self.constants.get(sym)?;
         let opaque = self.context.is_some_and(|context| context.opaque.contains(sym));
+        let constexpr = self.constexprs.is_some_and(|constexprs| constexprs.contains(sym));
         Some(Constant {
             value: constant.value.convert(ty)?,
             constant_expression: constant.constant_expression
                 && !opaque
-                && matches!(ty, Type::Bool | Type::Char | Type::Int),
+                && (constexpr || matches!(ty, Type::Bool | Type::Char | Type::Int)),
         })
     }
 

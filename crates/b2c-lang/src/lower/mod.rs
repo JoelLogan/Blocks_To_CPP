@@ -348,6 +348,10 @@ struct Lowerer<'d> {
     slot_types: BTreeMap<BlockId, BTreeMap<String, Type>>,
     /// The `const` variables whose value is known (L10).
     constants: BTreeMap<SymbolId, Constant>,
+    /// The constants among them declared `constexpr` (a local's ⚙ popover,
+    /// or a global constant printed `constexpr`), which a constant
+    /// expression may read whatever their type.
+    constexprs: BTreeSet<SymbolId>,
     /// Whether a function's default values are being lowered, which see the
     /// module's definitions but not the function's parameters (w2.md §2.8).
     in_defaults: bool,
@@ -516,6 +520,7 @@ impl<'d> Lowerer<'d> {
             headers: ItemHeaders::default(),
             slot_types: BTreeMap::new(),
             constants: BTreeMap::new(),
+            constexprs: BTreeSet::new(),
             in_defaults: false,
             defaulted_fields: BTreeSet::new(),
             namespaces: namespaces::Namespaces::default(),
@@ -614,6 +619,7 @@ impl<'d> Lowerer<'d> {
                             },
                             &mut self.diags,
                             &mut self.constants,
+                            &mut self.constexprs,
                         );
                     }
                     if keep {

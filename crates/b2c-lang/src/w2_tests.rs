@@ -28,7 +28,8 @@ fn id(name: &str) -> SymbolId {
     SymbolId::new(&format!("sym_{name}")).expect("id")
 }
 
-/// `x` (an `int` variable), `K` (an `int` constant) and the enum
+/// `x` (an `int` variable), `K` and `C` (`int` constants), `S` (a text
+/// constant), `D` and `E` (decimal constants) and the enum
 /// `Color { Red, Green }`.
 fn symbols() -> SymbolTable {
     let mut table = SymbolTable::default();
@@ -45,6 +46,8 @@ fn symbols() -> SymbolTable {
     add("K", SymbolKind::Variable { is_const: true }, Type::Int);
     add("C", SymbolKind::Variable { is_const: true }, Type::Int);
     add("S", SymbolKind::Variable { is_const: true }, Type::String);
+    add("D", SymbolKind::Variable { is_const: true }, Type::Double);
+    add("E", SymbolKind::Variable { is_const: true }, Type::Double);
     let color = Type::Named(id("Color"));
     add(
         "Color",
@@ -170,7 +173,14 @@ fn consts(item: &Item) -> Vec<(String, String)> {
         unchecked: &BTreeSet::new(),
         opaque: &none,
     };
-    crate::consts::check_item(item, &symbols(), seen, &mut diags, &mut constants);
+    crate::consts::check_item(
+        item,
+        &symbols(),
+        seen,
+        &mut diags,
+        &mut constants,
+        &mut BTreeSet::new(),
+    );
     reported(&diags)
 }
 
@@ -500,6 +510,58 @@ fn a_constexpr_variable_is_a_number_character_or_truth_value_with_a_fixed_value(
             (String::from(codes::NOT_CONSTANT), String::from(not_literal)),
         ]
     );
+}
+
+#[test]
+fn a_constexpr_decimal_number_is_read_in_another_constexpr_value() {
+    // C++ accepts a `constexpr double` in a constant expression, unlike a
+    // `const double` (w4-editor-tools.md §7.1).
+    let declare = |symbol: &str, init: Expr, is_constexpr: bool, block: &str| {
+        stmt(
+            StmtKind::VarDecl(VarDecl {
+                symbol: id(symbol),
+                init: Some(init),
+                is_const: true,
+                written_auto: false,
+                is_constexpr,
+                is_static: false,
+            }),
+            block,
+        )
+    };
+    let real = |text: &str, block: &str| {
+        expr(
+            ExprKind::Float(NumLit::parse(text, b2c_ir::text::NumType::Double).expect("number")),
+            Type::Double,
+            block,
+        )
+    };
+    let twice = |name: &str, block: &str| {
+        expr(
+            ExprKind::Binary {
+                op: BinaryOp::Mul,
+                lhs: Box::new(expr(
+                    ExprKind::Var(id(name)),
+                    Type::Double,
+                    &format!("{block}_read"),
+                )),
+                rhs: Box::new(real("2.0", &format!("{block}_two"))),
+            },
+            Type::Double,
+            block,
+        )
+    };
+    let constexpr = consts(&main_item(vec![
+        declare("D", real("0.25", "quarter"), true, "d"),
+        declare("E", twice("D", "half"), true, "e"),
+    ]));
+    assert_eq!(constexpr, Vec::new());
+    // A `const` decimal number is still no constant expression.
+    let constant = consts(&main_item(vec![
+        declare("D", real("0.25", "quarter"), false, "d"),
+        declare("E", twice("D", "half"), true, "e"),
+    ]));
+    assert_eq!(codes_of(&constant), [codes::NOT_CONSTANT]);
 }
 
 #[test]

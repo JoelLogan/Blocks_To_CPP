@@ -904,8 +904,10 @@ Codes by area:
   instead."
 * **How to fix:** use a number, a character or an enum value, or make the
   variable a constant with a fixed starting value; for `constexpr`, untick
-  it, or tick *constant* instead. A `constexpr` decimal number read in
-  another `constexpr` value is reported too, although C++ accepts it.
+  it, or tick *constant* instead. A `constexpr` decimal number, or a
+  global decimal constant with a fixed value (which is `constexpr`), may be
+  read in another `constexpr` value, as C++ allows; a `const` local decimal
+  number may not.
 
 ## B2C-E0425 Two cases with the same value
 

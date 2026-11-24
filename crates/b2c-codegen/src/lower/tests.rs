@@ -1460,7 +1460,7 @@ fn format_cases_project() -> b2c_model::Document {
 
 /// The one file `document` generates for `standard`, through the stages a
 /// build runs, none of which may report anything.
-fn format_source(document: &b2c_model::Document, standard: CppStandard) -> String {
+fn checked_source(document: &b2c_model::Document, standard: CppStandard) -> String {
     let mut document = document.clone();
     document.project.language.standard = standard;
     let catalog = b2c_catalog::core_catalog();
@@ -1521,14 +1521,14 @@ fn format_writes_the_same_text_in_both_forms() {
         expected.push_str(line);
         expected.push('\n');
     }
-    let new = format_source(&simple, CppStandard::Cpp20);
+    let new = checked_source(&simple, CppStandard::Cpp20);
     for needle in [
         "#include <format>",
         r#"std::format("{} scored {:.1f} {}{:>4}| {{ok}}", name, 9.25, 'A', true)"#,
     ] {
         assert!(new.contains(needle), "{needle} not in\n{new}");
     }
-    let old = format_source(&simple, CppStandard::Cpp17);
+    let old = checked_source(&simple, CppStandard::Cpp17);
     assert!(
         old.contains(r#"b2c::format("{} scored {:.1f} {}{:>4}| {{ok}}", name, 9.25, 'A', true)"#),
         "{old}"
@@ -1545,7 +1545,12 @@ fn format_writes_the_same_text_in_both_forms() {
     );
 
     let dir = tempfile::tempdir().unwrap();
-    let programs = |standard| [format_source(&simple, standard), format_source(&cases, standard)];
+    let programs = |standard| {
+        [
+            checked_source(&simple, standard),
+            checked_source(&cases, standard),
+        ]
+    };
     let (mut new_built, mut old_built) = (0, 0);
     for (index, gxx) in compilers().iter().enumerate() {
         for (run, (flag, standard)) in [
@@ -1574,5 +1579,70 @@ fn format_writes_the_same_text_in_both_forms() {
     }
     if std::env::var_os("B2C_REQUIRE_GXX").is_some() {
         eprintln!("format … with: std::format built with {new_built}, b2c::format with {old_built} g++ runs");
+    }
+}
+
+// ---- constexpr decimal numbers (w4-editor-tools.md §7.1) ---------------------
+
+/// Global decimal constants, one read by the other, and `constexpr` locals
+/// that read a `constexpr` local and a global decimal constant.
+const CONSTEXPR_DOUBLES: &str = r#"{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {"app": "1.0.0", "catalog": "1.3.0"},
+  "project": {"id": "p", "name": "Constexpr", "language": {"standard": "c++20"}},
+  "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [
+    {"id": "g1", "type": "var.global", "v": 1,
+     "fields": {"KIND": "constant", "NAME": {"sym": "s_rate", "name": "RATE"}, "TYPE": "double"},
+     "inputs": {"VALUE": {"expr": [{"num": "0.5"}]}}},
+    {"id": "g2", "type": "var.global", "v": 1,
+     "fields": {"KIND": "constant", "NAME": {"sym": "s_whole", "name": "WHOLE"}, "TYPE": "double"},
+     "inputs": {"VALUE": {"expr": [{"ref": "s_rate"}, {"op": "*"}, {"num": "2.0"}]}}},
+    {"id": "b_main", "type": "program.main", "v": 1,
+     "statements": {"BODY": [
+      {"id": "b1", "type": "var.declare", "v": 1,
+       "fields": {"CONSTEXPR": true, "TYPE": "double", "NAME": {"sym": "s_quarter", "name": "quarter"}},
+       "inputs": {"VALUE": {"expr": [{"num": "0.25"}]}}},
+      {"id": "b2", "type": "var.declare", "v": 1,
+       "fields": {"CONSTEXPR": true, "TYPE": "double", "NAME": {"sym": "s_half", "name": "half"}},
+       "inputs": {"VALUE": {"expr": [{"ref": "s_quarter"}, {"op": "*"}, {"num": "2.0"}]}}},
+      {"id": "b3", "type": "var.declare", "v": 1,
+       "fields": {"CONSTEXPR": true, "TYPE": "double", "NAME": {"sym": "s_scaled", "name": "scaled"}},
+       "inputs": {"VALUE": {"expr": [{"ref": "s_rate"}, {"op": "*"}, {"num": "4.0"}]}}},
+      {"id": "b4", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+       "inputs": {"ITEM0": {"expr": [{"ref": "s_half"}]}}},
+      {"id": "b5", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+       "inputs": {"ITEM0": {"expr": [{"ref": "s_scaled"}]}}},
+      {"id": "b6", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+       "inputs": {"ITEM0": {"expr": [{"ref": "s_whole"}]}}}
+    ]}}
+  ]}}]
+}"#;
+
+/// A `constexpr` decimal number read in another `constexpr` value is a
+/// constant expression, as C++ has it: the analyser accepts it, and every
+/// g++ here builds and runs the program under C++17 and C++20.
+#[test]
+fn a_constexpr_decimal_number_reads_another_on_every_gxx() {
+    let document = b2c_model::load(CONSTEXPR_DOUBLES.as_bytes()).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    for (flag, standard) in [
+        ("-std=c++17", CppStandard::Cpp17),
+        ("-std=c++20", CppStandard::Cpp20),
+    ] {
+        let source = checked_source(&document, standard);
+        for needle in [
+            "constexpr double RATE = 0.5;",
+            "constexpr double WHOLE = RATE * 2.0;",
+            "constexpr double half = quarter * 2.0;",
+            "constexpr double scaled = RATE * 4.0;",
+        ] {
+            assert!(source.contains(needle), "{needle} not in\n{source}");
+        }
+        for (index, gxx) in compilers().iter().enumerate() {
+            let name = format!("constexpr_{index}{}", &flag[5..]);
+            let stdout = build_and_run(gxx, flag, &source, dir.path(), &name);
+            assert_eq!(stdout, "0.5\n2\n1\n", "{} {flag}", gxx.display());
+        }
     }
 }
