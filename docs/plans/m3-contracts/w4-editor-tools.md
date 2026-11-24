@@ -442,7 +442,8 @@ and a field's `requirements`.
   in the DropDownDiv, like the type picker), `CPP_OPTION_LABELS`-like C++
   texts for the C++ label mode (`constexpr`, `static`), and gating rows
   (`static` advanced?). The editor side can reuse the picker's popover
-  shell (`type-picker/picker.ts` exposes `openPopover`).
+  shell (`type-picker/picker.ts` exposes `openPopover`). *Done by the
+  coordinator* (§7.1): on *create* only, as two checkboxes behind one ⚙.
 * ***format … with*** (`text.format`): its AWAITED row is ready
   (`block:text.format`: C++20 and `stdFormat`); the toolbox hides it on an
   older standard or a toolchain without `std::format`, with `gateText`'s
@@ -468,6 +469,9 @@ here with its reason.
 | --- | --- | --- |
 | `requires` is a list of words, not a table: `requires = ["c++20", "stdFormat"]`, with `"fallback"` for a form the generator writes before C++20 (`catalog.json` still writes an object, `{"standard": "c++20", "fallback": true}`) | the catalog reads a list of words with the reader it has for `headers`; a table, or a map of tables on a field, added about 20 KB to the WebAssembly core (2,016,903 bytes against 1,998,537) | §6.1 |
 | *Fast unchecked access* is a checkbox `CHECKED` (default ticked, `omit_default`, `advanced = ["false"]`) with two new catalog keys: `menu`, the menu item's words, and `mark`, the words the block shows while the field is away from its default (*unchecked*). blockly-ext hides the checkbox and draws the mark after it (`blocks/marks.ts`); `menus/registry.ts` adds one item per such field, ticked (✓) while on, offered where `optionOffered` allows the value it sets and always back to the default | the friendly-label rule needs every field drawn with words beside it; a field set from the menu is the exception, and saying so in the catalog keeps the rule, the layout and the menu generic | §7 |
+| The ⚙ popover is on *create* only: two checkboxes, `CONSTEXPR` (basic) and `STATIC` (`advanced = ["true"]`), with the catalog key `popover` (the tick's words) and a `mark` each, both `omit_default`; blockly-ext hides them, shows the ticked marks and a ⚙ (`B2cGearField`, unnamed so never saved) that opens a group of checkboxes in Blockly's drop-down (`blocks/gear.ts`), each change one undo step. The SAST's `VarDecl` gains `is_constexpr` and `is_static` (`constexpr` sets `is_const` too, so *set* refuses it with `B2C-E0308`), and the C++ is `[static] [constexpr\|const] T x = v;` | a `b2c_options` field holding an object would be a new field kind and a new value shape in the project format; two checkboxes need neither. *global* keeps W2's choice (a constant global is `constexpr` when its value allows it, w2.md §2.7), and a global's linkage is the module work's (an unshared global of a project with several modules is in an anonymous namespace) | §7 |
+| The *constant* checkbox stays on *create*, beside the ⚙ (03 §3.7.2 said the popover replaces it) | a beginner's `const` should not hide behind ⚙; the ticks only add to it | §7 |
+| A `constexpr` variable must be a whole number, a decimal number, a character or a true/false value with a value fixed when the program is built (`B2C-E0424`, two new messages); with no value it is `constexpr int x{};`. A `constexpr` decimal number read in another `constexpr` value is reported, though C++ accepts it | L10 counts a `const double` read as not a constant expression (w2.md §2.7), and does not tell a `constexpr` one apart; C++ has no `constexpr` text, list or struct variable a program can keep | §7 |
 | The C++ label mode shows *unchecked* after `numbers.at(i)`, not `numbers[i]` | a C++ template is one form; giving the mode a second template per field value is more than the mark needs, and the C++ panel shows the code | §7 |
 | A map's *item of* stays `.at(k)` when unchecked; *set item* on a map was `[]` already | `m[k]` adds a missing key and does not compile on a read-only map | §7 |
 | An option's `advanced` and `requires` are keys of its field, by value (`advanced = ["and", "or", "xor", "shl", "shr"]` on *change*'s `OP`; `requires = { starts = ["c++20", "fallback"] }` on *find*'s), and also apply to a checkbox's `"true"` and `"false"`; `BLOCK_DEFS` merges each into one requirement, a block's `requirement` and a field's `requirements` by value, the shape of `gate.ts`'s `Requirement`. A requirement names a standard newer than C++17 or a capability, and a field's default is never a value the editor could hide | an option is a `[label, value]` pair, which has no room for keys; per-value keys on the field are how its `headers` are written already | §6.1 |
@@ -587,6 +591,12 @@ On `m3/w4-editor-tools`, from `8a3d8ec`, on 2026-10-28 to 2026-10-30.
   unchanged. The core is 2,002,695 bytes (+4,158). No E2E flow: the
   flows run against the built app under xvfb, which this session does not
   build; the menu item and the mark are covered in Vitest.
+* The ⚙ popover (§7): `CONSTEXPR` and `STATIC` on *create*, checked by the
+  analyser (`B2C-E0424`) and written as `static` and `constexpr`; the
+  every-block project declares a `static constexpr int`, so every g++
+  compiles it, and a codegen test runs a `static` counter. The golden C++
+  of the examples is unchanged. The core is 2,005,923 bytes (+3,228). No
+  E2E flow, as above.
 
 **Not done, and why.**
 

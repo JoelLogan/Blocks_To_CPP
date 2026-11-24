@@ -29,6 +29,7 @@ export {
   type LabelPartsOptions,
 } from './labels';
 export { blockLabelMode, setBlockLabelMode } from './labelMode';
+export { B2cGearField, GEAR_TEXT, gearPopover, popoverFieldDefs } from './gear';
 export {
   applyMenuMarks,
   MARK_CLASS,

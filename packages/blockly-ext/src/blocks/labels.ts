@@ -140,7 +140,7 @@ export function hasFullCppLabel(def: Pick<BlockDefJson, 'label' | 'fields' | 'in
 /**
  * The fields, value inputs and statement inputs of `def` that its C++ template does not name (the
  * W4 contract's §6.1 lists the blocks, for the catalog's C++ labels), leaving out the fields set
- * from the block's menu, which no label names.
+ * from the block's menu or its ⚙ popover, which no label names.
  */
 export function partsMissingFromCppLabel(
   def: Pick<BlockDefJson, 'label' | 'fields' | 'inputs' | 'statements'>,
@@ -148,9 +148,10 @@ export function partsMissingFromCppLabel(
   const named = new Set(
     labelParts(def.label.cpp).flatMap((part) => ('arg' in part ? [part.arg] : [])),
   );
-  // A field set from the block's menu (`menu`, ./marks.ts) follows the label in both modes.
+  // A field set from the block's menu or ⚙ (`menu`, `popover`, ./marks.ts) follows the label in
+  // both modes.
   return [
-    ...def.fields.filter((field) => field.menu === undefined),
+    ...def.fields.filter((field) => field.menu === undefined && field.popover === undefined),
     ...def.inputs,
     ...def.statements,
   ]

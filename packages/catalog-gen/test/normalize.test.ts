@@ -174,6 +174,15 @@ describe('normalize', () => {
               menu: 'Go fast',
               mark: 'fast',
             },
+            {
+              name: 'KEEP',
+              kind: 'checkbox',
+              options: [],
+              types: [],
+              default: false,
+              popover: 'Kept',
+              mark: 'kept',
+            },
           ],
         }),
       ),
@@ -189,6 +198,7 @@ describe('normalize', () => {
     });
     expect(gated?.fields[1]?.requirements).toEqual({ false: { advanced: true } });
     expect(gated?.fields[1]).toMatchObject({ menu: 'Go fast', mark: 'fast' });
+    expect(gated?.fields[2]).toMatchObject({ popover: 'Kept', mark: 'kept' });
     // A basic block and field carry no key.
     expect(block('text.show')).not.toHaveProperty('requirement');
     for (const field of block('text.show').fields) {

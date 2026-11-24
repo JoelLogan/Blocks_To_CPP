@@ -332,7 +332,9 @@ fn any_stmt(ids: Vec<SymbolId>) -> impl Strategy<Value = Stmt> {
                     symbol,
                     init,
                     is_const,
-                    written_auto
+                    written_auto,
+                    is_constexpr: false,
+                    is_static: false,
                 })
             ),
         (any_symbol(ids.clone()), expr.clone())

@@ -167,6 +167,8 @@ impl Lowerer<'_> {
         self.declare(symbol.name.clone());
         CStmtKind::Decl {
             is_const: decl.is_const,
+            is_constexpr: decl.is_constexpr,
+            is_static: decl.is_static,
             ty,
             name: symbol.name.clone(),
             init,

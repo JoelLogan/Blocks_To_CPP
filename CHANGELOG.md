@@ -634,6 +634,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   advanced blocks_; a map's item keeps `.at()`), one undo step; the block
   shows _unchecked_ while it is on. The catalog's `menu` and `mark` keys
   describe such a field (`CHECKED`, written into a project only when off).
+- The ⚙ popover on _create_ (wave W4): `constexpr` (a number, character or
+  true/false value fixed when the program is built, `B2C-E0424` otherwise)
+  and, with _Show advanced blocks_, `static` (a local created once). The
+  block shows each ticked word before its ⚙; the catalog's `popover` key
+  sets the ticks aside (`CONSTEXPR`, `STATIC`, written only when ticked).
 
 ### Changed
 

@@ -235,7 +235,7 @@ describe('blockLayout', () => {
     // The words naming a checkbox come right before it (03 §3.11.1).
     expect(describeLayout(def('var.declare'))).toEqual([
       'value:VALUE["create" TYPE "variable" NAME "="]',
-      'dummy:b2c_row0["constant" CONST]',
+      'dummy:b2c_row0["constant" CONST CONSTEXPR STATIC]',
     ]);
     expect(describeLayout(def('math.arithmetic'))).toEqual(['value:A[]', 'value:B[OP]']);
     expect(describeLayout(def('text.char'))).toEqual([`dummy:b2c_row0["character '" VALUE "'"]`]);
@@ -449,7 +449,10 @@ describe('blockLayout', () => {
     // (../src/blocks/marks.ts), which the block does not draw.
     for (const blockDef of BLOCK_DEFS) {
       const drawn = blockDef.fields.filter(
-        (candidate) => candidate.kind === 'checkbox' && candidate.menu === undefined,
+        (candidate) =>
+          candidate.kind === 'checkbox' &&
+          candidate.menu === undefined &&
+          candidate.popover === undefined,
       );
       for (const field of drawn) {
         expect(wordsBefore(blockDef.id, field.name), `${blockDef.id}.${field.name}`).toMatch(

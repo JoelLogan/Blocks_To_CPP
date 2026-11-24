@@ -841,10 +841,15 @@ pub(crate) struct ForDecl {
 /// Kinds of C++ statements.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum CStmtKind {
-    /// `[const] T name = value;` or `[const] T name{};`
+    /// `[static] [const|constexpr] T name = value;` or `[const] T name{};`
     Decl {
         /// Whether the variable is `const`.
         is_const: bool,
+        /// Whether it is `constexpr` (printed instead of `const`; the ⚙
+        /// popover, w4-editor-tools.md §7).
+        is_constexpr: bool,
+        /// Whether it is a `static` local (the ⚙ popover).
+        is_static: bool,
         /// Its type.
         ty: CType,
         /// Its name.

@@ -172,6 +172,8 @@ impl Lowerer<'_> {
         self.declare(name.clone());
         let decl = CStmt::new(CStmtKind::Decl {
             is_const: false,
+            is_constexpr: false,
+            is_static: false,
             ty,
             name: name.clone(),
             init: Init::Args(args),
@@ -231,6 +233,8 @@ impl Lowerer<'_> {
         self.scopes.push(vec![stream.clone()]);
         let mut stmts = vec![CStmt::new(CStmtKind::Decl {
             is_const: false,
+            is_constexpr: false,
+            is_static: false,
             ty: stream_type,
             name: stream.clone(),
             init: Init::Args(vec![path]),
@@ -248,6 +252,8 @@ impl Lowerer<'_> {
         self.declare(line.clone());
         stmts.push(CStmt::new(CStmtKind::Decl {
             is_const: false,
+            is_constexpr: false,
+            is_static: false,
             ty: CType::String,
             name: line.clone(),
             init: Init::Braces,

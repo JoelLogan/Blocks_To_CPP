@@ -308,6 +308,8 @@ impl Builder {
             init,
             is_const: false,
             written_auto: false,
+            is_constexpr: false,
+            is_static: false,
         }))
     }
 
@@ -323,6 +325,8 @@ impl Builder {
             init,
             is_const,
             written_auto: auto,
+            is_constexpr: false,
+            is_static: false,
         }))
     }
 

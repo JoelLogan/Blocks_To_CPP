@@ -266,6 +266,7 @@ describe('the requirements table', () => {
         'option:coll.set_item.CHECKED=false',
         'option:text.find.OP=ends',
         'option:text.find.OP=starts',
+        'option:var.declare.STATIC=true',
         ...['and', 'or', 'xor', 'shl', 'shr'].map((value) => `option:var.change.OP=${value}`),
       ].sort(),
     );

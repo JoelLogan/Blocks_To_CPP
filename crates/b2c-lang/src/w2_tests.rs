@@ -43,6 +43,8 @@ fn symbols() -> SymbolTable {
     };
     add("x", SymbolKind::Variable { is_const: false }, Type::Int);
     add("K", SymbolKind::Variable { is_const: true }, Type::Int);
+    add("C", SymbolKind::Variable { is_const: true }, Type::Int);
+    add("S", SymbolKind::Variable { is_const: true }, Type::String);
     let color = Type::Named(id("Color"));
     add(
         "Color",
@@ -389,6 +391,8 @@ fn case_labels_are_constant_and_different() {
             init: Some(int(5, "k_value")),
             is_const: true,
             written_auto: false,
+            is_constexpr: false,
+            is_static: false,
         }),
         "k",
     );
@@ -441,6 +445,61 @@ fn case_labels_are_constant_and_different() {
         (String::from(codes::DUPLICATE_CASE), same("Red")),
     ];
     assert_eq!(reported, expected);
+}
+
+#[test]
+fn a_constexpr_variable_is_a_number_character_or_truth_value_with_a_fixed_value() {
+    // The ⚙ popover (w4-editor-tools.md §7).
+    let constexpr = |symbol: &str, init: Option<Expr>, block: &str| {
+        stmt(
+            StmtKind::VarDecl(VarDecl {
+                symbol: id(symbol),
+                init,
+                is_const: true,
+                written_auto: false,
+                is_constexpr: true,
+                is_static: false,
+            }),
+            block,
+        )
+    };
+    let product = expr(
+        ExprKind::Binary {
+            op: BinaryOp::Mul,
+            lhs: Box::new(int(3, "three")),
+            rhs: Box::new(int(4, "four")),
+        },
+        Type::Int,
+        "product",
+    );
+    let fixed = constexpr("C", Some(product), "fixed");
+    // A constexpr whole number is a `case` label.
+    let labels = switch(vec![case(var("C", "label"), Vec::new())], None);
+    assert_eq!(consts(&main_item(vec![fixed.clone(), labels])), Vec::new());
+    let text = expr(
+        ExprKind::Str(StrLit::new("Ann").expect("text")),
+        Type::String,
+        "text",
+    );
+    let reported = consts(&main_item(vec![
+        constexpr("K", Some(var("x", "variable")), "from_variable"),
+        constexpr("S", Some(text), "text"),
+        constexpr("S", None, "text_without_value"),
+        constexpr("K", None, "no_value"),
+    ]));
+    let not_fixed = "A 'constexpr' variable's value must be fixed when the program is built: use numbers, \
+                     characters, true/false values and constants with fixed values, not variables or the \
+                     answers of functions. Or untick 'constexpr' in the block's ⚙.";
+    let not_literal = "Only a whole number, a decimal number, a character or a true/false value can be \
+                       'constexpr'. Untick 'constexpr' in the block's ⚙, or tick 'constant' instead.";
+    assert_eq!(
+        reported,
+        vec![
+            (String::from(codes::NOT_CONSTANT), String::from(not_fixed)),
+            (String::from(codes::NOT_CONSTANT), String::from(not_literal)),
+            (String::from(codes::NOT_CONSTANT), String::from(not_literal)),
+        ]
+    );
 }
 
 #[test]

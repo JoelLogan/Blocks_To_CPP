@@ -29,6 +29,21 @@ const CSS = `
 .blocklyText.b2c-mark {
   font-style: italic;
 }
+.b2c-gear-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 8px;
+  font-family: var(--b2c-font, sans-serif);
+  font-size: 0.875rem;
+  color: var(--b2c-text, #1a1a1a);
+}
+.b2c-gear-popover label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
 .b2c-type-picker {
   display: flex;
   flex-direction: column;

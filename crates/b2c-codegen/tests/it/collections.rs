@@ -5,8 +5,8 @@
 
 use b2c_ir::ids::SymbolId;
 use b2c_ir::sast::{
-    CollectionChange, CppStandard, Expr, ExprKind, OutputStream, PrintSeparator, Program, RangeMode, Stmt,
-    StmtKind, UnaryOp,
+    BinaryOp, CollectionChange, CppStandard, Expr, ExprKind, OutputStream, PrintSeparator, Program,
+    RangeMode, Stmt, StmtKind, UnaryOp,
 };
 use b2c_ir::types::{LibType, Type};
 
@@ -388,6 +388,42 @@ fn fast_unchecked_access_indexes_lists_and_deques_but_keeps_a_map_s_at() {
         "ages.at(\"Ann\")",
     ] {
         builds_and_prints(&program, form, "20 3 z 30\n");
+    }
+}
+
+#[test]
+fn the_gear_s_static_keeps_a_value_between_calls_and_constexpr_is_a_constant_expression() {
+    // *create*'s ⚙ popover (w4-editor-tools.md §7).
+    let b = Builder::new();
+    let calls = b.var("calls", Type::Int);
+    let limit = b.constant("limit", Type::Int);
+    let count = b.function("count", Type::Int, &[]);
+    let with = |stmt: Stmt, is_static: bool, is_constexpr: bool| {
+        let mut stmt = stmt;
+        if let StmtKind::VarDecl(decl) = &mut stmt.kind {
+            decl.is_static = is_static;
+            decl.is_constexpr = is_constexpr;
+            decl.is_const |= is_constexpr;
+        }
+        stmt
+    };
+    let define = b.define(
+        &count,
+        vec![
+            with(b.declare(&calls, Some(b.int("0"))), true, false),
+            b.set(&calls, b.bin(BinaryOp::Add, b.get(&calls), b.int("1"))),
+            b.ret(Some(b.get(&calls))),
+        ],
+    );
+    let product = b.bin(BinaryOp::Mul, b.int("3"), b.int("4"));
+    let main = b.main(vec![
+        b.eval(b.call(&count, Vec::new())),
+        with(b.declare(&limit, Some(product)), false, true),
+        b.line(vec![b.call(&count, Vec::new()), b.get(&limit)]),
+    ]);
+    let program = b.program(vec![define, main]);
+    for form in ["static int calls = 0;", "constexpr int limit = 3 * 4;"] {
+        builds_and_prints(&program, form, "2 12\n");
     }
 }
 

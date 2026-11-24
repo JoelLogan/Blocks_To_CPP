@@ -1059,11 +1059,18 @@ impl Emitter {
         match kind {
             CStmtKind::Decl {
                 is_const,
+                is_constexpr,
+                is_static,
                 ty,
                 name,
                 init,
             } => {
-                if *is_const {
+                if *is_static {
+                    self.p.fixed("static ");
+                }
+                if *is_constexpr {
+                    self.p.fixed("constexpr ");
+                } else if *is_const {
                     self.p.fixed("const ");
                 }
                 self.ty(ty);

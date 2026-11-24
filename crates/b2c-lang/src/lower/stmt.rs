@@ -166,7 +166,11 @@ impl Lowerer<'_> {
         } else {
             Some(self.type_setting(block, "TYPE", "int", TypeUse::Variable))
         };
-        let is_const = self.checkbox(block, "CONST", false);
+        // The ⚙ popover (w4-editor-tools.md §7): `constexpr` is a constant
+        // too, so *set* and *change* refuse it (`B2C-E0308`).
+        let is_constexpr = self.checkbox(block, "CONSTEXPR", false);
+        let is_static = self.checkbox(block, "STATIC", false);
+        let is_const = self.checkbox(block, "CONST", false) || is_constexpr;
         let Ok(decl) = decl else {
             self.incomplete(name_loc, "This 'create variable' block needs a name.");
             let _ = self.optional_input(block, "VALUE");
@@ -221,6 +225,8 @@ impl Lowerer<'_> {
             init,
             is_const,
             written_auto,
+            is_constexpr,
+            is_static,
         }))
     }
 

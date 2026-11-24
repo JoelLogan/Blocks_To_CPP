@@ -365,13 +365,30 @@ impl Checker<'_> {
     fn stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
             StmtKind::VarDecl(decl) => {
-                let Some(init) = &decl.init else { return };
-                let value = self.eval_into(init, self.type_of(stmt, &decl.symbol).as_ref());
                 let ty = self
                     .context
                     .symbols
                     .get(&decl.symbol)
                     .map(|symbol| symbol.ty.clone());
+                let Some(init) = &decl.init else {
+                    if decl.is_constexpr {
+                        self.constexpr_type(stmt, ty.as_ref());
+                    }
+                    return;
+                };
+                let value = self.eval_into(init, self.type_of(stmt, &decl.symbol).as_ref());
+                if decl.is_constexpr && self.constexpr_type(stmt, ty.as_ref()) {
+                    let fixed = value.as_ref().is_some_and(|value| value.constant_expression);
+                    if !fixed && init.ty != Type::Error {
+                        self.diags.error(
+                            codes::NOT_CONSTANT,
+                            init.origin.location(),
+                            "A 'constexpr' variable's value must be fixed when the program is built: use numbers, \
+                             characters, true/false values and constants with fixed values, not variables or the \
+                             answers of functions. Or untick 'constexpr' in the block's ⚙.",
+                        );
+                    }
+                }
                 if decl.is_const
                     && let (Some(value), Some(ty)) = (value, ty)
                     && let Some(converted) = value.value.convert(&ty)
@@ -566,6 +583,27 @@ impl Checker<'_> {
                 );
             } else {
                 seen.insert(key);
+            }
+        }
+    }
+
+    /// A `constexpr` variable (the ⚙ popover, w4-editor-tools.md §7) is a
+    /// whole number, a decimal number, a character or a true/false value
+    /// (`B2C-E0424` otherwise): C++ has no `constexpr` text, list or struct
+    /// variable that a program can keep. `false` after reporting, or for a
+    /// type already reported.
+    fn constexpr_type(&mut self, stmt: &Stmt, ty: Option<&Type>) -> bool {
+        match ty {
+            Some(Type::Bool | Type::Char | Type::Int | Type::Double) => true,
+            Some(Type::Error) | None => false,
+            Some(_) => {
+                self.diags.error(
+                    codes::NOT_CONSTANT,
+                    stmt.origin.location(),
+                    "Only a whole number, a decimal number, a character or a true/false value can be \
+                     'constexpr'. Untick 'constexpr' in the block's ⚙, or tick 'constant' instead.",
+                );
+                false
             }
         }
     }

@@ -180,6 +180,8 @@ export interface RustFieldDef {
   readonly requires?: Readonly<Record<string, RustRequires>>;
   /** `menu`: the words of the block menu's item that sets this checkbox; written only when set. */
   readonly menu?: string;
+  /** `popover`: the words of the ⚙ popover's tick that sets this checkbox; written only when set. */
+  readonly popover?: string;
   /** `mark`: the words the block shows while a `menu` field is not at its default. */
   readonly mark?: string;
 }
@@ -469,6 +471,7 @@ function fieldDef(value: unknown, path: string): RustFieldDef {
     'advanced',
     'requires',
     'menu',
+    'popover',
     'mark',
   ] as const;
   const o = object(value, path, keys);
@@ -484,6 +487,7 @@ function fieldDef(value: unknown, path: string): RustFieldDef {
     ...optional(o.advanced, `${path}.advanced`, (v, p) => ({ advanced: array(v, p, string) })),
     ...optional(o.requires, `${path}.requires`, (v, p) => ({ requires: record(v, p, requires) })),
     ...optional(o.menu, `${path}.menu`, (v, p) => ({ menu: string(v, p) })),
+    ...optional(o.popover, `${path}.popover`, (v, p) => ({ popover: string(v, p) })),
     ...optional(o.mark, `${path}.mark`, (v, p) => ({ mark: string(v, p) })),
   };
 }

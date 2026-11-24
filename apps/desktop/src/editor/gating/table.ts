@@ -243,6 +243,8 @@ export const BASIC_FIELDS: ReadonlySet<string> = new Set([
   'type.struct.PRINTABLE',
   'type.struct.SHARED',
   'var.declare.CONST',
+  // The ⚙ popover's `constexpr` (w4-editor-tools.md §7); its `static` is advanced, in the catalog.
+  'var.declare.CONSTEXPR',
   'var.global.SHARED',
 ]);
 

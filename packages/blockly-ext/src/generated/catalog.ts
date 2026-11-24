@@ -184,7 +184,15 @@ export interface FieldDefJson {
    * access*, w4-editor-tools.md §7): the menu item's words. Such a field is in neither label.
    */
   readonly menu?: string;
-  /** With {@link menu}: the words the block shows while the field is not at its default. */
+  /**
+   * On a checkbox set from the block's ⚙ popover instead of drawn on the block (`constexpr` and
+   * `static` on *create*, w4-editor-tools.md §7): the tick's words. Such a field is in neither label.
+   */
+  readonly popover?: string;
+  /**
+   * With {@link menu} or {@link popover}: the words the block shows while the field is not at its
+   * default.
+   */
   readonly mark?: string;
 }
 
@@ -4142,7 +4150,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       { arg: 'CONST' },
     ],
     statementsNotInLabel: [],
-    help: 'Creates a variable. It can be used by the blocks after it in the same place.',
+    help: 'Creates a variable. It can be used by the blocks after it in the same place. Its ⚙ makes it constexpr (a whole number, decimal number, character or true/false value fixed when the program is built) or static (created once, keeping its value between calls).',
     output: null,
     fields: [
       {
@@ -4181,6 +4189,31 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         default: false,
         type: null,
         repeat: null,
+      },
+      {
+        name: 'CONSTEXPR',
+        kind: 'checkbox',
+        options: [],
+        types: [],
+        default: false,
+        type: null,
+        repeat: null,
+        omitDefault: true,
+        popover: 'constexpr: its value is fixed when the program is built',
+        mark: 'constexpr',
+      },
+      {
+        name: 'STATIC',
+        kind: 'checkbox',
+        options: [],
+        types: [],
+        default: false,
+        type: null,
+        repeat: null,
+        omitDefault: true,
+        requirements: { true: { advanced: true } },
+        popover: 'static: keeps its value from one call of the function to the next',
+        mark: 'static',
       },
     ],
     inputs: [

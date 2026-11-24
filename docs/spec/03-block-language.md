@@ -536,7 +536,7 @@ category also holds *use header*, *check at compile time*, *namespace* and
 
 | Block | Generates |
 | ------- | ----------- |
-| `create [int ▾] variable [score] = (0) constant ☐` | `int score = 0;` (`const int` when ticked; the ⚙ popover with `constexpr` and `static` replaces the checkbox in wave W4 as a compatible change). The type is any type a variable can hold; without a value, a list is created empty: `std::vector<int> scores{};` |
+| `create [int ▾] variable [score] = (0) constant ☐ ⚙` | `int score = 0;` (`const int` when ticked). The ⚙ popover ticks `constexpr` (`constexpr int score = 0;`: a whole number, decimal number, character or true/false value whose value is fixed when the program is built, `B2C-E0424` otherwise; a constant, so *set* refuses it) and, with *Show advanced blocks*, `static` (`static int calls = 0;`: created once, keeping its value between calls); the block shows each ticked word before the ⚙. The type is any type a variable can hold; without a value, a list is created empty: `std::vector<int> scores{};` |
 | `create [auto ▾] [a], [b] ⊕ from (pairValue)` | `auto [a, b] = pairValue;` (structured binding, after M3) |
 | `set [score ▾] to (expr)` | `score = expr;` |
 | `change [score ▾] [by ▾] (1)` | `score += 1;` (`++score;` for *by* the literal 1); the menu also gives *down by* (`-=`), *times* (`*=`), *divided by* (`/=`) and *mod* (`%=`), *add to the end* (`+=`, text or a character added to a text variable: `s += "!";`), and, with *Show advanced blocks*, the bitwise forms *bitwise and* (`&=`), *bitwise or* (`\|=`), *bitwise xor* (`^=`), *shifted left by* (`<<=`) and *shifted right by* (`>>=`) for whole numbers. In C++ label mode every option shows its operator. For number, character and text variables |
@@ -553,7 +553,7 @@ and characters, *add to the end* for text), the bitwise forms only for an
 the block already has; a variable of another type is `B2C-E0302`, an amount
 of another type `B2C-E0301`. *flip* is listed while a true/false variable
 that may change exists. **In M3** (wave W2) these blocks are built as the
-table shows, but for the ⚙ popover (wave W4) and the structured binding
+table shows, but for the ⚙ popover (wave W4, built as the table shows) and the structured binding
 (after M3, since pairs come later).
 
 **Globals.** *global* is a definition, wherever it is on the canvas: a
@@ -1243,7 +1243,9 @@ type  = "T"                            # converts to T
   context menu with those words instead of being drawn on the block, and
   shows its `mark` (`unchecked`) while away from its default; it is shown
   once, has a default and `omit_default`, and is in neither label (wave W4,
-  *fast unchecked access*). Unknown keys are errors.
+  *fast unchecked access*). A checkbox with `popover = "…"` follows the same
+  rules but is a tick of the block's ⚙ popover (`constexpr` and `static` on
+  *create*). Unknown keys are errors.
 * **Gating keys** (wave W4,
   [w4-editor-tools.md §6.1](../plans/m3-contracts/w4-editor-tools.md#61-the-catalogs-gating-keys)).
   `advanced = true` on a block offers it only with *Show advanced blocks*;

@@ -1543,6 +1543,30 @@
                   }
                 },
                 {
+                  "id": "b900",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "CONSTEXPR": true,
+                    "NAME": {
+                      "sym": "s_first",
+                      "name": "first"
+                    },
+                    "STATIC": true,
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
                   "id": "b068",
                   "type": "var.declare",
                   "v": 1,
@@ -1795,7 +1819,7 @@
                           "INDEX": {
                             "expr": [
                               {
-                                "num": "0"
+                                "ref": "s_first"
                               }
                             ]
                           }

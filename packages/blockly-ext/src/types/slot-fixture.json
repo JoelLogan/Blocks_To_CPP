@@ -173247,10 +173247,33 @@
             "name": "CONST",
             "options": [],
             "types": []
+          },
+          {
+            "default": false,
+            "kind": "checkbox",
+            "mark": "constexpr",
+            "name": "CONSTEXPR",
+            "omitDefault": true,
+            "options": [],
+            "popover": "constexpr: its value is fixed when the program is built",
+            "types": []
+          },
+          {
+            "advanced": [
+              "true"
+            ],
+            "default": false,
+            "kind": "checkbox",
+            "mark": "static",
+            "name": "STATIC",
+            "omitDefault": true,
+            "options": [],
+            "popover": "static: keeps its value from one call of the function to the next",
+            "types": []
           }
         ],
         "headers": [],
-        "help": "Creates a variable. It can be used by the blocks after it in the same place.",
+        "help": "Creates a variable. It can be used by the blocks after it in the same place. Its ⚙ makes it constexpr (a whole number, decimal number, character or true/false value fixed when the program is built) or static (created once, keeping its value between calls).",
         "id": "var.declare",
         "input": [
           {

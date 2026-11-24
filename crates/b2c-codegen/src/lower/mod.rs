@@ -745,6 +745,8 @@ impl<'a> Lowerer<'a> {
         self.declare(symbol.name.clone());
         let statement = CStmt::new(CStmtKind::Decl {
             is_const: true,
+            is_constexpr: false,
+            is_static: false,
             ty,
             name: symbol.name.clone(),
             init: Init::Args(vec![name_expr(values), end]),

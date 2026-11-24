@@ -4414,7 +4414,7 @@
       },
       "lowering": "builtin",
       "headers": [],
-      "help": "Creates a variable. It can be used by the blocks after it in the same place.",
+      "help": "Creates a variable. It can be used by the blocks after it in the same place. Its ⚙ makes it constexpr (a whole number, decimal number, character or true/false value fixed when the program is built) or static (created once, keeping its value between calls).",
       "field": [
         {
           "name": "TYPE",
@@ -4460,6 +4460,29 @@
           "options": [],
           "types": [],
           "default": false
+        },
+        {
+          "name": "CONSTEXPR",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": false,
+          "omitDefault": true,
+          "popover": "constexpr: its value is fixed when the program is built",
+          "mark": "constexpr"
+        },
+        {
+          "name": "STATIC",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": false,
+          "omitDefault": true,
+          "advanced": [
+            "true"
+          ],
+          "popover": "static: keeps its value from one call of the function to the next",
+          "mark": "static"
         }
       ],
       "input": [

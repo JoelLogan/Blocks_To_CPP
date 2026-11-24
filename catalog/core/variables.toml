@@ -7,7 +7,7 @@ category = "variables"
 shape = "statement"
 label = { friendly = "create %TYPE variable %NAME = %VALUE constant %CONST", cpp = "%TYPE %NAME = %VALUE;" }
 lowering = "builtin"
-help = "Creates a variable. It can be used by the blocks after it in the same place."
+help = "Creates a variable. It can be used by the blocks after it in the same place. Its ⚙ makes it constexpr (a whole number, decimal number, character or true/false value fixed when the program is built) or static (created once, keeping its value between calls)."
 # The type field binds T (catalog 1.3.0): it offers its types and takes any
 # type a variable can hold; the name is declared with T, and the value
 # converts to it. `auto` binds nothing. The lists after M2's types stand in
@@ -30,6 +30,26 @@ type = "T"
 name = "CONST"
 kind = "checkbox"
 default = false
+
+# The ⚙ popover (w4-editor-tools.md §7, 03 §3.7.2): `constexpr` and `static`,
+# behind one ⚙ after the block's parts. A compatible change (catalog 1.3.0):
+# a block without the fields is neither.
+[[block.field]]
+name = "CONSTEXPR"
+kind = "checkbox"
+default = false
+omit_default = true
+popover = "constexpr: its value is fixed when the program is built"
+mark = "constexpr"
+
+[[block.field]]
+name = "STATIC"
+kind = "checkbox"
+default = false
+omit_default = true
+advanced = ["true"]
+popover = "static: keeps its value from one call of the function to the next"
+mark = "static"
 
 [[block.input]]
 name = "VALUE"

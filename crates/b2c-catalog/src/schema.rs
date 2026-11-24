@@ -431,11 +431,26 @@ pub struct FieldDef {
     /// label. Written only when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub menu: Option<String>,
-    /// `mark`: the words a block shows where a `menu` field sits while it
-    /// holds something other than its default (`unchecked`). Written only
-    /// when present.
+    /// `popover` on a checkbox: the field is set from the block's ⚙ popover,
+    /// as a tick with these words, instead of being drawn on the block
+    /// (`constexpr` and `static` on *create*, w4-editor-tools.md §7). The
+    /// same rules as `menu` apply, and a field has one or the other. Written
+    /// only when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub popover: Option<String>,
+    /// `mark`: the words a block shows where a `menu` or `popover` field
+    /// sits while it holds something other than its default (`unchecked`,
+    /// `static`). Written only when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mark: Option<String>,
+}
+
+impl FieldDef {
+    /// The words of the menu item or the popover tick that sets the field,
+    /// when it is set there rather than drawn on the block.
+    pub fn set_aside(&self) -> Option<&str> {
+        self.menu.as_deref().or(self.popover.as_deref())
+    }
 }
 
 /// A field's default.

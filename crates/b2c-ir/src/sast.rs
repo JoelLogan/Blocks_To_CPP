@@ -597,15 +597,27 @@ impl CollectionChange {
 
 /// A local variable declaration.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each flag is a C++ specifier or a choice of the block, independent of the others"
+)]
 pub struct VarDecl {
     /// The variable's symbol (name and resolved type are in the symbol table).
     pub symbol: SymbolId,
     /// Initial value; `None` value-initialises (`int x{};`).
     pub init: Option<Expr>,
-    /// Whether it was declared `const`.
+    /// Whether it was declared `const` (also when it is `constexpr`).
     pub is_const: bool,
     /// Whether the user chose `auto` (the generator then prints `auto`).
     pub written_auto: bool,
+    /// `constexpr` from the ⚙ popover (w4-editor-tools.md §7): its value is
+    /// a constant expression, which the analyser checks (`B2C-E0424`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_constexpr: bool,
+    /// `static` from the ⚙ popover: created once, keeping its value between
+    /// calls.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_static: bool,
 }
 
 /// One `if` / `else if` arm.

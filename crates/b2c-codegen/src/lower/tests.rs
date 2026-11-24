@@ -185,6 +185,8 @@ fn declare(id: &SymbolId, init: Option<Expr>) -> Stmt {
         init,
         is_const: false,
         written_auto: false,
+        is_constexpr: false,
+        is_static: false,
     }))
 }
 
@@ -1215,6 +1217,9 @@ fn every_block_program_compiles_clean_and_runs(compilers: &[PathBuf], dir: &Path
             // *Fast unchecked access* on *set item* and *item of*
             // (w4-editor-tools.md §7).
             "numbers[0] = ",
+            "numbers[static_cast<size_t>(first)]",
+            // The ⚙ popover's `static` and `constexpr` on *create*.
+            "static constexpr int first = 0;",
         ] {
             assert!(source.contains(needle), "{needle} not in\n{source}");
         }

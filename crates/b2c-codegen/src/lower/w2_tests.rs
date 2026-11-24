@@ -356,6 +356,8 @@ fn do_while_try_throw_and_static_assert_print() {
 fn declarations_print_constructor_arguments_and_globals() {
     let decl = CStmtKind::Decl {
         is_const: false,
+        is_constexpr: false,
+        is_static: false,
         ty: CType::String,
         name: ident("line"),
         init: Init::Args(vec![int_literal(3), letter("x")]),
@@ -483,6 +485,8 @@ fn nodes_program(standard: CppStandard) -> String {
     body.extend([
         stmt(CStmtKind::Decl {
             is_const: false,
+            is_constexpr: false,
+            is_static: false,
             ty: int_list,
             name: ident("items"),
             init: Init::Value(CExpr::new(CExprKind::Braces(vec![
@@ -528,6 +532,8 @@ fn nodes_program(standard: CppStandard) -> String {
     body.extend([
         stmt(CStmtKind::Decl {
             is_const: false,
+            is_constexpr: false,
+            is_static: false,
             ty: map,
             name: ident("ages"),
             init: Init::Braces,
@@ -574,6 +580,8 @@ fn nodes_program(standard: CppStandard) -> String {
     // Every new compound assignment: 12 & 10 | 1 ^ 2 << 1 >> 2 is 5.
     body.push(stmt(CStmtKind::Decl {
         is_const: false,
+        is_constexpr: false,
+        is_static: false,
         ty: CType::Int,
         name: ident("bits"),
         init: Init::Value(int_literal(12)),
@@ -598,6 +606,8 @@ fn nodes_program(standard: CppStandard) -> String {
     body.extend([
         stmt(CStmtKind::Decl {
             is_const: false,
+            is_constexpr: false,
+            is_static: false,
             ty: student(),
             name: ident("first"),
             init: Init::Value(CExpr::new(CExprKind::Init {
@@ -621,6 +631,8 @@ fn nodes_program(standard: CppStandard) -> String {
         )]),
         stmt(CStmtKind::Decl {
             is_const: false,
+            is_constexpr: false,
+            is_static: false,
             ty: CType::String,
             name: ident("line"),
             init: Init::Args(vec![int_literal(3), letter("x")]),

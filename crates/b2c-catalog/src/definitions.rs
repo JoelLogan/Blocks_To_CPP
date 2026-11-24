@@ -512,17 +512,22 @@ fn check_field(field: &FieldDef, problems: &mut Vec<String>) {
     check_menu_field(field, problems);
 }
 
-/// A `menu` field (w4-editor-tools.md §7): a checkbox shown once, written
-/// only away from its default, with the words of its menu item and of its
-/// mark; and a `mark` only with a `menu`.
+/// A `menu` or `popover` field (w4-editor-tools.md §7): a checkbox shown
+/// once, written only away from its default, with the words of its menu
+/// item or tick and of its mark; and a `mark` only with one of them.
 fn check_menu_field(field: &FieldDef, problems: &mut Vec<String>) {
     let name = &field.name;
-    let Some(menu) = &field.menu else {
+    let Some(menu) = field.set_aside() else {
         if field.mark.is_some() {
             problems.push(format!("only a menu field has a mark ({name})"));
         }
         return;
     };
+    if field.menu.is_some() && field.popover.is_some() {
+        problems.push(format!(
+            "the field {name} is set from the menu or from the popover, not both"
+        ));
+    }
     let words = |text: &Option<String>| {
         text.as_ref()
             .is_some_and(|text| text.chars().any(char::is_alphabetic))
@@ -531,7 +536,7 @@ fn check_menu_field(field: &FieldDef, problems: &mut Vec<String>) {
         || field.repeat.is_some()
         || field.default.is_none()
         || !field.omit_default
-        || !words(&Some(menu.clone()))
+        || !words(&Some(menu.to_owned()))
         || !words(&field.mark)
     {
         problems.push(format!(
@@ -731,7 +736,7 @@ fn check_friendly_label(def: &BlockDef, problems: &mut Vec<String>) {
             LabelPiece::Text(_) => None,
         })
         .collect();
-    for field in def.field.iter().filter(|field| field.menu.is_some()) {
+    for field in def.field.iter().filter(|field| field.set_aside().is_some()) {
         let name = field.name.as_str();
         let in_cpp = label_pieces(&def.label.cpp).contains(&LabelPiece::Arg(name));
         if shown.contains(name) || in_cpp {
@@ -743,7 +748,7 @@ fn check_friendly_label(def: &BlockDef, problems: &mut Vec<String>) {
     let parts = def
         .field
         .iter()
-        .filter(|field| field.repeat.is_none() && field.menu.is_none())
+        .filter(|field| field.repeat.is_none() && field.set_aside().is_none())
         .map(|field| ("field", field.name.as_str()))
         .chain(
             def.input
@@ -762,7 +767,7 @@ fn check_friendly_label(def: &BlockDef, problems: &mut Vec<String>) {
     for field in def
         .field
         .iter()
-        .filter(|field| field.kind == FieldKind::Checkbox && field.menu.is_none())
+        .filter(|field| field.kind == FieldKind::Checkbox && field.set_aside().is_none())
     {
         let name = field.name.as_str();
         for (index, piece) in pieces.iter().enumerate() {
@@ -819,6 +824,7 @@ mod tests {
                 advanced: Vec::new(),
                 requires: BTreeMap::new(),
                 menu: None,
+                popover: None,
                 mark: None,
             }],
             input: vec![InputDef {
@@ -969,6 +975,7 @@ mod tests {
                 advanced: Vec::new(),
                 requires: BTreeMap::new(),
                 menu: None,
+                popover: None,
                 mark: None,
             };
             d.label.friendly = label.into();
@@ -1062,6 +1069,7 @@ mod tests {
             advanced: Vec::new(),
             requires: BTreeMap::new(),
             menu: None,
+            popover: None,
             mark: None,
         };
         for (kind, default, types, ok) in [
@@ -1206,9 +1214,29 @@ mod tests {
             labelled,
             ["the menu field CHECKED is set from the block's menu: leave %CHECKED out of the labels"]
         );
-        // A mark belongs to a menu field.
+        // A mark belongs to a menu or popover field; a field has one place.
         let mark = problems_after(|d| d.field[0].mark = Some("x".into()));
         assert_eq!(mark, ["only a menu field has a mark (X)"]);
+        let popover = menu_field(|f| {
+            f.menu = None;
+            f.popover = Some("Fast".into());
+        });
+        assert_eq!(popover, Vec::<String>::new());
+        let both = menu_field(|f| f.popover = Some("Fast".into()));
+        assert_eq!(
+            both,
+            ["the field CHECKED is set from the menu or from the popover, not both"]
+        );
+        // The core catalog's popover: *create*'s `constexpr` and `static`.
+        let declare = &crate::core_catalog().blocks["var.declare"];
+        for (name, advanced) in [("CONSTEXPR", false), ("STATIC", true)] {
+            let tick = field_def(declare, name).expect(name);
+            assert!(
+                tick.popover.is_some() && tick.default == Some(FieldDefault::Bool(false)),
+                "{name}"
+            );
+            assert_eq!(tick.advanced == ["true"], advanced, "{name}");
+        }
         // The core catalog's: *item of* and *set item*.
         let catalog = crate::core_catalog();
         for id in ["coll.item", "coll.set_item"] {
@@ -1376,6 +1404,7 @@ mod tests {
             advanced: Vec::new(),
             requires: BTreeMap::new(),
             menu: None,
+            popover: None,
             mark: None,
         }
     }
@@ -1657,6 +1686,7 @@ mod tests {
             advanced: Vec::new(),
             requires: BTreeMap::new(),
             menu: None,
+            popover: None,
             mark: None,
             repeat: Some(Repeat {
                 count: "itemCount".into(),

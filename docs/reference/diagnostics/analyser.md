@@ -865,8 +865,10 @@ Codes by area:
 
 * **Severity:** error
 * **Meaning:** a value that C++ needs when it builds the program is not
-  fixed then: a `case` label of a `switch`, or the condition of `check at
-  compile time`. A label must be a whole number, a character, a value of an
+  fixed then: a `case` label of a `switch`, the condition of `check at
+  compile time`, or the value of a variable made `constexpr` in its
+  *create* block's ⚙, which must also be a whole number, a decimal number,
+  a character or a true/false value. A label must be a whole number, a character, a value of an
   enum, or a calculation from those and constants with fixed values. A
   condition may use numbers, characters, true/false values and such
   constants. Variables and the answers of functions are only known when the
@@ -880,9 +882,17 @@ Codes by area:
   whole number or character with a fixed value." / "The condition of 'check
   at compile time' must be fixed when the program is built: use numbers,
   characters, true/false values and constants with fixed values, not
-  variables or the answers of functions."
+  variables or the answers of functions." / "A 'constexpr' variable's value
+  must be fixed when the program is built: use numbers, characters,
+  true/false values and constants with fixed values, not variables or the
+  answers of functions. Or untick 'constexpr' in the block's ⚙." / "Only a
+  whole number, a decimal number, a character or a true/false value can be
+  'constexpr'. Untick 'constexpr' in the block's ⚙, or tick 'constant'
+  instead."
 * **How to fix:** use a number, a character or an enum value, or make the
-  variable a constant with a fixed starting value.
+  variable a constant with a fixed starting value; for `constexpr`, untick
+  it, or tick *constant* instead. A `constexpr` decimal number read in
+  another `constexpr` value is reported too, although C++ accepts it.
 
 ## B2C-E0425 Two cases with the same value
 
