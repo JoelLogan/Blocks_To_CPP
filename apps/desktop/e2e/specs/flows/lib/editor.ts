@@ -252,7 +252,9 @@ export async function closeMenu(driver: WebDriver): Promise<void> {
 
 /**
  * Clicks the type labelled `label` in the open type picker (a type field's popover,
- * docs/plans/m3-contracts/w4-editor-tools.md §2.2), once it lists it.
+ * docs/plans/m3-contracts/w4-editor-tools.md §2.2), once it lists it; an option below the list's
+ * visible part (a module's types come after the 16 built-in ones) is scrolled into it first, as
+ * a person scrolls the list.
  */
 export async function choosePickerType(driver: WebDriver, label: string): Promise<void> {
   const option = await waitFor(
@@ -266,5 +268,6 @@ export async function choosePickerType(driver: WebDriver, label: string): Promis
     },
     { timeout: EDITOR_TIMEOUT_MS, message: `the type picker's option ${label}` },
   );
+  await driver.executeScript("arguments[0].scrollIntoView({ block: 'nearest' });", option);
   await clickMiddle(driver, option);
 }

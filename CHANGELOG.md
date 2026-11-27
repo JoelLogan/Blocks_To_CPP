@@ -1129,6 +1129,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   field's `mark` are gone (a field named `CHECKED` is the unchecked index).
   The block shows _unchecked_ in the C++ label mode only, no longer in the
   Friendly one.
+- The E2E flow `modules-types` builds its program block by block, as the W3
+  contract has it (w3-modules.md §5.2 T): a module `records` with a shared
+  struct and a shared function whose parameter takes it (its type chosen in
+  the parameter row's picker), and a _create_ of it in `main`, instead of
+  opening a copy of `gradebook`.
 
 ### Removed
 
