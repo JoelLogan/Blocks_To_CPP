@@ -173,21 +173,26 @@ impl Lowerer<'_> {
                     // Using a returned `std::string` (e.g. printing it) needs
                     // `<string>` even if this module never names the type.
                     self.note_value_type(&symbol.ty);
+                    // Every call makes the function its block names the
+                    // only exact match (w2.md §2.8), whether or not another
+                    // function shares its name; a *list of* names its type
+                    // only on a call to an overloaded function (§7.1).
                     let params: &[_] = match &symbol.kind {
-                        SymbolKind::Function { params, .. }
-                            if self.overloaded.contains(symbol.name.as_str()) =>
-                        {
-                            params
-                        }
+                        SymbolKind::Function { params, .. } => params,
                         _ => &[],
                     };
+                    let overloaded = self.overloaded.contains(symbol.name.as_str());
                     let args = args
                         .iter()
                         .enumerate()
                         .map(
                             |(index, arg)| match params.get(index).and_then(|param| self.symbol(param)) {
                                 Some(param) => {
-                                    let lowered = self.typed_list(arg);
+                                    let lowered = if overloaded {
+                                        self.typed_list(arg)
+                                    } else {
+                                        self.expr(arg)
+                                    };
                                     self.exact_argument(arg, lowered, &param.ty)
                                 }
                                 None => self.expr(arg),
@@ -284,14 +289,16 @@ impl Lowerer<'_> {
         CExpr::unary(UnOp::Not, self.expr(cond))
     }
 
-    /// An argument of a call to an overloaded function (w2.md §2.8), made an
-    /// exact match for its parameter's type, so that the call can only mean
-    /// the function its block names: a number, character or `bool` of
-    /// another type is cast (`area(static_cast<double>(w), h)`), and text
-    /// that is not a `std::string` object becomes one (`show(std::string(
-    /// "hello"))`), since quoted text converts to `bool` before it converts
-    /// to `std::string`. Any other argument already has its parameter's type
-    /// (a *list of* names it, [`Lowerer::typed_list`]).
+    /// An argument of a call to a user function, overloaded or not (w2.md
+    /// §2.8), made an exact match for its parameter's type, so that the call
+    /// can only mean the function its block names: a number, character or
+    /// `bool` of another type is cast (`area(static_cast<double>(w), h)`),
+    /// and text that is not a `std::string` object becomes one
+    /// (`show(std::string("hello"))`), since quoted text converts to `bool`
+    /// before it converts to `std::string`. Any other argument already has
+    /// its parameter's type (a *list of* names it on a call to an overloaded
+    /// function, [`Lowerer::typed_list`], and takes it from the parameter
+    /// elsewhere).
     fn exact_argument(&mut self, arg: &Expr, lowered: CExpr, param: &Type) -> CExpr {
         let scalar = |ty: &Type| matches!(ty, Type::Int | Type::Double | Type::Char | Type::Bool);
         if *param == Type::String && arg.ty == Type::String {

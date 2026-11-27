@@ -17,8 +17,8 @@ void f(const std::string& name, int times, const std::string& end) {
 }
 
 int main() {
-    f("Ann");
-    f("Bob", 1);
-    f("Cy", 3, "?");
+    f(std::string("Ann"));
+    f(std::string("Bob"), 1);
+    f(std::string("Cy"), 3, std::string("?"));
     return 0;
 }

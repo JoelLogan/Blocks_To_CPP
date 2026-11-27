@@ -718,9 +718,10 @@ construct concrete. For example:
   `std::clamp<T>` with `T` the result's type; a map's *set item* as
   `object[key] = x;`; *clear* of an adaptor as `c = {};`; `main(int argc,
   char* argv[])` with `const std::vector<std::string> args(argv, argv +
-  argc);`; globals with `const` or `constexpr`; and on a call to an
-  overloaded function, each argument cast to its parameter's type and
-  quoted text as `std::string("…")`. A text operation's result
+  argc);`; globals with `const` or `constexpr`; and on every call to a
+  user function, overloaded or not, each argument whose type is not its
+  parameter's cast to that type and quoted text as `std::string("…")`. A
+  text operation's result
   (`b2c::to_lower(s)`, `s.substr(…)`) is a `std::string` object and is used
   as it is.
 * A read-only parameter of any type that is not a scalar (text, a library

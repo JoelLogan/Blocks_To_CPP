@@ -758,12 +758,14 @@ change (`B2C-E0307`), as its argument must.
 **Overloads.** Two functions of one module may share a name when a call can
 tell them apart by its argument types, counting the arguments a default
 value lets a call leave out and ignoring pass modes; otherwise the second
-is `B2C-E0211`. A call names its function by symbol ID, never by name. On a
-call to a function whose name another function of the module shares, the
-generator casts each argument to its parameter's type, writes quoted text
-as `std::string("…")` and a *list of* with its type
-(`show(std::vector<int>{1})`), so g++ picks the same function; calls to
-other functions print their arguments as before. *Your functions* labels
+is `B2C-E0211`. A call names its function by symbol ID, never by name. On
+every call to a user function, whether or not another function shares its
+name, the generator casts each argument whose type is not its parameter's
+(`half(static_cast<double>(n))`) and writes quoted text and an error's
+message as `std::string("…")`, so g++ picks the function the block names
+and only that one; on a call to a function whose name another function of
+the module shares, a *list of* also names its type
+(`show(std::vector<int>{1})`). *Your functions* labels
 each function that shares its name with its parameter types (*area (int,
 int)*), and so do a call's function menu and the call block itself.
 Overloads of a shared function must be in one module: two modules that

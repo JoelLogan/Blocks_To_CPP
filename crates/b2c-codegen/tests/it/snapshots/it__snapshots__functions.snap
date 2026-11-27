@@ -41,12 +41,12 @@ bool is_even(int value) {
 }
 
 int main() {
-    greet("Ada", 2);
+    greet(std::string("Ada"), 2);
     // 5! = 120
     int score = factorial(5);
     add_bonus(score, 10);
     if (is_even(score)) {
-        std::cout << describe("Grace", true) << '\n';
+        std::cout << describe(std::string("Grace"), true) << '\n';
     }
     std::cout << score << '\n';
     return 0;

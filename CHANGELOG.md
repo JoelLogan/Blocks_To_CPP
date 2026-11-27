@@ -1103,6 +1103,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - _for each line_ declares its line `std::string line;`, as the W2 contract
   prints it (w2.md §2.4), not `std::string line{};`. The golden C++ of
   `word_count` and the catalog snapshots of the file loop change only there.
+- Every call to a user function casts each argument whose type is not its
+  parameter's and passes quoted text and an error's message as
+  `std::string(…)`, as the W2 contract has it (w2.md §2.8), not only a call
+  to a function whose name another function of the module shares; a _list
+  of_ still names its type only on such a call. The golden C++ of
+  `unit_converter` and two snapshots change only there.
 
 ### Removed
 

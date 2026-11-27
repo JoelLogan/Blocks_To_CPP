@@ -26,10 +26,10 @@ void print_table(int from, int to, bool celsius) {
     for (int degrees = from; degrees <= to; degrees += 10) {
         double converted = 0;
         if (celsius) {
-            converted = rounded(to_fahrenheit(degrees));
+            converted = rounded(to_fahrenheit(static_cast<double>(degrees)));
             std::cout << degrees << " C = " << converted << " F |";
         } else {
-            converted = rounded(to_celsius(degrees), 2);
+            converted = rounded(to_celsius(static_cast<double>(degrees)), 2);
             std::cout << degrees << " F = " << converted << " C |";
         }
         for (int i = 0, n = scale(converted); i < n; ++i) {

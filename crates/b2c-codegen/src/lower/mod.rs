@@ -401,8 +401,8 @@ struct Lowerer<'a> {
     function_names: BTreeSet<&'a str>,
     /// The names that more than one function the module can call has
     /// (overloads, w2.md §2.8): its own functions and those other modules
-    /// share (w3-modules.md §2.1). Calls to them cast their arguments to the
-    /// parameters' types.
+    /// share (w3-modules.md §2.1). A *list of* passed to them names its type
+    /// (w2.md §7.1); every call casts its arguments (§2.8).
     overloaded: BTreeSet<&'a str>,
     /// How the analyser spelled each reference (w3-modules.md §2.12).
     spellings: &'a Spellings,

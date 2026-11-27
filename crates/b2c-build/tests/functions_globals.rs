@@ -482,6 +482,12 @@ fn a_call_leaves_out_the_arguments_with_a_default_value() {
         "{cpp}"
     );
     assert!(cpp.contains("\nint square(int side) {"), "{cpp}");
+    // Quoted text is passed as `std::string(…)` on every call (w2.md §2.8),
+    // though no other function is called `line`.
+    assert!(
+        cpp.contains("    line(3);\n    line(2, '-');\n    line(1, '=', std::string(\"!\"));\n"),
+        "{cpp}"
+    );
 }
 
 #[test]
@@ -530,7 +536,8 @@ fn three_overloads_of_area_run_and_print_each() {
         call("area_rect", vec![number("2"), tokens(&["n"])]),
         // An int for the double overload: cast, so that the call means it.
         call("area_real", vec![tokens(&["n"]), number("1.5")]),
-        // A function without overloads takes it as it is.
+        // A function without overloads casts it too: every call makes the
+        // function its block names the only exact match (w2.md §2.8).
         call("half", vec![tokens(&["n"])]),
     ];
     let half = b.define(
@@ -549,7 +556,10 @@ fn three_overloads_of_area_run_and_print_each() {
         &printed("square 9\nrectangle 6\nreal 4.5\nhalf 1.5\n"),
     );
     assert!(
-        cpp.contains("    area(n);\n    area(2, n);\n    area(static_cast<double>(n), 1.5);\n"),
+        cpp.contains(concat!(
+            "    area(n);\n    area(2, n);\n    area(static_cast<double>(n), 1.5);\n",
+            "    half(static_cast<double>(n));\n",
+        )),
         "{cpp}"
     );
 }
@@ -637,6 +647,9 @@ fn a_list_of_calls_the_overload_its_block_names() {
         define("show", "show_list", "numbers", Some("int"), "list "),
         define("sum", "sum_int", "whole", Some("int"), "whole "),
         define("sum", "sum_real", "real", Some("double"), "real "),
+        // No other function is called `total`: its list takes the parameter's
+        // type, as in any place that gives one (w2.md §7.1).
+        define("total", "total", "items", Some("int"), "total "),
     ];
     let list_of = |items: Vec<Value>| {
         let count = items.len();
@@ -656,6 +669,7 @@ fn a_list_of_calls_the_overload_its_block_names() {
             "sum_real",
             vec![list_of(vec![number("1"), number("2"), number("3")])],
         ),
+        b.call_stmt("total", vec![list_of(vec![number("4"), number("5")])]),
     ];
     let cpp = builds_and_runs(
         "list_overloads",
@@ -663,12 +677,13 @@ fn a_list_of_calls_the_overload_its_block_names() {
         body,
         &[],
         &[],
-        &printed("list 1\nlist 0\nint 7\nwhole 2\nreal 3\n"),
+        &printed("list 1\nlist 0\nint 7\nwhole 2\nreal 3\ntotal 2\n"),
     );
     assert!(
         cpp.contains(concat!(
             "    show(std::vector<int>{1});\n    show(std::vector<int>{});\n    show(7);\n",
             "    sum(std::vector<int>{1, 2});\n    sum(std::vector<double>{1, 2, 3});\n",
+            "    total({4, 5});\n",
         )),
         "{cpp}"
     );
