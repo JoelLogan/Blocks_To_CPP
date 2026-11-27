@@ -1134,6 +1134,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   struct and a shared function whose parameter takes it (its type chosen in
   the parameter row's picker), and a _create_ of it in `main`, instead of
   opening a copy of `gradebook`.
+- The E2E flow `namespaces` builds its program through the toolbox, as the
+  W3 contract has it (w3-modules.md §5.2 N2): the function and the struct
+  are dragged into the namespace's mouth and the call into `main`, instead
+  of a fixture and the test hook. The fixture `namespaces.b2c` is gone.
 
 ### Removed
 
