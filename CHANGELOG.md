@@ -1118,6 +1118,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   contract has it (w3-modules.md §2.11): one polite live region for the
   whole app, in the status bar, with _Undo delete_ beside a deletion's
   message. The module strip no longer has a status region of its own.
+- A preview answer that comes while a block is dragged is applied when the
+  editing session ends the drag and calls the pipeline's `release()`, as
+  worker.md §6 has it, instead of the pipeline looking at the drag every
+  animation frame.
 
 ### Removed
 

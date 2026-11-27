@@ -329,7 +329,7 @@ describe('the preview pipeline', () => {
     pipeline.dispose();
   });
 
-  it('holds an answer while busy, the newest only, and applies it once the drag has ended', async () => {
+  it('holds an answer while busy, the newest only, and applies it when the session releases it', async () => {
     openProject();
     const service = manualService();
     let busy = true;
@@ -354,11 +354,47 @@ describe('the preview pipeline', () => {
     expect(useAppStore.getState().analysis.preview).toBeNull();
     expect(pipeline.isIdle()).toBe(false);
 
+    // The drag's end is the session's to say (worker.md §6): no longer busy, the answer still
+    // waits, however many frames pass, until `release()`.
     busy = false;
-    await vi.advanceTimersByTimeAsync(20);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useAppStore.getState().analysis.preview).toBeNull();
+    expect(pipeline.isIdle()).toBe(false);
+    pipeline.release();
     expect(useAppStore.getState().analysis.preview).toBe(newer);
     expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
     expect(pipeline.isIdle()).toBe(true);
+    // Nothing is held any more: a second release changes nothing.
+    pipeline.release();
+    expect(useAppStore.getState().analysis.preview).toBe(newer);
+    pipeline.dispose();
+  });
+
+  it('applies a released answer by the apply rule, dropping one the project moved past', async () => {
+    openProject();
+    const service = manualService();
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+      service,
+      isBusy: () => true,
+    });
+    const run = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    service.calls[0]?.resolve(updateFixture(service.calls[0].json));
+    await run;
+    // Something else wrote the project's document while the answer was held (a rename).
+    const project = useAppStore.getState().project;
+    if (project === null) {
+      throw new Error('no project');
+    }
+    useAppStore.getState().actions.updateProject({
+      document: { ...project.document, project: { ...project.document.project, name: 'Renamed' } },
+    });
+    pipeline.release();
+    expect(useAppStore.getState().analysis.preview).toBeNull();
+    expect(useAppStore.getState().project?.document.project.name).toBe('Renamed');
     pipeline.dispose();
   });
 
@@ -377,6 +413,7 @@ describe('the preview pipeline', () => {
     service.calls[0]?.resolve(updateFixture(service.calls[0].json));
     await run;
     pipeline.invalidate();
+    pipeline.release();
     await vi.advanceTimersByTimeAsync(100);
     expect(useAppStore.getState().analysis.preview).toBeNull();
     pipeline.dispose();

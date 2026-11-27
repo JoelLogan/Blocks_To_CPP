@@ -20,6 +20,8 @@
  *   e2e/specs/flows/tray-delete.e2e.ts. `Ctrl+Z` brings the block back even when it is pressed
  *   before Blockly has recorded the drop for undo (./undo.ts).
  * - An undo asked for just before a drag starts does nothing once the drag has started.
+ * - A preview answer that comes while a block is dragged is held, and applied when the session
+ *   releases it at the drag's end (`PreviewPipeline.release`, worker.md §6), not before.
  * - The feedback: the dragged blocks are faded, and over the toolbox the whole toolbox (the
  *   category column and the flyout) is tinted, with the category names still readable.
  * - A drop on the canvas is settled in the drag's event group (`handleBlockDrops`): a *set*
@@ -36,6 +38,7 @@ import appCss from '../../app/app.css?raw';
 import { contrastOf, declarationsOf, parseRules, themeTokens } from '../../app/layout/cssAudit';
 import { useAppStore } from '../../app/store';
 import { editorInjectOptions } from '../EditorWorkspace';
+import { PreviewPipeline } from '../preview/pipeline';
 import type { PreviewAnswer, PreviewService } from '../preview/service';
 import { createToolboxPlugin, toolboxInjectOptions } from '../toolbox';
 import {
@@ -97,7 +100,7 @@ const POINTER = {
 } as const;
 
 /** A shown editor canvas with the editor's block dragger, holding the guessing game. */
-async function guessingGame(): Promise<TestSession> {
+async function guessingGame(service?: PreviewService): Promise<TestSession> {
   const wasm = present(core, 'core');
   const workspace = renderedWorkspace({
     plugins: { blockDragger: B2cBlockDragger },
@@ -106,7 +109,7 @@ async function guessingGame(): Promise<TestSession> {
   setViewSize(workspace, 1000, 700);
   Blockly.svgResize(workspace);
   const doc = loadText(wasm, present(EXAMPLE_PROJECTS['guessing_game.b2c'], 'guessing game'));
-  running = startSession(wasm, doc, { workspace });
+  running = startSession(wasm, doc, service === undefined ? { workspace } : { workspace, service });
   await running.session.flush();
   await Blockly.renderManagement.finishQueuedRenders();
   return running;
@@ -287,6 +290,64 @@ describe.skipIf(core === null)('saving during a drag', () => {
     expect(svg.getTopBlocks(false)).not.toContain(loose);
 
     expect(readTopBlocks(svg).map((node) => node.id)).toEqual(['b011', 'loose1']);
+  });
+});
+
+describe.skipIf(core === null)('a preview answer that comes during a drag', () => {
+  withoutSmil();
+
+  it('is held until the session releases it at the drag’s end (worker.md §6)', async () => {
+    const wasm = present(core, 'core');
+    // Answers come when the test lets them, as the worker's do: after the run read the canvas.
+    const gate: { open: boolean; waiting: (() => void)[] } = { open: true, waiting: [] };
+    const service: PreviewService = {
+      thread: () => 'main',
+      update: (json, options) =>
+        new Promise<PreviewAnswer>((resolve) => {
+          const answer = () => {
+            resolve({
+              result: wasm.update(json, options),
+              scope: null,
+              timing: { startedAt: 0, updateMs: 0, indexMs: 0 },
+            });
+          };
+          if (gate.open) {
+            answer();
+          } else {
+            gate.waiting.push(answer);
+          }
+        }),
+      recover: () => Promise.resolve(),
+    };
+    const { workspace } = await guessingGame(service);
+    const svg = workspace as Blockly.WorkspaceSvg;
+    const release = vi.spyOn(PreviewPipeline.prototype, 'release');
+    const before = useAppStore.getState().analysis.preview;
+    gate.open = false;
+    // An edit whose run reads the canvas and waits for its answer.
+    present(svg.getBlockById('b004'), 'b004').setFieldValue(false, 'NEWLINE');
+    await vi.waitFor(() => {
+      expect(gate.waiting).toHaveLength(1);
+    });
+
+    startDrag(present(svg.getBlockById('b010'), 'b010'));
+    expect(svg.isDragging()).toBe(true);
+    gate.waiting.shift()?.();
+    // Frames pass while the block is dragged: the answer is held.
+    await eventsDelivered();
+    await eventsDelivered();
+    expect(useAppStore.getState().analysis.preview).toBe(before);
+    expect(release).not.toHaveBeenCalled();
+
+    // The drop: the session releases the held answer once the drag has ended, without waiting
+    // for an animation frame.
+    drop();
+    expect(svg.isDragging()).toBe(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().analysis.preview).not.toBe(before);
+    release.mockRestore();
   });
 });
 

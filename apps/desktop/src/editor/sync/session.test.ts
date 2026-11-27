@@ -24,6 +24,7 @@ import {
 import { attachHighlightTracking } from '../highlight/tracking';
 import { createCoreHost } from '../preview/coreHost';
 import type { PreviewService } from '../preview/service';
+import { listenToBlockDrags } from './drag';
 import { SyncError } from './errors';
 import { EditorSession, FIRST_VIEW_MARGIN, type SessionHooks } from './session';
 import {
@@ -34,6 +35,12 @@ import {
   setViewSize,
 } from './testing';
 import { viewStateOf } from './viewport';
+
+// The session's block drag listener, captured (the hold's test tells it a drag starts and ends).
+vi.mock('./drag', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./drag')>();
+  return { ...actual, listenToBlockDrags: vi.fn(actual.listenToBlockDrags) };
+});
 
 /** The block whose document the stand-in core's loader refuses, as one nested too deeply. */
 const TOO_DEEP = 'too_deep';
@@ -624,8 +631,8 @@ describe('the editing session', () => {
   });
 });
 
-describe('the hold (w5-performance.md §10.4)', () => {
-  it('applies a preview that comes during a block drag once the drag has ended', async () => {
+describe('the hold (worker.md §6)', () => {
+  it('holds a preview that comes during a block drag until the drag’s end releases it', async () => {
     const workspace = renderedWorkspace();
     const core = stubCore();
     setCore(core);
@@ -656,14 +663,39 @@ describe('the hold (w5-performance.md §10.4)', () => {
     };
     const session = new EditorSession({ workspace, store: useAppStore, host, service });
     sessions.push(session);
+    const drags = vi.mocked(listenToBlockDrags).mock.calls.at(-1)?.[1];
+    expect(drags).toBeDefined();
     await vi.advanceTimersByTimeAsync(0);
-    const dragging = vi.spyOn(workspace, 'isDragging').mockReturnValue(true);
+    const block = workspace.newBlock('control.forever');
+    drags?.onDragStart(block);
     expect(answer).not.toBeNull();
     (answer as unknown as () => void)();
-    await vi.advanceTimersByTimeAsync(50);
+    // Frames pass while the block is dragged: the answer is held, and the pipeline is not idle.
+    await vi.advanceTimersByTimeAsync(100);
     expect(useAppStore.getState().analysis.preview).toBeNull();
-    dragging.mockReturnValue(false);
-    await vi.advanceTimersByTimeAsync(50);
+    drags?.onDragEnd();
+    // The session releases it once Blockly's gesture has finished the drop.
+    expect(useAppStore.getState().analysis.preview).toBeNull();
+    await Promise.resolve();
+    expect(useAppStore.getState().analysis.preview).not.toBeNull();
+  });
+
+  it('applies an answer that comes outside a block drag at once', async () => {
+    const workspace = renderedWorkspace();
+    const core = stubCore();
+    setCore(core);
+    useAppStore
+      .getState()
+      .actions.setProject(projectFixture({ document: twoModules(), activeModuleId: 'mod_main' }));
+    const host = createCoreHost({
+      initCore: () => Promise.resolve(core),
+      resetCore: () => undefined,
+      getCore,
+      setCore,
+    });
+    const session = new EditorSession({ workspace, store: useAppStore, host });
+    sessions.push(session);
+    await vi.advanceTimersByTimeAsync(0);
     expect(useAppStore.getState().analysis.preview).not.toBeNull();
   });
 });

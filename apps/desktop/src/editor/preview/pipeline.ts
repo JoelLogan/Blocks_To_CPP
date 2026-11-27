@@ -26,8 +26,8 @@
  * holds, so the canvas is read again instead (ADR-0016 §5); a document the pipeline's own last
  * commit wrote does not count. On the main thread the read, `update()` and the commit are one
  * task and neither happens; with the worker they can. While a block is dragged (`isBusy`), an
- * answer that may be applied is held, the newest replacing an older one, and applied once the
- * drag has ended (checked every animation frame), by the same rules. When the
+ * answer that may be applied is held, the newest replacing an older one, and applied by the same
+ * rules when the session ends the drag with {@link PreviewPipeline.release}. When the
  * core traps, the service gets a fresh instance (`PreviewService.recover`), the run is tried once
  * more on it, and the analysis gets the notice `trapRecovered`. When the update fails even so (the
  * new instance trapped too, or the core failed in another way), the document is still made the
@@ -77,7 +77,7 @@ export interface PreviewPipelineOptions {
   readonly onPreviewed?: (result: PreviewResult) => void;
   /**
    * Whether answers must wait (a block is being dragged); never by default. A held answer is
-   * applied once this is false again, checked every animation frame.
+   * applied when the session calls {@link PreviewPipeline.release} at the drag's end.
    */
   readonly isBusy?: () => boolean;
   /** The debounce delay, in milliseconds. */
@@ -111,20 +111,6 @@ interface HeldAnswer {
   readonly apply: () => void;
 }
 
-/** Calls `callback` at the next animation frame, or after about one frame without them. */
-function nextFrame(callback: () => void): () => void {
-  if (typeof requestAnimationFrame === 'function') {
-    const id = requestAnimationFrame(callback);
-    return () => {
-      cancelAnimationFrame(id);
-    };
-  }
-  const id = setTimeout(callback, 16);
-  return () => {
-    clearTimeout(id);
-  };
-}
-
 /** The hashes of an update whose document loaded, or `null` when it did not load. */
 function hashesOf(result: UpdateResult): DocumentHashes | null {
   if (result.stage === 'load' || result.textHash === null || result.contentHash === null) {
@@ -151,10 +137,8 @@ export class PreviewPipeline {
   private written: BdmDocument | null = null;
   /** Bumped by `invalidate()`: answers of runs before it are dropped. */
   private epoch = 0;
-  /** The answer held while `isBusy()`, or `null`. */
+  /** The answer held while `isBusy()`, until `release()`, or `null`. */
   private held: HeldAnswer | null = null;
-  /** Cancels the frame callback that looks at the held answer again, or `null`. */
-  private cancelHold: (() => void) | null = null;
   private disposed = false;
   private readonly unsubscribe: () => void;
 
@@ -227,7 +211,7 @@ export class PreviewPipeline {
     this.cancel();
     this.latest += 1;
     this.epoch += 1;
-    this.dropHeld();
+    this.held = null;
     if (options.newDocument === true) {
       this.options.store
         .getState()
@@ -243,35 +227,24 @@ export class PreviewPipeline {
     this.unsubscribe();
   }
 
-  private dropHeld(): void {
+  /**
+   * Applies the answer held during a drag, by the apply rule (worker.md §6): the session calls it
+   * where it ends the drag. Nothing happens when nothing is held.
+   */
+  release(): void {
+    const held = this.held;
     this.held = null;
-    this.cancelHold?.();
-    this.cancelHold = null;
+    if (held !== null && !this.disposed) {
+      held.apply();
+    }
   }
 
-  /** Holds `answer` while `isBusy()`, replacing an older held one; applies it once not busy. */
+  /** Holds `answer` until `release()`, replacing an older held one. */
   private hold(answer: HeldAnswer): void {
     if (this.held !== null && this.held.seq > answer.seq) {
       return;
     }
     this.held = answer;
-    if (this.cancelHold !== null) {
-      return;
-    }
-    const look = (): void => {
-      this.cancelHold = null;
-      const held = this.held;
-      if (held === null || this.disposed) {
-        return;
-      }
-      if (this.options.isBusy?.() === true) {
-        this.cancelHold = nextFrame(look);
-        return;
-      }
-      this.held = null;
-      held.apply();
-    };
-    this.cancelHold = nextFrame(look);
   }
 
   private async run(): Promise<void> {

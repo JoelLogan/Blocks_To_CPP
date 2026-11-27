@@ -16,7 +16,9 @@
  *   (`syncFailed`), the editor stays on it: the project's document only ever holds documents the
  *   loader accepts, and the undo history that takes the change back is kept.
  * - The viewport is captured only for saving ({@link EditorSession.currentDocument}).
- * - While a block is dragged, saving writes the canvas as it was just before the drag (./drag.ts).
+ * - While a block is dragged, saving writes the canvas as it was just before the drag (./drag.ts),
+ *   and the preview pipeline holds an answer that comes meanwhile; the drag's end releases it
+ *   (`PreviewPipeline.release`, docs/plans/m3-contracts/worker.md §6).
  * - Renaming the project changes the document outside the canvas and previews it again
  *   ({@link EditorSession.updateProjectInfo}); Undo and Redo act on the canvas only.
  * - Adding, renaming, deleting, restoring and moving modules are edits of the document, made from
@@ -210,6 +212,11 @@ export class EditorSession {
   /** The shown module's blocks just before the block drag in progress, or `null`. */
   private preDrag: { readonly moduleId: string; readonly blocks: readonly BdmBlock[] } | null =
     null;
+  /**
+   * Whether a block is being dragged, from the dragger's start to its end (./drag.ts): the preview
+   * pipeline holds its answers meanwhile, and the drag's end releases them.
+   */
+  private blockDragged = false;
   /** The module switch asked for during the block drag in progress, or `null`. */
   private waitingSwitch: WaitingSwitch | null = null;
   /** Whether a {@link relabel} asked for during the block drag in progress waits for its end. */
@@ -235,8 +242,9 @@ export class EditorSession {
       store: options.store,
       host: options.host,
       read: this.readLive,
-      // An answer that comes while a block is dragged waits for the drop (w5-performance.md §10.4).
-      isBusy: () => isDragging(this.workspace),
+      // An answer that comes while a block is dragged waits for the drop: `release()` at the
+      // drag's end (worker.md §6).
+      isBusy: () => this.blockDragged,
       ...(options.service === undefined ? {} : { service: options.service }),
       ...(options.debounceMs === undefined ? {} : { debounceMs: options.debounceMs }),
       onCommitted: (doc) => this.hooks.onCommitted?.(doc),
@@ -247,15 +255,18 @@ export class EditorSession {
       this.workspace instanceof Blockly.WorkspaceSvg
         ? listenToBlockDrags(this.workspace, {
             onDragStart: (block) => {
+              this.blockDragged = true;
               this.beforeDrag(block);
             },
             onDragEnd: () => {
+              this.blockDragged = false;
               this.preDrag = null;
+              // Blockly's gesture ends the drag after its dragger has finished the drop.
+              queueMicrotask(this.releaseAfterDrag);
               if (this.waitingRelabel) {
                 queueMicrotask(this.relabelAfterDrag);
               }
               if (this.waitingSwitch !== null) {
-                // Blockly's gesture ends the drag after its dragger has finished the drop.
                 queueMicrotask(this.switchAfterDrag);
               }
             },
@@ -665,6 +676,16 @@ export class EditorSession {
       }
     }
   }
+
+  /**
+   * Applies the preview answer held during the block drag that has just ended, unless another drag
+   * has started since (its end does it) or the session has ended.
+   */
+  private readonly releaseAfterDrag = (): void => {
+    if (!this.disposed && !this.blockDragged) {
+      this.pipeline.release();
+    }
+  };
 
   /** Does the relabel asked for during the block drag that has just ended ({@link relabel}). */
   private readonly relabelAfterDrag = (): void => {
