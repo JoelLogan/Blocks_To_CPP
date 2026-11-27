@@ -7,10 +7,9 @@
  * its own policy (`WORKER_CSP`), not the page's.
  * The check (src/e2e/workerCheck.ts) runs beside the editor's own preview.
  *
- * The third test is the editor's own preview, in the worker by default (w5-performance.md §2.4):
- * it moves to the worker after the first update, and after the worker is stopped the next edit
- * previews on a new one; only a build made with `B2C_PREVIEW_WORKER=0` keeps it on the main
- * thread.
+ * The third test is the editor's own preview, in the worker in every build (there is no switch
+ * that keeps it on the main thread, w5-worker.md §4): it moves to the worker after the first
+ * update, and after the worker is stopped the next edit previews on a new one.
  *
  * The second test measures, at 1,000 blocks (the benchmarks' document), the worker's start-up, a
  * preview's round trip through `postMessage` against the main thread's call, and the
@@ -122,13 +121,6 @@ describe('The preview worker', () => {
     const mainId = await newEmptyProject(app);
     const ids = new NodeIds('worker');
     await printAndWait(app, mainId, ids, 'first edit');
-    // Set when the app under test was built with the worker off (its off switch).
-    if (process.env['B2C_PREVIEW_WORKER'] === '0') {
-      // A build made with B2C_PREVIEW_WORKER=0: the editor previews on the main thread, as in M2.
-      await printAndWait(app, mainId, ids, 'second edit');
-      expect(await app.hook.call('previewThread')).toBe('off');
-      return;
-    }
     // The first update ran on the main thread and started the worker.
     await waitFor(async () => (await app.hook.call('previewThread')) === 'worker', {
       timeout: EDIT_TIMEOUT_MS,

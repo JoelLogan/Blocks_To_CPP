@@ -40,9 +40,6 @@ export default defineConfig({
   plugins: [react(), blocklyMedia(), wasmCore()],
   // Keep Rust compiler errors from `tauri dev` visible.
   clearScreen: false,
-  // Besides Vite's own, the preview worker's off switch: B2C_PREVIEW_WORKER=0 at build time keeps
-  // the preview on the main thread, for measurements (src/editor/preview/workerService.ts).
-  envPrefix: ['VITE_', 'B2C_PREVIEW_WORKER'],
   server: {
     // tauri.conf.json's devUrl expects exactly this port.
     port: 1420,

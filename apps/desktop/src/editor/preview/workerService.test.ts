@@ -14,7 +14,7 @@ import type { CoreWorkerClient, WorkerUpdate } from '@blocks2cpp/b2c-core-wasm/w
 import { describe, expect, it, vi } from 'vitest';
 
 import { createCoreHost, NO_SCOPE } from './coreHost';
-import { previewWorkerEnabled, workerPreviewService } from './workerService';
+import { workerPreviewService } from './workerService';
 
 const VERSION: CoreVersion = {
   app: '0.1.0',
@@ -110,20 +110,6 @@ function setUp() {
 const OPTIONS = { indentWidth: 4 } as const;
 
 describe('the worker preview service', () => {
-  it('is on unless the build was made with B2C_PREVIEW_WORKER=0', () => {
-    // Whatever the shell running the tests exports.
-    try {
-      vi.stubEnv('B2C_PREVIEW_WORKER', '');
-      expect(previewWorkerEnabled()).toBe(true);
-      vi.stubEnv('B2C_PREVIEW_WORKER', '1');
-      expect(previewWorkerEnabled()).toBe(true);
-      vi.stubEnv('B2C_PREVIEW_WORKER', '0');
-      expect(previewWorkerEnabled()).toBe(false);
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
   it('reads the worker’s scope index for its preview, and logs one it cannot read', async () => {
     const { client, log, service } = setUp();
     await service.update('one', OPTIONS);

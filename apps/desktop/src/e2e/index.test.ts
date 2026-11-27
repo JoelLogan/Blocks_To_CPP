@@ -82,7 +82,6 @@ function deps(overrides: Partial<E2eHookDeps> = {}): E2eHookDeps {
       throw new Error('no worker in this test');
     },
     pageRequest: () => Promise.resolve('failed'),
-    previewWorkerEnabled: () => false,
     previewService: () => null,
     ...overrides,
   };
@@ -299,6 +298,23 @@ describe('createE2eHook', () => {
     expect(() => {
       createE2eHook(withoutParser, new ConsoleTranscript()).probeTrustedTypes();
     }).not.toThrow();
+  });
+});
+
+describe('the preview thread', () => {
+  it('is where the editor’s next preview runs, in every build, or null without an editor', () => {
+    let thread: 'worker' | 'main' = 'main';
+    const service = { thread: () => thread, client: () => null };
+    let open = false;
+    const hook = createE2eHook(
+      deps({ previewService: () => (open ? service : null) }),
+      new ConsoleTranscript(),
+    );
+    expect(hook.previewThread()).toBeNull();
+    open = true;
+    expect(hook.previewThread()).toBe('main');
+    thread = 'worker';
+    expect(hook.previewThread()).toBe('worker');
   });
 });
 

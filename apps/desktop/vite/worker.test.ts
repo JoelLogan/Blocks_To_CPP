@@ -63,6 +63,16 @@ async function buildWorker(mode: string): Promise<{ name: string; text: string }
   }));
 }
 
+describe('the preview worker’s switch', () => {
+  it('does not exist: a build exposes only Vite’s own variables (w5-worker.md §4)', () => {
+    const config = typeof appConfig === 'function' ? undefined : appConfig;
+    // Vite's default, `VITE_`: no variable of the build can keep the preview on the main thread.
+    expect(config?.envPrefix ?? 'VITE_').toBe('VITE_');
+    const service = readFileSync(path.join(appRoot, 'src/editor/preview/workerService.ts'), 'utf8');
+    expect(service).not.toContain('import.meta.env');
+  });
+});
+
 describe.skipIf(!built && !required)('the preview worker’s build', () => {
   it('is one module entry under workers/ without the bytes, Tauri’s API or the probe', async () => {
     const files = await buildWorker('production');

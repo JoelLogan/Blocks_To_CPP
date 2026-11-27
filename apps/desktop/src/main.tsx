@@ -13,7 +13,6 @@ import { getEditorHandle } from './app/editor-types';
 import { Root } from './app/Root';
 import { screens } from './app/screens';
 import { useAppStore } from './app/store';
-import { previewWorkerEnabled } from './editor/preview/workerService';
 import { installFeatures } from './features';
 import { consoleBridge } from './features/build-run';
 import { ipc } from './lib/ipc';
@@ -91,7 +90,6 @@ if (import.meta.env.MODE === 'e2e') {
           name: spawn.PREVIEW_WORKER_NAME,
         }) as unknown as WorkerLike,
       pageRequest: () => probeRequest(() => trustedTypes.report().directives),
-      previewWorkerEnabled,
       previewService: spawn.currentWorkerPreviewService,
     });
   });

@@ -195,10 +195,9 @@ export interface E2eHookContract {
   workerCheck(): E2eWorkerCheck | null;
   /**
    * Where the editor's next preview runs: `worker` or `main` (the main thread until the worker
-   * has started, and after it has failed), `off` in a build made with `B2C_PREVIEW_WORKER=0`,
-   * and `null` when no editor is open.
+   * has started, and after it has failed), and `null` when no editor is open.
    */
-  previewThread(): 'worker' | 'main' | 'off' | null;
+  previewThread(): 'worker' | 'main' | null;
   /**
    * Terminates the editor's preview worker as if it had raised an error, so that its client
    * starts a new one. Throws when the editor has no worker.

@@ -30,7 +30,6 @@ import { QuickInsert, ToolboxSearch } from './quick-insert';
 import { appCoreHost, type CoreHost } from './preview/coreHost';
 import type { PreviewService } from './preview/service';
 import { appWorkerPreviewService } from './preview/worker/spawn';
-import { previewWorkerEnabled } from './preview/workerService';
 import {
   createSymbolServices,
   fieldDialogs,
@@ -258,15 +257,14 @@ export function EditorWorkspace() {
     registerEditorBlocks();
     // The theme in use (the Appearance setting, on <html>, ../app/appearance), followed below.
     const workspace = Blockly.inject(element, editorInjectOptions(b2cTheme(documentTheme())));
-    // The preview worker in every build but one made with B2C_PREVIEW_WORKER=0 (ADR-0016, on by
-    // default since docs/plans/m3-contracts/w5-performance.md §2.4).
-    const service = previewWorkerEnabled() ? appWorkerPreviewService(appCoreHost()) : null;
+    // The preview worker, in every build (ADR-0016; docs/plans/m3-contracts/w5-worker.md §4).
+    const service = appWorkerPreviewService(appCoreHost());
     const editor = attachEditor(workspace, {
       store: useAppStore,
       host: appCoreHost(),
       dialogs: appDialogs,
       plugins: EDITOR_PLUGINS,
-      ...(service === null ? {} : { service }),
+      service,
     });
 
     // Blockly sizes its SVG once; follow the panel when the window or a dock resizes, and when
@@ -286,7 +284,7 @@ export function EditorWorkspace() {
       stopFollowingTheme();
       resizeObserver.disconnect();
       editor.detach();
-      service?.dispose();
+      service.dispose();
       // Children first and without events: Blockly's own disposal recurses along `next` chains,
       // and a delete event would serialise every block.
       clearWorkspace(workspace);

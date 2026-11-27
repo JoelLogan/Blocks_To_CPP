@@ -1132,6 +1132,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - `Type::cpp_name`, `friendly_name`, `from_field`, `is_numeric` and `header`,
   and `b2c_lang::analyze` and `analyze_checked`: use `analyze_with` and
   `analyze_checked_with` with `Catalog::sigs()`.
+- The preview worker's build flag, as the W5 worker contract has it
+  (w5-worker.md §4): `B2C_PREVIEW_WORKER=0` no longer builds an app that
+  previews on the main thread. Every build previews in the worker; the main
+  thread previews only until the worker has started, and in the fallback.
+  The test hook's `previewThread()` no longer answers `off`.
 
 ### Fixed
 

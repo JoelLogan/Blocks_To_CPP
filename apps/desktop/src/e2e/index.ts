@@ -65,8 +65,6 @@ export interface E2eHookDeps {
   readonly spawnUnwrappedWorker: () => WorkerLike;
   /** The worker probe's request to the IPC endpoint, made from the page. */
   readonly pageRequest: () => Promise<WorkerProbe['request']>;
-  /** Whether this build previews in the worker (unless built with `B2C_PREVIEW_WORKER=0`). */
-  readonly previewWorkerEnabled: () => boolean;
   /** The open editor's worker preview service, or `null`. */
   readonly previewService: () => {
     thread(): 'worker' | 'main';
@@ -236,12 +234,7 @@ export function createE2eHook(deps: E2eHookDeps, transcript: ConsoleTranscript):
       );
     },
     workerCheck: () => check?.result() ?? null,
-    previewThread: () => {
-      if (!deps.previewWorkerEnabled()) {
-        return 'off';
-      }
-      return deps.previewService()?.thread() ?? null;
-    },
+    previewThread: () => deps.previewService()?.thread() ?? null,
     stopPreviewWorker: () => {
       const client = deps.previewService()?.client() ?? null;
       if (client === null) {
