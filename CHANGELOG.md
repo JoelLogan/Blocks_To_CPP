@@ -629,11 +629,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   exported in `catalog.json` and the editor's definitions. The
   editor's gating table reads its block and option rows from them and keeps
   only categories and types by hand.
-- _Fast unchecked access_ (wave W4): the block menu of _item of_ and _set
+- _Use unchecked `[]`_ (wave W4): the block menu of _item of_ and _set
   item_ switches a list's or deque's index from `.at()` to `[]` (with _Show
-  advanced blocks_; a map's item keeps `.at()`), one undo step; the block
-  shows _unchecked_ while it is on. The catalog's `menu` and `mark` keys
-  describe such a field (`CHECKED`, written into a project only when off).
+  advanced blocks_; a map's item keeps `.at()`), one undo step, by toggling
+  the field `CHECKED` (written into a project only when off); the menu item
+  is ticked while it is on, and the C++ label mode shows _unchecked_.
 - The ⚙ popover on _create_ (wave W4): `constexpr` (a number, character or
   true/false value fixed when the program is built, `B2C-E0424` otherwise)
   and, with _Show advanced blocks_, `static` (a local created once). The
