@@ -30,7 +30,7 @@ inline std::istream& read_line(std::istream& file, std::string& line) {
 int main() {
     {
         std::ifstream b2c_file("data.txt");
-        std::string line{};
+        std::string line;
         while (b2c::read_line(b2c_file, line)) {
             std::cout << line << '\n';
         }

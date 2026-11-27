@@ -789,6 +789,10 @@ impl IncOp {
 /// How a declared variable is initialised.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Init {
+    /// Nothing (default-initialisation): *for each line*'s
+    /// `std::string line;` (w2.md §2.4), which `std::getline` sets before
+    /// the loop's body reads it.
+    Default,
     /// `= value`
     Value(CExpr),
     /// `{}` (value-initialisation).

@@ -596,16 +596,28 @@ fn a_file_is_read_line_by_line_from_the_folder_the_program_runs_in() {
             None,
         ),
     ];
-    runs_and_gives(
+    let cpp = builds_and_runs(
         "lines",
+        &[],
         body,
         &[
             ("data.txt", "first\n\nthird line"),
             ("names.txt", "Ann\nBo\n"),
             ("letters.txt", "x\ny\n"),
         ],
+        &[],
+        &[],
         &printed("1: first (5)\n2:  (0)\n3: third line (10)\nAnn x\nAnn y\nBo x\nBo y\n"),
     );
+    // Each line is declared as w2.md §2.4 prints it, with no initialiser:
+    // `std::getline` sets it before the body reads it.
+    for name in ["line", "name", "letter"] {
+        assert!(cpp.contains(&format!("std::string {name};\n")), "{name}\n{cpp}");
+        assert!(
+            !cpp.contains(&format!("std::string {name}{{}};")),
+            "{name}\n{cpp}"
+        );
+    }
 }
 
 #[test]

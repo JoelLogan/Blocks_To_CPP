@@ -93,7 +93,7 @@ int main() {
             std::cerr << "Cannot open poem.txt" << '\n';
             return 1;
         }
-        std::string line{};
+        std::string line;
         while (b2c::read_line(b2c_file, line)) {
             ++lines;
             int length = static_cast<int>(line.size());

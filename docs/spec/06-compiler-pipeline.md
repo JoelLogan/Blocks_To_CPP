@@ -672,7 +672,7 @@ construct concrete. For example:
 * `Print` → a chain of `<<` with per-type adjustments (bool, 8-bit integers,
   enums with auto-generated `operator<<`).
 * `ForEachLine` → a block of its own: `std::ifstream` declaration + `if
-  (!stream)` branch + `std::string line{};` + `while (b2c::read_line(stream,
+  (!stream)` branch + `std::string line;` + `while (b2c::read_line(stream,
   line))` (`std::getline` without a final `'\r'`). The stream's hidden name (`b2c_file`, `b2c_file2`, …) is made
   with `Ident::generated` and chosen against the names visible where it is
   declared; user names cannot start with `b2c`, so only an enclosing file

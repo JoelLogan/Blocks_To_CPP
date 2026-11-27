@@ -30,11 +30,11 @@ inline std::istream& read_line(std::istream& file, std::string& line) {
 int main() {
     {
         std::ifstream b2c_file("names.txt");
-        std::string line{};
+        std::string line;
         while (b2c::read_line(b2c_file, line)) {
             {
                 std::ifstream b2c_file2("words.txt");
-                std::string word{};
+                std::string word;
                 while (b2c::read_line(b2c_file2, word)) {
                     std::cout << static_cast<int>(word.size()) << '\n';
                 }

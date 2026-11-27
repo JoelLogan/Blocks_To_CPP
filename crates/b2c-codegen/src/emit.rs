@@ -956,9 +956,10 @@ impl Emitter {
         self.p.fixed(";");
     }
 
-    /// A declarator's initialiser: ` = value`, `{}` or `(args)`.
+    /// A declarator's initialiser: nothing, ` = value`, `{}` or `(args)`.
     fn init(&mut self, init: &Init) {
         match init {
+            Init::Default => {}
             Init::Value(value) => {
                 self.p.fixed(" = ");
                 self.expr(value);

@@ -9,7 +9,7 @@
 //!     if (!b2c_file) {
 //!         …
 //!     }
-//!     std::string line{};
+//!     std::string line;
 //!     while (b2c::read_line(b2c_file, line)) {
 //!         …
 //!     }
@@ -256,7 +256,7 @@ impl Lowerer<'_> {
             is_static: false,
             ty: CType::String,
             name: line.clone(),
-            init: Init::Braces,
+            init: Init::Default,
         }));
         let read = self.read_line_call(stream, line);
         let body = self.block(body);

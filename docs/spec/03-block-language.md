@@ -918,7 +918,7 @@ the C++ view and in the class block's `⚙`). Copy/move special members can be
 | ------- | ----------- |
 | `open file ("scores.txt") for [reading ▾] as [file] ⊕ if it can't be opened { }` | `std::ifstream file("scores.txt");` (*writing* → `std::ofstream`; *adding to the end* → `std::ofstream file("scores.txt", std::ios::app);`), plus, with the part, `if (!file) { … }` |
 | `read line from [file ▾] into [line ▾]` | `b2c::read_line(file, line)` (`std::getline` without a final `'\r'`): a predicate, true when a line was read, false at the end of the file |
-| `for each line [line] in file ("data.txt") { } ⊕ if it can't be opened { }` | `{ std::ifstream b2c_file("data.txt"); if (!b2c_file) { … } std::string line{}; while (b2c::read_line(b2c_file, line)) { … } }` |
+| `for each line [line] in file ("data.txt") { } ⊕ if it can't be opened { }` | `{ std::ifstream b2c_file("data.txt"); if (!b2c_file) { … } std::string line; while (b2c::read_line(b2c_file, line)) { … } }` |
 | `write (a) (b) ⊕ to [file ▾] new line ☑` | `file << a << b << '\n';` |
 | `file ("x") exists` / `delete file` / `create folder` / `for each file in folder` | `std::filesystem::exists("x")` (a file or a folder); the other three in M4 |
 

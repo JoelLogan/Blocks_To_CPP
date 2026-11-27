@@ -1100,6 +1100,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   under C++17 and with any toolchain. The every-block project and the
   catalog snapshot test build it under C++17 with every g++, GCC 11
   included.
+- _for each line_ declares its line `std::string line;`, as the W2 contract
+  prints it (w2.md §2.4), not `std::string line{};`. The golden C++ of
+  `word_count` and the catalog snapshots of the file loop change only there.
 
 ### Removed
 
