@@ -15,8 +15,10 @@
  *   reason as their accessible description and tooltip.
  * - When the buttons do not fit, they scroll inside the strip (never the page), the shown one kept
  *   in view, and *All modules…* opens a list with type-ahead that shows the module chosen.
- * - The last module edit's message is in the strip's status region, with *Undo delete* after a
- *   deletion (features/project/modules/).
+ * - The module edits' messages go to the window's status region, in the status bar, with *Undo
+ *   delete* beside a deletion's (features/project/modules/, app/status.ts); the strip has none of
+ *   its own. When that *Undo delete* button goes with its message, the restored module's button
+ *   gets the focus.
  *
  * It selects only what it shows (the modules' IDs, names and file labels), so an edit of the
  * canvas does not render it again.
@@ -104,7 +106,7 @@ function useModuleEdits(): ModuleEdits | null {
   return useSyncExternalStore(subscribeModuleEdits, getModuleEdits);
 }
 
-const NO_EDITS_STATE: ModuleEditsState = { kept: null, status: null };
+const NO_EDITS_STATE: ModuleEditsState = { kept: null, restored: 0 };
 const NO_EDITS_STORE = {
   getState: () => NO_EDITS_STATE,
   getInitialState: () => NO_EDITS_STATE,
@@ -152,7 +154,7 @@ export function ModuleSwitcher() {
   );
   const active = useAppStore((state) => state.project?.activeModuleId ?? null);
   const edits = useModuleEdits();
-  const { kept, status } = useStore(edits?.state ?? NO_EDITS_STORE);
+  const restored = useStore(edits?.state ?? NO_EDITS_STORE, (state) => state.restored);
 
   /** The module button with the roving Tab stop, and the module shown when it got it. */
   const [focused, setFocusedState] = useState<{ id: string; shown: string | null } | null>(null);
@@ -160,8 +162,8 @@ export function ModuleSwitcher() {
   /** Counts the deletions chosen from a strip menu that have ended; see the effect below. */
   const [deletions, setDeletions] = useState(0);
   const deletionsSeen = useRef(0);
-  /** The module *Undo delete* put back from its button, whose own button then gets the focus. */
-  const [restored, setRestored] = useState<string | null>(null);
+  /** How many restorations the strip has seen; see the effect below. */
+  const restoredSeen = useRef(restored);
   const [overflowing, setOverflowing] = useState(false);
   const overflowSeen = useRef(false);
   const strip = useRef<HTMLDivElement>(null);
@@ -230,18 +232,18 @@ export function ModuleSwitcher() {
     }
   }, [deletions, active]);
 
-  // *Undo delete* takes its own button away with the deletion it undoes: the module it put back
-  // gets the focus.
+  // *Undo delete* in the status bar takes its own button away with the deletion it undoes: the
+  // module it put back, which is shown, gets the focus.
   useEffect(() => {
-    if (restored === null) {
+    if (restored === restoredSeen.current) {
       return;
     }
-    setRestored(null);
-    const button = buttons.current.get(restored);
+    restoredSeen.current = restored;
+    const button = active === null ? undefined : buttons.current.get(active);
     if (button !== undefined && focusIsLost()) {
       button.focus();
     }
-  }, [restored]);
+  }, [restored, active]);
 
   const closeMenu = useCallback((returnFocus: boolean) => {
     setMenu(null);
@@ -505,24 +507,6 @@ export function ModuleSwitcher() {
           )}
         </>
       )}
-      <div className="module-switcher-status">
-        <span role="status" aria-live="polite" title={status?.text}>
-          {status === null ? '' : <span key={status.serial}>{status.text}</span>}
-        </span>
-        {kept !== null && edits !== null && (
-          <button
-            type="button"
-            className="module-switcher-tool module-switcher-undo"
-            data-testid="module-undo-delete"
-            onClick={() => {
-              edits.undoDelete();
-              setRestored(kept.kept.module.id);
-            }}
-          >
-            Undo delete
-          </button>
-        )}
-      </div>
       {menu !== null && menuItems.length > 0 && (
         <StripMenu
           id={menuId}

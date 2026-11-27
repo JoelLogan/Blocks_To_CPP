@@ -1,13 +1,15 @@
 /**
- * The status bar's toolchain item (docs/spec/04-user-interface.md §4.1, 08 §8.5): it names the
+ * The status bar (docs/spec/04-user-interface.md §4.1, 08 §8.5): its toolchain item names the
  * compiler a build will use, with the compiler's full path in its tooltip and accessible name, so
- * a planted g++ cannot pass unseen; hidden and reordering characters in the path are shown.
+ * a planted g++ cannot pass unseen; hidden and reordering characters in the path are shown. It
+ * holds the window's one polite status region (w3-modules.md §2.11), with a message's action.
  */
-import { act, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { expectNoAxeViolations } from '../../test/axe';
 import { screens } from '../screens';
+import { appStatus } from '../status';
 import { resetAppStore, useAppStore } from '../store';
 import { toolchainFixture } from '../testing/fixtures';
 import { MAX_TOOLCHAIN_PATH_CHARS, StatusBar, toolchainPathText } from './StatusBar';
@@ -32,6 +34,7 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) {
     cleanup();
   }
+  appStatus.clear();
 });
 
 describe('the status bar’s toolchain', () => {
@@ -80,5 +83,49 @@ describe('the status bar’s toolchain', () => {
     const item = screen.getByTestId('status-toolchain');
     expect(item.textContent).toBe('✖No g++ found');
     expect(item.hasAttribute('title')).toBe(false);
+  });
+});
+
+describe('the window’s status region', () => {
+  it('is one polite live region, in the status bar, saying the last message', async () => {
+    const { container } = render(<StatusBar />);
+    const bar = screen.getByRole('contentinfo');
+    const regions = within(bar).getAllByRole('status');
+    expect(regions).toHaveLength(1);
+    const region = regions[0];
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.textContent).toBe('');
+    act(() => {
+      appStatus.show('Module “utils” added.');
+    });
+    expect(region?.textContent).toBe('Module “utils” added.');
+    expect(region?.getAttribute('title')).toBe('Module “utils” added.');
+    act(() => {
+      appStatus.clear();
+    });
+    expect(region?.textContent).toBe('');
+    await expectNoAxeViolations(container);
+  });
+
+  it('shows a message’s action beside it, outside the live region', async () => {
+    const { container } = render(<StatusBar />);
+    const run = vi.fn();
+    act(() => {
+      appStatus.show('Module “utils” deleted.', {
+        label: 'Undo delete',
+        run,
+        testId: 'module-undo-delete',
+      });
+    });
+    const button = screen.getByRole('button', { name: 'Undo delete' });
+    expect(button.dataset['testid']).toBe('module-undo-delete');
+    expect(screen.getByRole('status').contains(button)).toBe(false);
+    await expectNoAxeViolations(container);
+    fireEvent.click(button);
+    expect(run).toHaveBeenCalledOnce();
+    act(() => {
+      appStatus.show('Module “utils” is back.');
+    });
+    expect(screen.queryByRole('button', { name: 'Undo delete' })).toBeNull();
   });
 });

@@ -1,8 +1,10 @@
 import type { BuildConfig, Toolchain } from '@blocks2cpp/ipc-types';
+import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 
 import { visibleInvisibles } from '../../panels/shared/invisibles';
 import { useRegisteredScreen } from '../screens';
+import { appStatus } from '../status';
 import { useAppStore } from '../store';
 import { selectedToolchain } from '../store/selectors';
 import type { ProjectState } from '../store/state';
@@ -66,8 +68,9 @@ export function saveStateLabel(
 
 /**
  * The status bar (docs/spec/04-user-interface.md §4.1): the toolchain a build would use, the
- * project's C++ standard, the configuration, the save state and the Restricted Mode indicator.
- * It selects only what it shows, so an edit that changes none of it does not render it again.
+ * project's C++ standard, the configuration, the save state, the window's status region and the
+ * Restricted Mode indicator. It selects only what it shows, so an edit that changes none of it does
+ * not render it again.
  */
 export function StatusBar() {
   const project = useAppStore(
@@ -100,6 +103,7 @@ export function StatusBar() {
           {saveStateLabel(project)}
         </span>
       )}
+      <StatusRegionView />
       {project?.restricted === true && (
         <span className="status-item status-restricted" data-testid="status-restricted">
           <LockIcon />
@@ -107,6 +111,39 @@ export function StatusBar() {
         </span>
       )}
     </footer>
+  );
+}
+
+/**
+ * The window's status region (../status.ts; w3-modules.md §2.11): the app's one polite live
+ * region, always in the page so that a message put in it is read out, with the message's action
+ * beside it, outside the region. A long message is cut off with an ellipsis; its tooltip has all
+ * of it.
+ */
+function StatusRegionView() {
+  const message = useStore(appStatus.state, (state) => state.message);
+  const action = message?.action ?? null;
+  return (
+    <div
+      className={message === null ? 'status-message' : 'status-message status-message-shown'}
+      data-testid="app-status"
+    >
+      <span className="status-message-text" role="status" aria-live="polite" title={message?.text}>
+        {message === null ? '' : <span key={message.serial}>{message.text}</span>}
+      </span>
+      {action !== null && (
+        <button
+          type="button"
+          className="status-message-action"
+          data-testid={action.testId}
+          onClick={() => {
+            action.run();
+          }}
+        >
+          {action.label}
+        </button>
+      )}
+    </div>
   );
 }
 

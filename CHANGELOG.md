@@ -1114,6 +1114,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `constexpr` value is not fixed when the program is built: the constant,
   its module, and that its header declares it `extern const` because its
   value uses something the module does not share (w3-modules.md §2.1).
+- The module edits' messages go to the window's status region, as the W3
+  contract has it (w3-modules.md §2.11): one polite live region for the
+  whole app, in the status bar, with _Undo delete_ beside a deletion's
+  message. The module strip no longer has a status region of its own.
 
 ### Removed
 

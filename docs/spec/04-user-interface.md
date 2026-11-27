@@ -111,7 +111,12 @@
   or *Unsaved* while there are unsaved changes or the project has no file
   yet. It names the toolchain a build will use, with the compiler's full
   path in its tooltip and accessible name
-  ([08 §8.5](08-security.md#85-compiler-invocation-safety)).
+  ([08 §8.5](08-security.md#85-compiler-invocation-safety)). It holds the
+  window's status region, one polite live region for the whole app: a
+  feature says there what an action just did (the module edits, below),
+  with at most one button beside the message (*Undo delete*); a new
+  message replaces the last, and a long one is cut off, its tooltip
+  holding all of it.
 * The *Build output* tab shows the last build's progress, toolchain notes and
   the compiler's own text. It follows new output while it is scrolled to the
   end and stays put while the user reads further up; each new build is
@@ -150,11 +155,12 @@
   lower-case form when capitals are the only problem. Deleting a module
   that holds blocks asks first, saying how many and whether it holds *when
   program starts*, with *Cancel* as the default. The deleted module is kept
-  for *Undo delete* (in the strip's status and as ≡ *Undo delete module*)
-  until the next module edit, another project or a reload of this one;
-  undoing puts it back at its place with its IDs, so references to it bind
-  again. The strip's own status region says each edit's outcome; for the
-  second module it says that the other module's C++ changed (its helpers
+  for *Undo delete* (beside its message in the status bar and as ≡ *Undo
+  delete module*) until the next module edit, another project or a reload
+  of this one; undoing puts it back at its place with its IDs, so
+  references to it bind again. The window's status region (above) says
+  each edit's outcome; for the second module it says that the other
+  module's C++ changed (its helpers
   move to `b2c_support.hpp` and its functions into an anonymous namespace,
   [06 §6.7](06-compiler-pipeline.md#67-ordering-and-declarations)).
 * The project settings page (≡ → *Project settings…*) starts with a

@@ -9,9 +9,10 @@
  * be read back. A deleted module is kept, with its IDs, until the next module edit, until the
  * project closes or until a document is loaded in its place (a reload: the loaded document may hold
  * the module again), so *Undo delete* (in the status message and in `≡`) puts it back where it was
- * and the other modules' references to it bind again. Each edit ends with a status message, read out
- * by screen readers; the one for the second module says that the code of the other modules
- * changed (§2.13).
+ * and the other modules' references to it bind again. Each edit ends with a message in the window's
+ * status region (app/status.ts, §2.11), read out by screen readers, a deletion's with *Undo delete*
+ * beside it; the one for the second module says that the code of the other modules changed
+ * (§2.13).
  */
 import type { BdmDocument, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 import { newId } from '@blocks2cpp/blockly-ext';
@@ -20,6 +21,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { DialogService } from '../../../app/dialogs';
 import type { EditorHandle, ModuleEditOutcome } from '../../../app/editor-types';
 import type { AppEventBus } from '../../../app/events';
+import { appStatus, type StatusAction, type StatusRegion } from '../../../app/status';
 import type { useAppStore } from '../../../app/store';
 import { syncFailedText } from '../../analysis/AnalysisNoticeBanner';
 import { checkModuleName } from './names';
@@ -40,20 +42,19 @@ export interface KeptDeletion {
   readonly kept: KeptModule;
 }
 
-/** The last module edit's message, for the status region. */
-export interface ModuleStatus {
-  readonly text: string;
-  /** Counts the messages, so that the same text said twice is read out twice. */
-  readonly serial: number;
-}
-
-/** What the module strip shows of the module edits. */
+/** What the module strip follows of the module edits. */
 export interface ModuleEditsState {
   /** The deleted module *Undo delete* puts back, or `null`. */
   readonly kept: KeptDeletion | null;
-  /** The last edit's message, or `null`. */
-  readonly status: ModuleStatus | null;
+  /**
+   * Counts the modules *Undo delete* put back: the strip gives the restored module's button the
+   * focus when the status bar's *Undo delete* button, which had it, goes with its message.
+   */
+  readonly restored: number;
 }
+
+/** The words and test ID of the *Undo delete* button beside a deletion's message. */
+export const UNDO_DELETE = { label: 'Undo delete', testId: 'module-undo-delete' } as const;
 
 /** What the module edits work with (the app's by default; tests pass their own). */
 export interface ModuleEditsDeps {
@@ -65,6 +66,8 @@ export interface ModuleEditsDeps {
   readonly events?: AppEventBus;
   /** A new module ID (`mod_<random>`); the editor's ID source by default. */
   readonly newModuleId?: () => string;
+  /** Where the edits' messages go: the window's status region by default. */
+  readonly status?: StatusRegion;
 }
 
 /** The title of the dialog that says why the modules cannot be changed now. */
@@ -77,19 +80,23 @@ function quoted(name: string): string {
 
 /** The module edits of the open project; see the module comment. */
 export class ModuleEdits {
-  /** What the strip shows; read it with `useModuleEditsState`. */
+  /** What the strip follows. */
   readonly state: StoreApi<ModuleEditsState> = createStore<ModuleEditsState>(() => ({
     kept: null,
-    status: null,
+    restored: 0,
   }));
   private readonly deps: ModuleEditsDeps;
+  private readonly status: StatusRegion;
   private readonly unsubscribers: readonly (() => void)[];
-  private serial = 0;
+  /** The serial of the last message these edits showed in the status region, or `null`. */
+  private said: number | null = null;
 
   constructor(deps: ModuleEditsDeps) {
     this.deps = deps;
+    this.status = deps.status ?? appStatus;
     const forget = (): void => {
-      this.state.setState({ kept: null, status: null });
+      this.state.setState({ kept: null });
+      this.unsay();
     };
     this.unsubscribers = [
       // Another project (or none): its kept module and messages go.
@@ -104,11 +111,12 @@ export class ModuleEdits {
     ];
   }
 
-  /** Stops following the store and the app's events. */
+  /** Stops following the store and the app's events, and takes back its message. */
   dispose(): void {
     for (const unsubscribe of this.unsubscribers) {
       unsubscribe();
     }
+    this.unsay();
   }
 
   /** Asks for a name and adds an empty module with it, which is then shown. */
@@ -210,7 +218,12 @@ export class ModuleEdits {
       handle !== null
     ) {
       this.state.setState({ kept: { handle, kept: deleted.kept } });
-      this.say(`Module ${quoted(module.name)} deleted.`);
+      this.say(`Module ${quoted(module.name)} deleted.`, {
+        ...UNDO_DELETE,
+        run: () => {
+          this.undoDelete();
+        },
+      });
     }
   }
 
@@ -223,6 +236,7 @@ export class ModuleEdits {
     }
     if (this.apply((editor) => editor.restoreModule(deletion.kept))) {
       this.say(`Module ${quoted(deletion.kept.module.name)} is back.`);
+      this.state.setState(({ restored }) => ({ restored: restored + 1 }));
     }
   }
 
@@ -338,10 +352,17 @@ export class ModuleEdits {
     return result.ok ? result.name : null;
   }
 
-  /** Puts `text` in the status region. */
-  private say(text: string): void {
-    this.serial += 1;
-    this.state.setState({ status: { text, serial: this.serial } });
+  /** Puts `text` in the window's status region, with `action` beside it. */
+  private say(text: string, action: StatusAction | null = null): void {
+    this.said = this.status.show(text, action);
+  }
+
+  /** Takes the last message of these edits out of the status region, if it is still shown. */
+  private unsay(): void {
+    if (this.said !== null) {
+      this.status.clear(this.said);
+      this.said = null;
+    }
   }
 }
 

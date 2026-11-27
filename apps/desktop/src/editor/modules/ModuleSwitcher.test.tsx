@@ -2,12 +2,12 @@
  * The module strip (docs/plans/m3-contracts/w3-modules.md §1.2, §2.11, §5.2 E): shown from one
  * module on; the roving tab index; each module's actions and *Module actions*; ⊕ and its limit;
  * *All modules…*; the add, rename and delete dialogs with the real compiler core's name checks;
- * *Undo delete*; the status messages; the refusal while the canvas holds an unchecked change; axe on
+ * *Undo delete*; the status messages, in the window's status region (the status bar); the refusal while the canvas holds an unchecked change; axe on
  * the strip and the dialogs. The editor's part of each edit is a stand-in that applies the document
  * operations (the session's own are tested in src/editor/sync/modules.test.ts).
  */
 import type { BdmBlock, BdmDocument, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createCommandRegistry, type CommandRegistry } from '../../app/commands';
@@ -15,6 +15,7 @@ import { createDialogQueue, DialogHost, type DialogQueue } from '../../app/dialo
 import type { EditorHandle, ModuleEditOutcome } from '../../app/editor-types';
 import { createAppEventBus } from '../../app/events';
 import type { FeatureContext } from '../../app/features';
+import { StatusBar } from '../../app/layout/StatusBar';
 import { createScreenRegistry } from '../../app/screens';
 import { resetAppStore, useAppStore } from '../../app/store';
 import { createFakeIpc, documentFixture, projectFixture } from '../../app/testing/fixtures';
@@ -171,6 +172,7 @@ function renderStrip(): Harness {
         <ModuleSwitcher />
       </div>
       <DialogHost queue={dialogs} />
+      <StatusBar />
     </>,
   );
   harness = { dialogs, commands, editor, ctx, uninstall };
@@ -196,9 +198,9 @@ function typeName(text: string): string | null {
   return alert === null ? null : alert.textContent.replace(/^✖ /u, '');
 }
 
-/** The text of the strip's status region. */
+/** The text of the window's status region, in the status bar. */
 function statusText(): string {
-  return screen.getByRole('status').textContent;
+  return within(screen.getByRole('contentinfo')).getByRole('status').textContent;
 }
 
 beforeEach(() => {
@@ -222,6 +224,38 @@ describe('the module strip', () => {
     expect(moduleButtons().map((button) => button.textContent)).toEqual(['main.cpp']);
     // Without the module edits feature the strip only switches.
     expect(screen.queryByRole('button', { name: 'Add module' })).toBeNull();
+  });
+
+  it('says each edit’s outcome in the window’s status region, with no region of its own', async () => {
+    openWith(['main', 'utils']);
+    renderStrip();
+    const strip = screen.getByTestId('module-strip');
+    expect(within(strip).queryByRole('status')).toBeNull();
+    // The window has one polite status region, in the status bar.
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    const region = within(screen.getByRole('contentinfo')).getByRole('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    const utils = screen.getByRole('button', { name: 'utils.cpp' });
+    utils.focus();
+    fireEvent.keyDown(utils, { key: 'F10', shiftKey: true });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Delete…' }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(region.textContent).toBe('Module “utils” deleted.');
+    });
+    // Undo delete is beside the message, in the status bar, not in the strip.
+    const undo = screen.getByRole('button', { name: 'Undo delete' });
+    expect(within(strip).queryByRole('button', { name: 'Undo delete' })).toBeNull();
+    expect(screen.getByRole('contentinfo').contains(undo)).toBe(true);
+    expect(undo.dataset['testid']).toBe('module-undo-delete');
+    // Uninstalling the module edits takes their message and its action away.
+    act(() => {
+      harness?.uninstall();
+    });
+    expect(region.textContent).toBe('');
+    expect(screen.queryByRole('button', { name: 'Undo delete' })).toBeNull();
   });
 
   it('lists the modules as files and switches the active one', async () => {

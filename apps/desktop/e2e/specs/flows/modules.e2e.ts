@@ -11,7 +11,8 @@
  *   `#include "tools.hpp"`, and it runs again.
  * - Unticking *share* gives `B2C-E0206` in Problems under module `main`; choosing it shows `main`
  *   and selects the call. Ticked again, deleting the module (confirmed) gives `B2C-E0201` on the
- *   call; *Undo delete* brings it back, and the program runs again.
+ *   call; the window's status region in the status bar says so, with *Undo delete* beside it
+ *   (§2.11), which brings the module back, and the program runs again.
  *
  * Needs package F (functions shared across modules) for the call, the header and the run. Every
  * click is real pointer input, every key pressed as a person presses it; what the canvas holds is
@@ -67,6 +68,28 @@ function everyNode(doc: ProjectDocument): BlockNode[] {
 /** The block `id` of any module, or `undefined`. */
 function nodeOf(doc: ProjectDocument, id: string): BlockNode | undefined {
   return everyNode(doc).find((node) => node.id === id);
+}
+
+/**
+ * Waits until the window's status region (in the status bar, w3-modules.md §2.11) says `text`;
+ * the module strip has no region of its own.
+ */
+async function waitForStatus(driver: WebDriver, text: string): Promise<void> {
+  await waitFor(
+    async () => {
+      const inStrip = await driver.findElements(
+        By.css('[data-testid="module-strip"] [role="status"]'),
+      );
+      const bar = await driver.findElements(
+        By.css('footer.status-bar [data-testid="app-status"] [role="status"]'),
+      );
+      if (inStrip.length > 0 || bar.length !== 1 || bar[0] === undefined) {
+        return null;
+      }
+      return (await textContent(driver, bar[0])).trim() === text ? true : null;
+    },
+    { timeout: UI_TIMEOUT_MS, message: `the status bar saying “${text}”` },
+  );
 }
 
 /** The module buttons of the strip: each one's file label and whether it is pressed. */
@@ -375,7 +398,14 @@ describe('Modules', () => {
       },
       { timeout: UI_TIMEOUT_MS, message: 'B2C-E0201 on the call' },
     );
+    // The message is in the window's one status region, in the status bar, Undo delete beside it.
+    await waitForStatus(driver, 'Module “tools” deleted.');
+    const undo = await driver.findElement(By.css('[data-testid="module-undo-delete"]'));
+    expect(await undo.findElements(By.xpath('ancestor::footer[@class="status-bar"]'))).toHaveLength(
+      1,
+    );
     await clickTestId(driver, 'module-undo-delete');
+    await waitForStatus(driver, 'Module “tools” is back.');
     await waitForStrip(driver, ['main.cpp', 'tools.cpp'], 'tools.cpp');
     await waitForErrors(app, 0);
     await runAndSee(app, 3);

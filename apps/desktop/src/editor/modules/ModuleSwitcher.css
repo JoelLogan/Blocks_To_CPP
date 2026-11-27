@@ -74,30 +74,6 @@
   outline-offset: -2px;
 }
 
-/* The last module edit's message, cut off with an ellipsis (its tooltip has all of it). */
-.module-switcher-status {
-  display: flex;
-  flex: 1 1 0;
-  gap: 0.5rem;
-  align-items: center;
-  justify-content: flex-end;
-  min-width: 0;
-  color: var(--b2c-text-muted);
-  font-size: 0.875em;
-}
-
-.module-switcher-status > [role='status'] {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.module-switcher-undo {
-  color: var(--b2c-text);
-  border-color: var(--b2c-control-border);
-}
-
 /*
  * A strip menu (StripMenu.tsx): below the strip, above the canvas (the canvas's layers stay in
  * `.workspace`'s stacking context, app.css), on the app's 50 of the chrome's pop-ups.

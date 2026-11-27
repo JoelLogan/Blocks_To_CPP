@@ -9,10 +9,10 @@ export {
   ModuleEdits,
   type ModuleEditsDeps,
   type ModuleEditsState,
-  type ModuleStatus,
   REFUSED_TITLE,
   setModuleEdits,
   subscribeModuleEdits,
+  UNDO_DELETE,
 } from './controller';
 export { installModuleEdits, moduleEditsFeature } from './feature';
 export { B2C_PREFIX_MESSAGE, checkModuleName, type ModuleNameCheck } from './names';

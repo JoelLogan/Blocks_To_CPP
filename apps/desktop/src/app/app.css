@@ -549,12 +549,57 @@ body {
   padding: 2px 8px;
 }
 
-.status-item + .status-item {
+.status-item ~ .status-item {
   border-left: 1px solid var(--b2c-border);
 }
 
 /*
- * A button that reads as a status item: no edge of its own. `.status-item + .status-item` still
+ * The window's status region (StatusBar.tsx): takes no room while it says nothing; a message takes
+ * the room left, cut off with an ellipsis, its action beside it.
+ */
+.status-message {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.status-message-shown {
+  flex: 1 1 0;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-left: 1px solid var(--b2c-border);
+}
+
+.status-message-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-message-action {
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid var(--b2c-control-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--b2c-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-message-action:hover {
+  background: var(--b2c-surface-raised);
+}
+
+.status-message-action:focus-visible {
+  outline: 2px solid var(--b2c-focus);
+  outline-offset: 1px;
+}
+
+/*
+ * A button that reads as a status item: no edge of its own. `.status-item ~ .status-item` still
  * draws the separator before the items after it.
  */
 .status-link {
