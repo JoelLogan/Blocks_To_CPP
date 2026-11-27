@@ -1,4 +1,10 @@
-# M3 contract deviations awaiting the owner's decision
+# M3 contract deviations and the owner's decisions
+
+**Decided by the owner on 2026-11-27:** every Strong row is accepted as
+built; the five Unclear rows (W3-5, W3-7, W3-13, W3-18, W3-21) are
+accepted as built; every Weak row is reworked to its contract, in the
+packages of [next-steps §3.10](../next-steps.md#310-what-remains-of-m3)
+item 3. W5P-4 was already done (`a5f1af8`, `0e328eb`).
 
 Each row is a place where a package built something other than what its contract (or proposal) said. Decide for each one: **accept as built** or **rework to the contract**.
 

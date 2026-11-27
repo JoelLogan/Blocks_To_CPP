@@ -635,6 +635,28 @@ agent and a review):
    package that finds its contract cannot be built as written stops and
    asks the owner, with its reason, instead of recording a correction on
    its own; a deviation stands only once the owner has accepted it.
+   **The sweep, decided on 2026-11-27**
+   ([deviations-review.md](m3-contracts/deviations-review.md), 69 rows):
+   the 43 Strong rows and the 5 Unclear rows are accepted as built; the 21
+   Weak rows are reworked to their contracts (W5P-4 already done), in these
+   packages:
+   - **R1, small compiler fixes:** W2-6 (`std::string line;`), W2-13
+     (overload casts on every call), W3-8 (`E0424` naming its cause).
+   - **R2, small editor fixes:** W3-3 (the app-wide status region), W4-1
+     (the _Use unchecked `[]`_ menu item as the contract has it), W5P-1
+     (the hold's `release()`), W5P-2 (the worker flag removed).
+   - **R3, end-to-end coverage:** W3-9 and W3-19 (the flows build through
+     the UI), X-1 (_End input_, the input file, the external terminal),
+     M34-9 (text no longer snaps into a parked `int` _set_), W5P-5
+     (worker.md §2.5's flows).
+   - **R4 to R11, one medium each:** W2-5 (_new Student with …_ per
+     struct), W2-15 (`auto` in _global_'s type), W3-14 (block and function
+     scopes in the lookup model), W3-15 (Textbook style nominating `std`
+     where written), W3-23 (the scope query letting another module's
+     shared name through), W3-17 and MOD-1 (the standard-namespace block
+     and _use header of module_, back from M4), W5P-3 (the clipboard
+     arguments and their benchmarks).
+
 4. **A saving pass on the WebAssembly core** (owner decision of
    2026-11-24, with the budget raised to 2,100,000 bytes): measure what
    the module spends its bytes on and trim it, so the budget can come back
