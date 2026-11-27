@@ -704,11 +704,13 @@ and the W4/W5 boundary"), each answered:
    index's `trail` symbol is -1 also for a symbol the table does not have.
 2. worker.md §4 "Store" and §7: the index is applied by the host until the
    coordinator moves it into the store (§2.2, §10.3).
-3. worker.md §6 "The hold": no `release()`; the pipeline re-checks
-   `isBusy()` every animation frame while it holds an answer (§2.3).
+3. **Reworked to the contract on 2026-11-27 (`f6c2360`).** worker.md §6
+   "The hold": no `release()`; the pipeline re-checks `isBusy()` every
+   animation frame while it holds an answer (§2.3).
 4. worker.md §6: `invalidate()` bumps an epoch of its own; the sequence
    number then only orders runs.
-5. w5-worker.md §4: the flag is inverted rather than removed (§2.4).
+5. **Reworked to the contract on 2026-11-27 (`bcc3340`).** w5-worker.md §4:
+   the flag is inverted rather than removed (§2.4).
 
 ## 12. Specification sections to change (the coordinator's docs step)
 

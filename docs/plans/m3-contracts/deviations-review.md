@@ -62,7 +62,7 @@ W4's rows that the owner has already decided (marked *Accepted by the owner* or 
 |---|---|---|---|---|
 | W3-1 (l.1377) | Casts when any function of the program shares the name | Only when the functions this module can call share it | Two modules' non-shared functions are not an overload set | Strong |
 | W3-2 (l.1378) | The `::name` guard qualifies the call | The plain name is printed for an anonymous-namespace function that an included header also declares, so C++ refuses the call | Never silently calls the other module's function | Strong |
-| W3-3 (l.1383) | Status messages go to an app-wide region | They go to the module strip's own polite status region | The app has no window-wide status region | **Weak, S** |
+| W3-3 (l.1383) | Status messages go to an app-wide region | They go to the module strip's own polite status region | The app has no window-wide status region | **Weak, S**; Reworked (`cb5f602`) |
 | W3-4 (l.1384) | `AnalysisState.scope: ScopeIndex \| null` (W5 §10.3) | `ScopeIndex \| 'none' \| null` | With `null` the main core answers for a document it has not seen | Strong |
 | W3-5 (l.1386) | The unchecked-change refusal is shown in another form | An alert dialog titled *The modules cannot be changed now* | "One accessible place for the text" | Unclear |
 | W3-6 (l.1394) | Headers forward-declare types they use only in lists | They include the other header, so mutual list-holding shared structs are `E0422` | `std::vector<T>{}` fields need `T` complete; the header would not compile alone | Strong |
@@ -115,7 +115,7 @@ In "From the W4 and W5 merges", E's `'none'` is W3-4. M3-4 was done later (see b
 
 | ID | Contract said | Built | Stated reason | Rating |
 |---|---|---|---|---|
-| W4-1 (l.478, §7) | A context-menu item *Use unchecked `[]`* toggles `CHECKED`, shown as `[]` vs `.at()` in C++ labels | A hidden checkbox `CHECKED` with new catalog keys `menu` and `mark`. The menu item reads *Fast unchecked access ([] instead of .at())* and the block shows *unchecked*. (The C++-label part was already accepted, row l.485.) | Keeps the friendly-label rule and the menu generic | **Weak, S** |
+| W4-1 (l.478, §7) | A context-menu item *Use unchecked `[]`* toggles `CHECKED`, shown as `[]` vs `.at()` in C++ labels | A hidden checkbox `CHECKED` with new catalog keys `menu` and `mark`. The menu item reads *Fast unchecked access ([] instead of .at())* and the block shows *unchecked*. (The C++-label part was already accepted, row l.485.) | Keeps the friendly-label rule and the menu generic | **Weak, S**; Reworked (`f57458c`) |
 
 ---
 
@@ -157,8 +157,8 @@ In "From the W4 and W5 merges", E's `'none'` is W3-4. M3-4 was done later (see b
 
 | ID | Contract said | Built | Stated reason | Rating |
 |---|---|---|---|---|
-| W5P-1 (§11.3) | The hold ends with a `release()` call from the session | No `release()`; the pipeline re-checks `isBusy()` every animation frame | No call needed from the session (simplicity) | **Weak, S** |
-| W5P-2 (§11.5) | The worker flag is removed | It is inverted and kept as an off switch (`B2C_PREVIEW_WORKER=0`) | A/B and developer measurements | **Weak, S** |
+| W5P-1 (§11.3) | The hold ends with a `release()` call from the session | No `release()`; the pipeline re-checks `isBusy()` every animation frame | No call needed from the session (simplicity) | **Weak, S**; Reworked (`f6c2360`) |
+| W5P-2 (§11.5) | The worker flag is removed | It is inverted and kept as an off switch (`B2C_PREVIEW_WORKER=0`) | A/B and developer measurements | **Weak, S**; Reworked (`bcc3340`) |
 | W5P-3 (§10.2, §14; w5-worker item 8) | Clipboard arguments (worker.md §5) and the `webview.copy/paste/duplicate-1000.max-task` benchmarks (N12, 100 ms) | Neither built. A copy, paste or duplicate costs one main-thread analysis while the worker previews; the condition was never measured. | Wait for the measurement (cost) | **Weak, M** |
 | W5P-4 (§14) | `webview.preview-1000.p95` is redefined as the `b2c:preview` span, plus a new `update-p95` metric | The old metric is kept, and spans give `update()` | Nightly compares like with like | **Weak, S** |
 | W5P-5 (§14) | E2E additions of worker.md §2.5 | The package's worker test checks each example's golden C++; no new E2E flow | Coverage judged equivalent | **Weak, S** |
