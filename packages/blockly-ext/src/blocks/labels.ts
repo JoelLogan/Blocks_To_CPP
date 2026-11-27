@@ -8,6 +8,7 @@
  * docs/plans/m3-contracts/w4-appearance-expert.md §6.1, w4-editor-tools.md §2.1).
  */
 import type { BlockDefJson, LabelPart } from '../generated/catalog';
+import { isSetAside } from './marks';
 
 /** How blocks read: Friendly or C++ labels (03 §3.5.2). */
 export type LabelMode = 'friendly' | 'cpp';
@@ -148,13 +149,9 @@ export function partsMissingFromCppLabel(
   const named = new Set(
     labelParts(def.label.cpp).flatMap((part) => ('arg' in part ? [part.arg] : [])),
   );
-  // A field set from the block's menu or ⚙ (`menu`, `popover`, ./marks.ts) follows the label in
-  // both modes.
-  return [
-    ...def.fields.filter((field) => field.menu === undefined && field.popover === undefined),
-    ...def.inputs,
-    ...def.statements,
-  ]
+  // A field set from the block's menu or ⚙ (the unchecked `[]` index, `popover`, ./marks.ts)
+  // follows the label in both modes.
+  return [...def.fields.filter((field) => !isSetAside(field)), ...def.inputs, ...def.statements]
     .map((part) => part.name)
     .filter((name) => !named.has(name));
 }

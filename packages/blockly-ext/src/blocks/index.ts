@@ -32,11 +32,14 @@ export { blockLabelMode, setBlockLabelMode } from './labelMode';
 export { B2cGearField, GEAR_TEXT, gearPopover, popoverFieldDefs } from './gear';
 export {
   applyMenuMarks,
+  isSetAside,
   MARK_CLASS,
-  menuFieldDefs,
-  menuToggles,
-  toggleMenuField,
-  type MenuToggle,
+  toggleUncheckedIndex,
+  UNCHECKED_FIELD,
+  UNCHECKED_MARK,
+  type UncheckedIndex,
+  uncheckedIndex,
+  uncheckedIndexDef,
 } from './marks';
 export {
   MUTATOR_FOR_BLOCK,

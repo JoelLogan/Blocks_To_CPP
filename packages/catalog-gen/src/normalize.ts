@@ -82,7 +82,6 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
       ...(field.omitDefault === true ? { omitDefault: true as const } : {}),
       ...(field.advanced === true ? { advanced: true as const } : {}),
       ...optionalRequires(field.requires),
-      ...(field.menu === undefined ? {} : { menu: field.menu }),
       ...(field.popover === undefined ? {} : { popover: field.popover }),
       ...(field.mark === undefined ? {} : { mark: field.mark }),
     })),

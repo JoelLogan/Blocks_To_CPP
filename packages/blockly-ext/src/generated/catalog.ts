@@ -184,19 +184,11 @@ export interface FieldDefJson {
   /** On a checkbox: what its value other than its default needs (the catalog's `requires`). */
   readonly requires?: RequiresJson;
   /**
-   * On a checkbox set from the block's context menu instead of drawn on the block (*Fast unchecked
-   * access*, w4-editor-tools.md §7): the menu item's words. Such a field is in neither label.
-   */
-  readonly menu?: string;
-  /**
    * On a checkbox set from the block's ⚙ popover instead of drawn on the block (`constexpr` and
    * `static` on *create*, w4-editor-tools.md §7): the tick's words. Such a field is in neither label.
    */
   readonly popover?: string;
-  /**
-   * With {@link menu} or {@link popover}: the words the block shows while the field is not at its
-   * default.
-   */
+  /** With {@link popover}: the words the block shows while the field is not at its default. */
   readonly mark?: string;
 }
 
@@ -648,7 +640,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     label: { friendly: 'item %INDEX of %LIST', cpp: '%LIST.at(%INDEX)' },
     labelParts: [{ text: 'item' }, { arg: 'INDEX' }, { text: 'of' }, { arg: 'LIST' }],
     statementsNotInLabel: [],
-    help: "The item at a position of a list or deque (the first is at 0), or the value for a key of a map. A position or key the collection does not have stops the program with an out-of-range error; with fast unchecked access (the block's menu), a wrong position of a list or deque is not caught.",
+    help: "The item at a position of a list or deque (the first is at 0), or the value for a key of a map. A position or key the collection does not have stops the program with an out-of-range error; after 'Use unchecked []' in the block's menu, a wrong position of a list or deque is not caught.",
     output: 'elem(C)',
     fields: [
       {
@@ -670,8 +662,6 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         repeat: null,
         omitDefault: true,
         advanced: true,
-        menu: 'Fast unchecked access ([] instead of .at())',
-        mark: 'unchecked',
       },
     ],
     inputs: [
@@ -917,7 +907,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       { arg: 'VALUE' },
     ],
     statementsNotInLabel: [],
-    help: "Changes the item at a position of a list or deque (the first is at 0), or sets the value for a key of a map, adding the key when the map does not have it yet. A position the list does not have stops the program with an out-of-range error; with fast unchecked access (the block's menu), it is not caught.",
+    help: "Changes the item at a position of a list or deque (the first is at 0), or sets the value for a key of a map, adding the key when the map does not have it yet. A position the list does not have stops the program with an out-of-range error; after 'Use unchecked []' in the block's menu, it is not caught.",
     output: null,
     fields: [
       {
@@ -939,8 +929,6 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         repeat: null,
         omitDefault: true,
         advanced: true,
-        menu: 'Fast unchecked access ([] instead of .at())',
-        mark: 'unchecked',
       },
     ],
     inputs: [

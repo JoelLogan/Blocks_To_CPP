@@ -3,8 +3,7 @@
  * sets aside with `popover` (`constexpr` and `static` on *create*) are not drawn on the block; one
  * ⚙ after their marks opens a popover in Blockly's drop-down with a tick per field, each with the
  * catalog's words. A tick the gate refuses (`static` without *Show advanced blocks*) is left out
- * unless the field already holds it. Each change is one undo step (./marks.ts,
- * {@link toggleMenuField}); Escape closes the popover and gives the focus back to the block.
+ * unless the field already holds it. Each change is one undo step ({@link flipCheckbox}); Escape closes the popover and gives the focus back to the block.
  *
  * Every text is set as text, never as HTML.
  */

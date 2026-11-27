@@ -184,19 +184,11 @@ export interface FieldDefJson {
   /** On a checkbox: what its value other than its default needs (the catalog's `requires`). */
   readonly requires?: RequiresJson;
   /**
-   * On a checkbox set from the block's context menu instead of drawn on the block (*Fast unchecked
-   * access*, w4-editor-tools.md §7): the menu item's words. Such a field is in neither label.
-   */
-  readonly menu?: string;
-  /**
    * On a checkbox set from the block's ⚙ popover instead of drawn on the block (`constexpr` and
    * `static` on *create*, w4-editor-tools.md §7): the tick's words. Such a field is in neither label.
    */
   readonly popover?: string;
-  /**
-   * With {@link menu} or {@link popover}: the words the block shows while the field is not at its
-   * default.
-   */
+  /** With {@link popover}: the words the block shows while the field is not at its default. */
   readonly mark?: string;
 }
 

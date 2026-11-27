@@ -361,32 +361,32 @@ pub struct FieldDef {
     /// only when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requires: Option<Requires>,
-    /// `menu` on a checkbox: the field is set from the block's context menu,
-    /// with these words, instead of being drawn on the block (*Fast
-    /// unchecked access*, w4-editor-tools.md §7). Such a field is shown once,
-    /// has a default and `omit_default`, a `mark`, and appears in neither
-    /// label. Written only when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub menu: Option<String>,
     /// `popover` on a checkbox: the field is set from the block's ⚙ popover,
     /// as a tick with these words, instead of being drawn on the block
-    /// (`constexpr` and `static` on *create*, w4-editor-tools.md §7). The
-    /// same rules as `menu` apply, and a field has one or the other. Written
-    /// only when present.
+    /// (`constexpr` and `static` on *create*, w4-editor-tools.md §7). Such a
+    /// field is shown once, has a default and `omit_default`, a `mark`, and
+    /// appears in neither label. Written only when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub popover: Option<String>,
-    /// `mark`: the words a block shows where a `menu` or `popover` field
-    /// sits while it holds something other than its default (`unchecked`,
-    /// `static`). Written only when present.
+    /// `mark`: the words a block shows where a `popover` field sits while it
+    /// holds something other than its default (`static`). Written only when
+    /// present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mark: Option<String>,
 }
 
+/// The name of the unchecked `[]` index's checkbox on *item of* and *set
+/// item* (w4-editor-tools.md §7): the editor's block menu toggles it with its
+/// item *Use unchecked `[]`* (`editor/menus/registry.ts`), gated as advanced
+/// (`option:coll.item.CHECKED=false`), so no label draws it.
+pub const UNCHECKED_FIELD: &str = "CHECKED";
+
 impl FieldDef {
-    /// The words of the menu item or the popover tick that sets the field,
-    /// when it is set there rather than drawn on the block.
-    pub fn set_aside(&self) -> Option<&str> {
-        self.menu.as_deref().or(self.popover.as_deref())
+    /// Whether the field is set from the block's menu (the unchecked `[]`
+    /// index's [`UNCHECKED_FIELD`]) or its ⚙ popover rather than drawn on the
+    /// block.
+    pub fn set_aside(&self) -> bool {
+        self.popover.is_some() || self.name == UNCHECKED_FIELD
     }
 }
 

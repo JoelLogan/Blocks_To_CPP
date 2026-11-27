@@ -11,17 +11,17 @@
  * - The block menu's *Delete* (`blockDelete`) keeps Blockly's action but counts the same way.
  * - *Clean up blocks*, Undo, Redo, Collapse and Expand stay Blockly's own (Undo and Redo wait for
  *   Blockly's events: ../sync/undo.ts).
- * - A block with a field set from its menu (the catalog's `menu`: *Fast unchecked access* on *item
- *   of* and *set item*, docs/plans/m3-contracts/w4-editor-tools.md §7) gets an item per such field,
- *   ticked (✓) while the field is away from its default. It flips the field as one undo step, and
- *   is offered only where the gate allows the value it sets (*Show advanced blocks* for unchecked
- *   access); turning a field back to its default is always offered.
+ * - *item of* and *set item* get the item *Use unchecked `[]`* (the unchecked `[]` index,
+ *   docs/plans/m3-contracts/w4-editor-tools.md §7), which toggles their field `CHECKED` as one undo
+ *   step and is ticked (✓) while the block uses `[]`. It is gated as advanced
+ *   (`option:coll.item.CHECKED=false`: offered with *Show advanced blocks*); turning it off again
+ *   is always offered.
  *
  * The registry is global, while each editor has its own canvas: the changes are made when the
  * first editor attaches and Blockly's items are put back when the last one detaches. A menu goes
  * to the editor of the canvas it was opened on.
  */
-import { menuToggles, optionOffered, toggleMenuField } from '@blocks2cpp/blockly-ext';
+import { optionOffered, toggleUncheckedIndex, uncheckedIndex } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
 import {
@@ -32,11 +32,11 @@ import {
 } from '../clipboard/chains';
 import { descendantsOf } from '../sync/traverse';
 
-/** The ID of the block menu's items for the fields set from the menu (one per field of a block). */
-export const MENU_TOGGLE_ID = 'b2c_menu_toggle';
+/** The ID of the block menu's item *Use unchecked `[]`*. */
+export const UNCHECKED_INDEX_ID = 'b2c_unchecked_index';
 
-/** How many fields set from the menu one block has at most. */
-const MAX_MENU_TOGGLES = 2;
+/** The words of the block menu's item that toggles the unchecked `[]` index (w4 §7). */
+export const UNCHECKED_INDEX_TEXT = 'Use unchecked []';
 
 /** The IDs of Blockly's items that the editor removes or replaces. */
 export const MENU_ITEM_IDS = {
@@ -204,39 +204,41 @@ function deleteBlockItem(original: ActionItem): ActionItem {
   };
 }
 
-/** The block menu's item for the `index`-th field of a block set from its menu. */
-function menuToggleItem(index: number): ActionItem {
-  const toggleAt = (scope: Blockly.ContextMenuRegistry.Scope) => {
+/**
+ * The block menu's *Use unchecked `[]`*: on a block with the unchecked `[]` index (*item of*, *set
+ * item*), ticked while the block uses `[]`, toggling its field `CHECKED`.
+ */
+function uncheckedIndexItem(): ActionItem {
+  const stateOf = (scope: Blockly.ContextMenuRegistry.Scope) => {
     const block = scope.block;
     if (block === undefined || targetOf(block.workspace) === null) {
       return null;
     }
-    return menuToggles(block)[index] ?? null;
+    return uncheckedIndex(block);
   };
   return {
-    id: `${MENU_TOGGLE_ID}_${String(index)}`,
+    id: UNCHECKED_INDEX_ID,
     scopeType: Blockly.ContextMenuRegistry.ScopeType.BLOCK,
-    weight: 4 + index / 10,
+    weight: 4,
     displayText: (scope) => {
-      const toggle = toggleAt(scope);
-      return toggle === null ? '' : `${toggle.on ? '✓ ' : ''}${toggle.text}`;
+      const state = stateOf(scope);
+      return state === null ? '' : `${state.on ? '✓ ' : ''}${UNCHECKED_INDEX_TEXT}`;
     },
     preconditionFn: (scope) => {
-      const toggle = toggleAt(scope);
+      const state = stateOf(scope);
       const block = scope.block;
-      if (toggle === null || block === undefined) {
+      if (state === null || block === undefined) {
         return 'hidden';
       }
-      // Back to the default is always offered; away from it only where the gate allows it.
-      if (!toggle.on && !optionOffered(block, toggle.field, toggle.next)) {
+      // Back to `.at()` is always offered; `[]` only where the gate allows it (advanced).
+      if (!state.on && !optionOffered(block, 'CHECKED', state.next)) {
         return 'hidden';
       }
       return block.isEditable() ? 'enabled' : 'disabled';
     },
     callback: (scope) => {
-      const toggle = toggleAt(scope);
-      if (toggle !== null && scope.block !== undefined) {
-        toggleMenuField(scope.block, toggle.field);
+      if (stateOf(scope) !== null && scope.block !== undefined) {
+        toggleUncheckedIndex(scope.block);
       }
     },
   };
@@ -265,18 +267,13 @@ function adjustBlocklyItems(): () => void {
     menu.unregister(MENU_ITEM_IDS.deleteBlock);
     menu.register(deleteBlockItem(deleteBlock));
   }
-  const toggleIds: string[] = [];
-  for (let index = 0; index < MAX_MENU_TOGGLES; index += 1) {
-    const item = menuToggleItem(index);
-    if (menu.getItem(item.id) !== null) {
-      menu.unregister(item.id);
-    }
-    menu.register(item);
-    toggleIds.push(item.id);
+  if (menu.getItem(UNCHECKED_INDEX_ID) !== null) {
+    menu.unregister(UNCHECKED_INDEX_ID);
   }
+  menu.register(uncheckedIndexItem());
 
   return () => {
-    for (const id of [MENU_ITEM_IDS.deleteAll, MENU_ITEM_IDS.deleteBlock, ...toggleIds]) {
+    for (const id of [MENU_ITEM_IDS.deleteAll, MENU_ITEM_IDS.deleteBlock, UNCHECKED_INDEX_ID]) {
       if (menu.getItem(id) !== null) {
         menu.unregister(id);
       }

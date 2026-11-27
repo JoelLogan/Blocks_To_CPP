@@ -55,7 +55,7 @@ function merged(
  * *change*'s bitwise forms, the C++20 members with a C++17 form, w4-editor-tools.md §2.1; *format …
  * with*, which needs C++20 and `std::format`, §7): a block's, a dropdown option's (the third
  * element of its pair), and a checkbox's, which are those of its value other than its default
- * (*fast unchecked access*, `static`).
+ * (the unchecked `[]` index's `CHECKED` unticked, `static`).
  */
 function catalogRows(): (readonly [string, Requirement])[] {
   const rows: (readonly [string, Requirement])[] = [];

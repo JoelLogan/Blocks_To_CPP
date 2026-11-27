@@ -12,7 +12,7 @@ use b2c_model::limits::MAX_VARIADIC_PARTS;
 
 use crate::schema::{
     BlockDef, CatalogFile, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, InputDef, Requires, Shape,
-    is_part_name,
+    UNCHECKED_FIELD, is_part_name,
 };
 use crate::{CATALOG_VERSION, Catalog, signature};
 
@@ -509,38 +509,48 @@ fn check_field(field: &FieldDef, problems: &mut Vec<String>) {
         ));
     }
     check_field_gates(field, problems);
-    check_menu_field(field, problems);
+    check_set_aside_field(field, problems);
 }
 
-/// A `menu` or `popover` field (w4-editor-tools.md §7): a checkbox shown
-/// once, written only away from its default, with the words of its menu
-/// item or tick and of its mark; and a `mark` only with one of them.
-fn check_menu_field(field: &FieldDef, problems: &mut Vec<String>) {
+/// A field not drawn on the block (w4-editor-tools.md §7). The unchecked
+/// `[]` index's [`UNCHECKED_FIELD`] is a checkbox shown once, ticked by
+/// default, written only when unticked and gated as advanced, which the
+/// editor's block menu toggles. A `popover` field is a checkbox shown once,
+/// written only away from its default, with the words of its tick and of
+/// its mark. Only a popover field has a mark.
+fn check_set_aside_field(field: &FieldDef, problems: &mut Vec<String>) {
     let name = &field.name;
-    let Some(menu) = field.set_aside() else {
+    if name == UNCHECKED_FIELD {
+        if field.kind != FieldKind::Checkbox
+            || field.repeat.is_some()
+            || field.default != Some(FieldDefault::Bool(true))
+            || !field.omit_default
+            || !field.advanced
+            || field.popover.is_some()
+            || field.mark.is_some()
+        {
+            problems.push(format!(
+                "the field {UNCHECKED_FIELD} is the unchecked [] index: a checkbox shown once, ticked by default, with omit_default = true and advanced = true, toggled from the block's menu (no popover, no mark)"
+            ));
+        }
+        return;
+    }
+    let Some(tick) = &field.popover else {
         if field.mark.is_some() {
-            problems.push(format!("only a menu field has a mark ({name})"));
+            problems.push(format!("only a popover field has a mark ({name})"));
         }
         return;
     };
-    if field.menu.is_some() && field.popover.is_some() {
-        problems.push(format!(
-            "the field {name} is set from the menu or from the popover, not both"
-        ));
-    }
-    let words = |text: &Option<String>| {
-        text.as_ref()
-            .is_some_and(|text| text.chars().any(char::is_alphabetic))
-    };
+    let words = |text: &str| text.chars().any(char::is_alphabetic);
     if field.kind != FieldKind::Checkbox
         || field.repeat.is_some()
         || field.default.is_none()
         || !field.omit_default
-        || !words(&Some(menu.to_owned()))
-        || !words(&field.mark)
+        || !words(tick)
+        || !field.mark.as_deref().is_some_and(words)
     {
         problems.push(format!(
-            "the menu field {name} is a checkbox shown once, with a default, omit_default = true, and words for its menu item and its mark"
+            "the popover field {name} is a checkbox shown once, with a default, omit_default = true, and words for its tick and its mark"
         ));
     }
 }
@@ -729,19 +739,19 @@ fn check_friendly_label(def: &BlockDef, problems: &mut Vec<String>) {
             LabelPiece::Text(_) => None,
         })
         .collect();
-    for field in def.field.iter().filter(|field| field.set_aside().is_some()) {
+    for field in def.field.iter().filter(|field| field.set_aside()) {
         let name = field.name.as_str();
         let in_cpp = label_pieces(&def.label.cpp).contains(&LabelPiece::Arg(name));
         if shown.contains(name) || in_cpp {
             problems.push(format!(
-                "the menu field {name} is set from the block's menu: leave %{name} out of the labels"
+                "the field {name} is set from the block's menu or its popover: leave %{name} out of the labels"
             ));
         }
     }
     let parts = def
         .field
         .iter()
-        .filter(|field| field.repeat.is_none() && field.set_aside().is_none())
+        .filter(|field| field.repeat.is_none() && !field.set_aside())
         .map(|field| ("field", field.name.as_str()))
         .chain(
             def.input
@@ -760,7 +770,7 @@ fn check_friendly_label(def: &BlockDef, problems: &mut Vec<String>) {
     for field in def
         .field
         .iter()
-        .filter(|field| field.kind == FieldKind::Checkbox && field.set_aside().is_none())
+        .filter(|field| field.kind == FieldKind::Checkbox && !field.set_aside())
     {
         let name = field.name.as_str();
         for (index, piece) in pieces.iter().enumerate() {
@@ -818,7 +828,6 @@ mod tests {
                 omit_default: false,
                 advanced: false,
                 requires: None,
-                menu: None,
                 popover: None,
                 mark: None,
             }],
@@ -969,7 +978,6 @@ mod tests {
                 omit_default: false,
                 advanced: false,
                 requires: None,
-                menu: None,
                 popover: None,
                 mark: None,
             };
@@ -1063,7 +1071,6 @@ mod tests {
             omit_default: false,
             advanced: false,
             requires: None,
-            menu: None,
             popover: None,
             mark: None,
         };
@@ -1250,51 +1257,71 @@ mod tests {
     }
 
     #[test]
-    fn menu_fields() {
-        let menu_field = |change: fn(&mut FieldDef)| {
+    fn the_unchecked_index_field() {
+        // `CHECKED` (w4-editor-tools.md §7): the field the editor's block
+        // menu toggles (*Use unchecked `[]`*, `menus/registry.ts`), gated as
+        // advanced; no catalog key names the menu item or a mark.
+        let checked = |change: fn(&mut FieldDef)| {
             let mut field = FieldDef {
                 default: Some(FieldDefault::Bool(true)),
                 omit_default: true,
-                menu: Some("Fast unchecked access".into()),
-                mark: Some("unchecked".into()),
+                advanced: true,
                 ..plain_field("CHECKED", FieldKind::Checkbox)
             };
             change(&mut field);
             problems_after(move |d| d.field.push(field))
         };
-        // Set from the menu: in neither label, and needing no words there.
-        assert_eq!(menu_field(|_| {}), Vec::<String>::new());
-        let rule = "the menu field CHECKED is a checkbox shown once, with a default, omit_default = true, and words for its menu item and its mark";
-        assert_eq!(menu_field(|f| f.omit_default = false), [rule]);
-        assert_eq!(menu_field(|f| f.mark = None), [rule]);
-        assert_eq!(menu_field(|f| f.menu = Some(String::from("[]"))), [rule]);
+        // Toggled from the menu: in neither label, and needing no words there.
+        assert_eq!(checked(|_| {}), Vec::<String>::new());
+        let rule = "the field CHECKED is the unchecked [] index: a checkbox shown once, ticked by default, with omit_default = true and advanced = true, toggled from the block's menu (no popover, no mark)";
+        assert_eq!(checked(|f| f.omit_default = false), [rule]);
+        assert_eq!(checked(|f| f.advanced = false), [rule]);
+        assert_eq!(checked(|f| f.default = Some(FieldDefault::Bool(false))), [rule]);
+        assert_eq!(checked(|f| f.mark = Some("unchecked".into())), [rule]);
+        assert_eq!(checked(|f| f.popover = Some("Unchecked".into())), [rule]);
         let labelled = problems_after(|d| {
             d.label.cpp = format!("{} %CHECKED", d.label.cpp);
             d.field.push(FieldDef {
                 default: Some(FieldDefault::Bool(true)),
                 omit_default: true,
-                menu: Some("Fast unchecked access".into()),
-                mark: Some("unchecked".into()),
+                advanced: true,
                 ..plain_field("CHECKED", FieldKind::Checkbox)
             });
         });
         assert_eq!(
             labelled,
-            ["the menu field CHECKED is set from the block's menu: leave %CHECKED out of the labels"]
+            [
+                "the field CHECKED is set from the block's menu or its popover: leave %CHECKED out of the labels"
+            ]
         );
-        // A mark belongs to a menu or popover field; a field has one place.
+        // `menu` is no catalog key.
+        let menu = toml::from_str::<FieldDef>(
+            "name = \"CHECKED\"\nkind = \"checkbox\"\nmenu = \"Use unchecked []\"",
+        );
+        assert!(menu.is_err());
+    }
+
+    #[test]
+    fn popover_fields() {
+        let popover = |change: fn(&mut FieldDef)| {
+            let mut field = FieldDef {
+                default: Some(FieldDefault::Bool(false)),
+                omit_default: true,
+                popover: Some("constexpr".into()),
+                mark: Some("constexpr".into()),
+                ..plain_field("CONSTEXPR", FieldKind::Checkbox)
+            };
+            change(&mut field);
+            problems_after(move |d| d.field.push(field))
+        };
+        assert_eq!(popover(|_| {}), Vec::<String>::new());
+        let rule = "the popover field CONSTEXPR is a checkbox shown once, with a default, omit_default = true, and words for its tick and its mark";
+        assert_eq!(popover(|f| f.omit_default = false), [rule]);
+        assert_eq!(popover(|f| f.mark = None), [rule]);
+        assert_eq!(popover(|f| f.popover = Some(String::from("[]"))), [rule]);
+        // A mark belongs to a popover field.
         let mark = problems_after(|d| d.field[0].mark = Some("x".into()));
-        assert_eq!(mark, ["only a menu field has a mark (X)"]);
-        let popover = menu_field(|f| {
-            f.menu = None;
-            f.popover = Some("Fast".into());
-        });
-        assert_eq!(popover, Vec::<String>::new());
-        let both = menu_field(|f| f.popover = Some("Fast".into()));
-        assert_eq!(
-            both,
-            ["the field CHECKED is set from the menu or from the popover, not both"]
-        );
+        assert_eq!(mark, ["only a popover field has a mark (X)"]);
         // The core catalog's popover: *create*'s `constexpr` and `static`.
         let declare = &crate::core_catalog().blocks["var.declare"];
         for (name, advanced) in [("CONSTEXPR", false), ("STATIC", true)] {
@@ -1305,16 +1332,16 @@ mod tests {
             );
             assert_eq!(tick.advanced, advanced, "{name}");
         }
-        // The core catalog's: *item of* and *set item*.
+        // The core catalog's `CHECKED`: *item of* and *set item*, without a mark.
         let catalog = crate::core_catalog();
         for id in ["coll.item", "coll.set_item"] {
             let checked = field_def(&catalog.blocks[id], "CHECKED").expect("CHECKED");
             assert_eq!(
-                (checked.default.clone(), checked.advanced),
-                (Some(FieldDefault::Bool(true)), true),
+                (checked.default.clone(), checked.advanced, checked.omit_default),
+                (Some(FieldDefault::Bool(true)), true, true),
                 "{id}"
             );
-            assert!(checked.menu.is_some(), "{id}");
+            assert_eq!((&checked.popover, &checked.mark), (&None, &None), "{id}");
         }
     }
 
@@ -1486,7 +1513,6 @@ mod tests {
             omit_default: false,
             advanced: false,
             requires: None,
-            menu: None,
             popover: None,
             mark: None,
         }
@@ -1768,7 +1794,6 @@ mod tests {
             omit_default: false,
             advanced: false,
             requires: None,
-            menu: None,
             popover: None,
             mark: None,
             repeat: Some(Repeat {

@@ -1,6 +1,8 @@
 /**
- * Checkboxes set from the block's menu (./marks.ts): *Fast unchecked access* on *item of* and *set
- * item* (docs/plans/m3-contracts/w4-editor-tools.md §7).
+ * The unchecked `[]` index on *item of* and *set item* (./marks.ts,
+ * docs/plans/m3-contracts/w4-editor-tools.md §7): the field `CHECKED`, which the app's block menu
+ * toggles (*Use unchecked `[]`*, its words the menu's own), hidden on the block and shown as the
+ * mark *unchecked* in the C++ label mode only (§7.1).
  */
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -11,7 +13,15 @@ import { registerB2cMutators } from '../mutators/register';
 import { flushEvents } from '../mutators/test-fixtures';
 import { hasCppLayout } from './labels';
 import { setBlockLabelMode } from './labelMode';
-import { MARK_CLASS, menuFieldDefs, menuToggles, toggleMenuField } from './marks';
+import {
+  isSetAside,
+  MARK_CLASS,
+  toggleUncheckedIndex,
+  UNCHECKED_FIELD,
+  UNCHECKED_MARK,
+  uncheckedIndex,
+  uncheckedIndexDef,
+} from './marks';
 import { registerB2cBlocks } from './register';
 
 let workspace: Blockly.WorkspaceSvg;
@@ -34,58 +44,73 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-/** The mark label of `block` (an unnamed label with the mark's class). */
+/** The mark label of `block` (an unnamed label with the mark's words), or `undefined`. */
 function markOf(block: Blockly.Block): Blockly.Field | undefined {
   return block.inputList
     .flatMap((input) => input.fieldRow)
-    .find((field) => field instanceof Blockly.FieldLabel && field.getText() === 'unchecked');
+    .find((field) => field instanceof Blockly.FieldLabel && field.getText() === UNCHECKED_MARK);
 }
 
-describe('menu fields', () => {
-  it('are the unchecked access of item of and set item, each with its words and mark', () => {
-    const withMenu = BLOCK_DEFS.flatMap((def) =>
-      menuFieldDefs(def).map((field) => `${def.id}.${field.name}`),
-    );
-    expect(withMenu).toEqual(['coll.item.CHECKED', 'coll.set_item.CHECKED']);
+/** A rendered block of `type` built in `mode`. */
+function built(type: string, mode: 'friendly' | 'cpp'): Blockly.BlockSvg {
+  setBlockLabelMode(mode);
+  const block = workspace.newBlock(type);
+  block.initSvg();
+  block.render();
+  return block;
+}
+
+describe('the unchecked [] index', () => {
+  it('is CHECKED on item of and set item, with no menu words or mark in the catalog', () => {
+    const fields = BLOCK_DEFS.flatMap((def) => {
+      const field = uncheckedIndexDef(def);
+      return field === undefined ? [] : [`${def.id}.${field.name}`];
+    });
+    expect(fields).toEqual(['coll.item.CHECKED', 'coll.set_item.CHECKED']);
     for (const def of BLOCK_DEFS) {
-      for (const field of menuFieldDefs(def)) {
-        expect(field.mark, def.id).toBe('unchecked');
-        expect(field.menu, def.id).toMatch(/unchecked/i);
+      const field = uncheckedIndexDef(def);
+      if (field !== undefined) {
+        expect(field.name).toBe(UNCHECKED_FIELD);
+        expect(field).not.toHaveProperty('menu');
+        expect(field).not.toHaveProperty('mark');
+        expect(isSetAside(field)).toBe(true);
       }
     }
-    // A menu field does not keep a block from its C++ layout (`%LIST.at(%INDEX)`).
+    // The field does not keep a block from its C++ layout (`%LIST.at(%INDEX)`).
     const item = BLOCK_DEFS.find((def) => def.id === 'coll.item');
     expect(item !== undefined && hasCppLayout(item)).toBe(true);
   });
 
-  it('hide the checkbox and show the mark only away from the default', () => {
-    for (const mode of ['friendly', 'cpp'] as const) {
-      setBlockLabelMode(mode);
-      const item = workspace.newBlock('coll.item');
-      item.initSvg();
-      item.render();
-      expect(item.getField('CHECKED')?.isVisible(), mode).toBe(false);
-      const mark = markOf(item);
-      expect(mark?.isVisible(), mode).toBe(false);
-      expect(mark?.getSvgRoot()?.querySelector(`.${MARK_CLASS}`) ?? null, mode).not.toBeNull();
-      expect(menuToggles(item)).toEqual([
-        {
-          field: 'CHECKED',
-          text: expect.stringMatching(/unchecked/i) as string,
-          on: false,
-          next: 'false',
-        },
-      ]);
-      toggleMenuField(item, 'CHECKED');
-      expect(item.getFieldValue('CHECKED'), mode).toBe('FALSE');
-      expect(mark?.isVisible(), mode).toBe(true);
-      expect(menuToggles(item)[0]).toMatchObject({ on: true, next: 'true' });
-      expect(Blockly.serialization.blocks.save(item)?.fields?.['CHECKED']).toBe(false);
-      item.dispose();
-    }
+  it('is hidden on the block, with no mark in the Friendly label mode', () => {
+    const item = built('coll.item', 'friendly');
+    expect(item.getField('CHECKED')?.isVisible()).toBe(false);
+    expect(markOf(item)).toBeUndefined();
+    expect(uncheckedIndex(item)).toEqual({ on: false, next: 'false' });
+    toggleUncheckedIndex(item);
+    expect(item.getFieldValue('CHECKED')).toBe('FALSE');
+    expect(uncheckedIndex(item)).toEqual({ on: true, next: 'true' });
+    expect(markOf(item)).toBeUndefined();
+    expect(Blockly.serialization.blocks.save(item)?.fields?.['CHECKED']).toBe(false);
   });
 
-  it('load unchecked with the mark shown, and flip back in one undo step', async () => {
+  it('shows the mark unchecked in the C++ label mode only while unchecked', () => {
+    const item = built('coll.item', 'cpp');
+    expect(item.getField('CHECKED')?.isVisible()).toBe(false);
+    const mark = markOf(item);
+    expect(mark?.isVisible()).toBe(false);
+    expect(mark?.getSvgRoot()?.querySelector(`.${MARK_CLASS}`) ?? null).not.toBeNull();
+    toggleUncheckedIndex(item);
+    expect(mark?.isVisible()).toBe(true);
+    toggleUncheckedIndex(item);
+    expect(mark?.isVisible()).toBe(false);
+  });
+
+  it('is absent from a block without the field', () => {
+    expect(uncheckedIndex(built('io.print', 'friendly'))).toBeNull();
+  });
+
+  it('loads unchecked, and flips back in one undo step', async () => {
+    setBlockLabelMode('cpp');
     const set = Blockly.serialization.blocks.append(
       { type: 'coll.set_item', fields: { CHECKED: false } },
       workspace,
@@ -93,7 +118,7 @@ describe('menu fields', () => {
     expect(markOf(set)?.isVisible()).toBe(true);
     await flushEvents();
     workspace.clearUndo();
-    toggleMenuField(set, 'CHECKED');
+    toggleUncheckedIndex(set);
     expect(markOf(set)?.isVisible()).toBe(false);
     await flushEvents();
     expect(workspace.getUndoStack()).toHaveLength(1);

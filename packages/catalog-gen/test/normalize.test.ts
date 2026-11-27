@@ -170,8 +170,6 @@ describe('normalize', () => {
               types: [],
               default: true,
               advanced: true,
-              menu: 'Go fast',
-              mark: 'fast',
             },
             {
               name: 'KEEP',
@@ -201,7 +199,8 @@ describe('normalize', () => {
     // A checkbox's keys are its value's other than the default.
     expect(gated?.fields[1]?.advanced).toBe(true);
     expect(gated?.fields[1]).not.toHaveProperty('requires');
-    expect(gated?.fields[1]).toMatchObject({ menu: 'Go fast', mark: 'fast' });
+    expect(gated?.fields[1]).not.toHaveProperty('menu');
+    expect(gated?.fields[1]).not.toHaveProperty('mark');
     expect(gated?.fields[2]).toMatchObject({ popover: 'Kept', mark: 'kept' });
     // A basic block and field carry no key.
     expect(block('text.show')).not.toHaveProperty('advanced');

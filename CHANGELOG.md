@@ -1122,6 +1122,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   editing session ends the drag and calls the pipeline's `release()`, as
   worker.md §6 has it, instead of the pipeline looking at the drag every
   animation frame.
+- The unchecked `[]` index is as the W4 contract has it
+  (w4-editor-tools.md §7): the block menu's item on _item of_ and _set item_
+  reads _Use unchecked `[]`_ and toggles their field `CHECKED`; the editor's
+  menu registry defines the item, and the catalog's `menu` key and the
+  field's `mark` are gone (a field named `CHECKED` is the unchecked index).
+  The block shows _unchecked_ in the C++ label mode only, no longer in the
+  Friendly one.
 
 ### Removed
 

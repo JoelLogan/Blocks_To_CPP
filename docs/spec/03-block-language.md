@@ -514,8 +514,8 @@ with several modules ([§3.8](#38-organisation-features-editor)).
 so the catalog has 89 blocks; it is `std::format` with C++20 and a helper
 with C++17, so it is offered whatever the standard or the toolchain
 ([§3.7.4](#374-text)). *create* gains its ⚙ popover
-([§3.7.2](#372-variables)), *item of* and *set item* their *fast unchecked
-access* ([§3.7.8](#378-collections)), and *use header*, *check at compile
+([§3.7.2](#372-variables)), *item of* and *set item* their unchecked `[]`
+index ([§3.7.8](#378-collections)), and *use header*, *check at compile
 time*, *go on into the next case* and *change*'s bitwise forms are offered
 with *Show advanced blocks* (the catalog's `advanced`,
 [§3.11.1](#3111-catalog-format)).
@@ -824,16 +824,16 @@ such as the list *contains* looks for (`std::vector<int>{1, 2}`). **In M3**
 *sort* (M4, with lambdas), and the generic member block below waits for
 M4's `std` pack, whose metadata it lists.
 
-Indexing is bounds-checked (`.at()`) by default. A block context-menu option,
-*fast unchecked access*, switches *item of* and *set item* to `[]` on a list
-or deque (`c[static_cast<std::size_t>(i)]`), so a wrong position is not
-caught; a map's *item of* stays `c.at(k)`, since `[]` would add the key. It
-is offered with *Show advanced blocks* (and always to switch back), ticked
-(✓) in the menu while on, and the block shows *unchecked* after its parts in
-both label modes (the field `CHECKED`, written into a project only when
-unticked). **In M3** (wave W4) it is built as described. Indexing is always
-zero-based, as
-in C++, and tooltips say so. Sizes and indexes are `int`, as M3 has no
+Indexing is bounds-checked (`.at()`) by default. The block context-menu
+item *Use unchecked `[]`* toggles the field `CHECKED` of *item of* and *set
+item* (written into a project only when unticked), which switches them to
+`[]` on a list or deque (`c[static_cast<std::size_t>(i)]`), so a wrong
+position is not caught; a map's *item of* stays `c.at(k)`, since `[]` would
+add the key. It is offered with *Show advanced blocks* (and always to switch
+back) and ticked (✓) in the menu while on. The block does not draw the
+field: the C++ label mode shows *unchecked* after its parts while it is
+unticked. **In M3** (wave W4) it is built as described. Indexing is always
+zero-based, as in C++, and tooltips say so. Sizes and indexes are `int`, as M3 has no
 unsigned types, so the generated code casts them
 (`static_cast<int>(c.size())`, `c.at(static_cast<std::size_t>(i))`; a
 non-negative literal index stays as written) and compiles clean at every
@@ -1258,13 +1258,14 @@ type  = "T"                            # converts to T
   field whose class no listed type fits may list none (`types = []`): its
   menu then holds only the module's own types, it has no default, and it
   may be absent from a block (the analyser reports the missing choice,
-  `B2C-E0430`). A checkbox with `menu = "…"` is set from the block's
-  context menu with those words instead of being drawn on the block, and
-  shows its `mark` (`unchecked`) while away from its default; it is shown
-  once, has a default and `omit_default`, and is in neither label (wave W4,
-  *fast unchecked access*). A checkbox with `popover = "…"` follows the same
-  rules but is a tick of the block's ⚙ popover (`constexpr` and `static` on
-  *create*). Unknown keys are errors.
+  `B2C-E0430`). A checkbox with `popover = "…"` is a tick of the block's
+  ⚙ popover with those words instead of being drawn on the block
+  (`constexpr` and `static` on *create*), and shows its `mark` while away
+  from its default; it is shown once, has a default and `omit_default`, and
+  is in neither label. A field named `CHECKED` is the unchecked `[]` index
+  (wave W4, §3.7.8): a checkbox shown once, ticked by default, with
+  `omit_default` and `advanced`, in neither label, which the editor's block
+  menu toggles. Unknown keys are errors.
 * **Gating keys** (wave W4,
   [w4-editor-tools.md §6.1](../plans/m3-contracts/w4-editor-tools.md#61-the-catalogs-gating-keys)).
   `advanced = true` on a block offers it only with *Show advanced blocks*;
@@ -1278,7 +1279,7 @@ type  = "T"                            # converts to T
   label = "starts with", value = "starts", requires = { standard = "c++20",
   fallback = true } }`); a dropdown has no keys of its own. On a checkbox,
   which has one value besides its default, `advanced = true` and `requires`
-  are that value's (*fast unchecked access* is unticked, `static` ticked),
+  are that value's (`CHECKED` unticked, `static` ticked),
   so a gated checkbox has a default. A requirement names a standard newer
   than C++17 or a capability, and has no other keys; a field's default is
   never a value the editor could hide. `catalog.json` writes the keys as

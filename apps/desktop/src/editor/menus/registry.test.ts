@@ -29,8 +29,8 @@ import {
   deleteLabel,
   installMenuItems,
   MENU_ITEM_IDS,
-  MENU_TOGGLE_ID,
   type MenuTarget,
+  UNCHECKED_INDEX_ID,
 } from './registry';
 import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
 
@@ -223,8 +223,8 @@ describe('installing the menu items', () => {
   });
 });
 
-describe('fast unchecked access (w4-editor-tools.md §7)', () => {
-  const item = `${MENU_TOGGLE_ID}_0`;
+describe('the unchecked [] index (w4-editor-tools.md §7)', () => {
+  const item = UNCHECKED_INDEX_ID;
   const appendSvg = (state: Blockly.serialization.blocks.State, on: Blockly.WorkspaceSvg) =>
     Blockly.serialization.blocks.append(state, on) as Blockly.BlockSvg;
 
@@ -232,24 +232,32 @@ describe('fast unchecked access (w4-editor-tools.md §7)', () => {
     setOptionFilter(null);
   });
 
-  it('is an item of item of and set item, ticked while on, one undo step', async () => {
+  it('is Use unchecked [] on item of and set item, toggling CHECKED in one undo step', async () => {
     const workspace = renderedWorkspace();
     attach(workspace);
     const get = appendSvg({ type: 'coll.item' }, workspace);
+    const set = appendSvg({ type: 'coll.set_item' }, workspace);
     const print = appendSvg({ type: 'io.print' }, workspace);
     expect(precondition(item, { block: print })).toBe('hidden');
     expect(precondition(item, { block: get })).toBe('enabled');
-    expect(label(item, { block: get })).toBe('Fast unchecked access ([] instead of .at())');
+    expect(precondition(item, { block: set })).toBe('enabled');
+    expect(label(item, { block: get })).toBe('Use unchecked []');
+    expect(label(item, { block: set })).toBe('Use unchecked []');
     await eventsDelivered();
     workspace.clearUndo();
 
     choose(item, { block: get });
     expect(get.getFieldValue('CHECKED')).toBe('FALSE');
-    expect(label(item, { block: get })).toBe('✓ Fast unchecked access ([] instead of .at())');
+    // Ticked while the block uses `[]`: the same item toggles it back.
+    expect(label(item, { block: get })).toBe('✓ Use unchecked []');
     await eventsDelivered();
     expect(workspace.getUndoStack()).toHaveLength(1);
-    workspace.undo(false);
+    choose(item, { block: get });
     expect(get.getFieldValue('CHECKED')).toBe('TRUE');
+    expect(label(item, { block: get })).toBe('Use unchecked []');
+    await eventsDelivered();
+    workspace.undo(false);
+    expect(get.getFieldValue('CHECKED')).toBe('FALSE');
   });
 
   it('is offered only where the gate allows it, and always back to checked', () => {

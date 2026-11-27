@@ -24,6 +24,7 @@ import {
   catalogBlock,
   hasB2cMutator,
   isManuallyDisabled,
+  isSetAside,
   isPlaceholder,
   missingPackOf,
   placeholderState,
@@ -446,13 +447,10 @@ describe('blockLayout', () => {
     expect(wordsBefore('io.print', 'NEWLINE')).toBe('new line');
     expect(wordsBefore('io.print', 'STREAM')).toBe('to');
     // Every checkbox of the catalog has words right before it, but those set from the block's menu
-    // (../src/blocks/marks.ts), which the block does not draw.
+    // or its ⚙ (../src/blocks/marks.ts), which the block does not draw.
     for (const blockDef of BLOCK_DEFS) {
       const drawn = blockDef.fields.filter(
-        (candidate) =>
-          candidate.kind === 'checkbox' &&
-          candidate.menu === undefined &&
-          candidate.popover === undefined,
+        (candidate) => candidate.kind === 'checkbox' && !isSetAside(candidate),
       );
       for (const field of drawn) {
         expect(wordsBefore(blockDef.id, field.name), `${blockDef.id}.${field.name}`).toMatch(

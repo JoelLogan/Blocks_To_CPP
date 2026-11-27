@@ -129,6 +129,26 @@ describe('readCatalogJson', () => {
       'blocks[5].field[0].options[0] has the unknown key "hidden"',
     ],
     [
+      // The unchecked `[]` index's menu item is the editor's (w4-editor-tools.md §7), no key.
+      'a field with a menu item',
+      (c) =>
+        c.blocks.push(
+          rustBlock('x.y', {
+            field: [
+              {
+                name: 'CHECKED',
+                kind: 'checkbox',
+                options: [],
+                types: [],
+                default: true,
+                menu: 'Use unchecked []',
+              },
+            ],
+          }),
+        ),
+      'blocks[5].field[0] has the unknown key "menu"',
+    ],
+    [
       "an option's requirement of an unknown standard",
       (c) =>
         c.blocks.push(
