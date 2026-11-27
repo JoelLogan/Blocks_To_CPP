@@ -760,12 +760,13 @@ impl<'d> Lowerer<'d> {
     }
 
     /// The shared constants of other modules that the module being lowered
-    /// sees only as `extern const`, which are no constant expression there.
-    fn opaque_constants(&self) -> BTreeSet<SymbolId> {
+    /// sees only as `extern const`, which are no constant expression there,
+    /// each with its module's name as a message shows it (`B2C-E0424`).
+    fn opaque_constants(&self) -> BTreeMap<SymbolId, String> {
         self.extern_constants
             .iter()
             .filter(|(_, module)| **module != self.module_index)
-            .map(|(sym, _)| sym.clone())
+            .map(|(sym, module)| (sym.clone(), self.module_name(*module)))
             .collect()
     }
 

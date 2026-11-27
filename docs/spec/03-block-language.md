@@ -588,7 +588,8 @@ with other modules* checkbox is shown in a project with several modules
 constant is `inline constexpr` in the header, or `extern const` when its
 value names something its module does not share. An `extern const` constant
 is not fixed for other modules when the program is built, so there it is no
-`case` label (`B2C-E0424`). A global whose value uses a global of another
+`case` label (`B2C-E0424`, whose message names the constant and its
+module). A global whose value uses a global of another
 module, directly or through functions, is `B2C-E0423`, unless that one is a
 constant fixed when the program is built: C++ does not say in which order
 it sets the globals of different modules.

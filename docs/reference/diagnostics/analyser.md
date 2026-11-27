@@ -901,10 +901,19 @@ Codes by area:
   answers of functions. Or untick 'constexpr' in the block's ⚙." / "Only a
   whole number, a decimal number, a character or a true/false value can be
   'constexpr'. Untick 'constexpr' in the block's ⚙, or tick 'constant'
-  instead."
+  instead." / when another module's `extern const` constant is the only
+  reason: "`kLimit` belongs to module `stock`, whose header declares it
+  `extern const` without its value, because its value uses something
+  `stock` does not share. So this module knows `kLimit` only when the
+  program runs, and a 'case' label must be fixed when the program is built.
+  To use it here, share what its value uses too, so that the header holds
+  its value." (or "… and the condition of 'check at compile time' must be
+  …", or "… and a 'constexpr' variable's value must be … its value. Or
+  untick 'constexpr' in the block's ⚙.")
 * **How to fix:** use a number, a character or an enum value, or make the
   variable a constant with a fixed starting value; for `constexpr`, untick
-  it, or tick *constant* instead. A `constexpr` decimal number, or a
+  it, or tick *constant* instead. For another module's constant, share
+  what its value uses, so that its header holds the value. A `constexpr` decimal number, or a
   global decimal constant with a fixed value (which is `constexpr`), may be
   read in another `constexpr` value, as C++ allows; a `const` local decimal
   number may not.

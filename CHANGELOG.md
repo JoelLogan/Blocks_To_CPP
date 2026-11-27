@@ -1109,6 +1109,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   to a function whose name another function of the module shares; a _list
   of_ still names its type only on such a call. The golden C++ of
   `unit_converter` and two snapshots change only there.
+- `B2C-E0424` names its cause when another module's shared constant is the
+  only reason a `case` label, the condition of _check at compile time_ or a
+  `constexpr` value is not fixed when the program is built: the constant,
+  its module, and that its header declares it `extern const` because its
+  value uses something the module does not share (w3-modules.md §2.1).
 
 ### Removed
 

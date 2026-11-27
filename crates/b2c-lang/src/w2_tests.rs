@@ -168,7 +168,7 @@ fn flow(item: &Item) -> Vec<(String, String)> {
 fn consts(item: &Item) -> Vec<(String, String)> {
     let mut diags = Diags::default();
     let mut constants = BTreeMap::new();
-    let none = BTreeSet::new();
+    let none = BTreeMap::new();
     let seen = crate::consts::Seen {
         unchecked: &BTreeSet::new(),
         opaque: &none,

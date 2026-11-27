@@ -61,7 +61,7 @@ use b2c_ir::sast::{
 use b2c_ir::types::Type;
 
 use crate::codes;
-use crate::messages::Diags;
+use crate::messages::{Diags, quoted};
 
 /// A value the analyser worked out (types.md §11.2).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -189,6 +189,8 @@ pub fn constant_value(expr: &Expr, constants: &BTreeMap<SymbolId, Constant>) -> 
         constexprs: None,
         diags: None,
         context: None,
+        transparent: false,
+        opaque_read: None,
     }
     .eval(expr)
 }
@@ -202,8 +204,9 @@ struct Context<'a> {
     unchecked: &'a BTreeSet<BlockId>,
     /// The constants whose value the item's file knows but may not use in
     /// a constant expression: other modules' shared constants that their
-    /// headers declare `extern const` (w3-modules.md §2.1).
-    opaque: &'a BTreeSet<SymbolId>,
+    /// headers declare `extern const` (w3-modules.md §2.1), each with its
+    /// module's name as a message shows it.
+    opaque: &'a BTreeMap<SymbolId, String>,
 }
 
 /// What an item's checks see besides the symbols.
@@ -215,8 +218,9 @@ pub(crate) struct Seen<'a> {
     /// The constants that are no constant expression in the item's file,
     /// though their value is known: other modules' shared constants that
     /// their headers declare `extern const` (`B2C-E0424` where a constant
-    /// expression is needed).
-    pub(crate) opaque: &'a BTreeSet<SymbolId>,
+    /// expression is needed, naming the constant and its module), with
+    /// their module's name as a message shows it.
+    pub(crate) opaque: &'a BTreeMap<SymbolId, String>,
 }
 
 /// Checks one lowered item and records its `const` variables' values in
@@ -322,6 +326,11 @@ enum LabelKey {
     Enumerator(SymbolId),
 }
 
+/// The advice of `B2C-E0424` when another module's `extern const` constant
+/// is the cause ([`Checker::opaque_cause`]).
+const SHARE_ITS_VALUE: &str =
+    "To use it here, share what its value uses too, so that the header holds its value.";
+
 /// The statement walk of [`check_item`].
 struct Checker<'a> {
     context: Context<'a>,
@@ -345,8 +354,48 @@ impl Checker<'_> {
             constexprs: Some(&*self.constexprs),
             diags: Some(&mut *self.diags),
             context: Some(self.context),
+            transparent: false,
+            opaque_read: None,
         }
         .eval_into(expr, into)
+    }
+
+    /// Why `expr` is not fixed when the program is built, when the only
+    /// reason is another module's shared constant that its header declares
+    /// `extern const` (w3-modules.md §2.1): the message's start naming that
+    /// constant and its module, which ends with "and". `fits` says whether a
+    /// value fixed when the program is built would do. `None` when the
+    /// value would not be fixed or would not fit even with that constant's
+    /// value seen.
+    fn opaque_cause(
+        &self,
+        expr: &Expr,
+        into: Option<&Type>,
+        fits: impl Fn(&Constant) -> bool,
+    ) -> Option<String> {
+        if self.context.opaque.is_empty() {
+            return None;
+        }
+        let mut folder = Folder {
+            constants: &*self.constants,
+            constexprs: Some(&*self.constexprs),
+            diags: None,
+            context: Some(self.context),
+            transparent: true,
+            opaque_read: None,
+        };
+        let value = folder.eval_into(expr, into)?;
+        if !value.constant_expression || !fits(&value) {
+            return None;
+        }
+        let sym = folder.opaque_read?;
+        let name = quoted(self.context.symbols.get(&sym)?.name.as_str());
+        let module = self.context.opaque.get(&sym)?;
+        Some(format!(
+            "{name} belongs to module {module}, whose header declares it `extern const` without its value, because \
+             its value uses something {module} does not share. So this module knows {name} only when the program \
+             runs, and"
+        ))
     }
 
     /// The type a statement converts a value to, read from `symbol`: not
@@ -392,13 +441,20 @@ impl Checker<'_> {
                         self.constexprs.insert(decl.symbol.clone());
                     }
                     if !fixed && init.ty != Type::Error {
-                        self.diags.error(
-                            codes::NOT_CONSTANT,
-                            init.origin.location(),
-                            "A 'constexpr' variable's value must be fixed when the program is built: use numbers, \
-                             characters, true/false values and constants with fixed values, not variables or the \
-                             answers of functions. Or untick 'constexpr' in the block's ⚙.",
-                        );
+                        let into = self.type_of(stmt, &decl.symbol);
+                        let message = match self.opaque_cause(init, into.as_ref(), |_| true) {
+                            Some(cause) => format!(
+                                "{cause} a 'constexpr' variable's value must be fixed when the program is built. \
+                                 {SHARE_ITS_VALUE} Or untick 'constexpr' in the block's ⚙."
+                            ),
+                            None => String::from(
+                                "A 'constexpr' variable's value must be fixed when the program is built: use \
+                                 numbers, characters, true/false values and constants with fixed values, not \
+                                 variables or the answers of functions. Or untick 'constexpr' in the block's ⚙.",
+                            ),
+                        };
+                        self.diags
+                            .error(codes::NOT_CONSTANT, init.origin.location(), message);
                     }
                 }
                 if decl.is_const
@@ -567,12 +623,19 @@ impl Checker<'_> {
                     .map(LabelKey::Integer),
             };
             let Some(key) = key else {
-                self.diags.error(
-                    codes::NOT_CONSTANT,
-                    label.origin.location(),
-                    "A 'case' label must be a value that is fixed when the program is built: a whole number, a \
-                     character, a value of an enum, or a constant whole number or character with a fixed value.",
-                );
+                let label_fits =
+                    |constant: &Constant| matches!(constant.value, ConstValue::Int(_) | ConstValue::Char(_));
+                let message = match self.opaque_cause(label, into, label_fits) {
+                    Some(cause) => format!(
+                        "{cause} a 'case' label must be fixed when the program is built. {SHARE_ITS_VALUE}"
+                    ),
+                    None => String::from(
+                        "A 'case' label must be a value that is fixed when the program is built: a whole number, a \
+                         character, a value of an enum, or a constant whole number or character with a fixed value.",
+                    ),
+                };
+                self.diags
+                    .error(codes::NOT_CONSTANT, label.origin.location(), message);
                 continue;
             };
             if seen.contains(&key) {
@@ -637,13 +700,21 @@ impl Checker<'_> {
                     );
                 }
             }
-            _ => self.diags.error(
-                codes::NOT_CONSTANT,
-                cond.origin.location(),
-                "The condition of 'check at compile time' must be fixed when the program is built: use numbers, \
-                 characters, true/false values and constants with fixed values, not variables or the answers \
-                 of functions.",
-            ),
+            _ => {
+                let message = match self.opaque_cause(cond, Some(&Type::Bool), |_| true) {
+                    Some(cause) => format!(
+                        "{cause} the condition of 'check at compile time' must be fixed when the program is \
+                         built. {SHARE_ITS_VALUE}"
+                    ),
+                    None => String::from(
+                        "The condition of 'check at compile time' must be fixed when the program is built: use \
+                         numbers, characters, true/false values and constants with fixed values, not variables or \
+                         the answers of functions.",
+                    ),
+                };
+                self.diags
+                    .error(codes::NOT_CONSTANT, cond.origin.location(), message);
+            }
         }
     }
 }
@@ -753,6 +824,12 @@ struct Folder<'a, 'd> {
     /// The symbols and unchecked blocks while checking; `None` evaluates
     /// without them.
     context: Option<Context<'a>>,
+    /// Whether the context's `extern const` constants of other modules
+    /// count as constant expressions, to tell whether they alone keep a
+    /// value from being one (`B2C-E0424`'s cause).
+    transparent: bool,
+    /// The first such constant the evaluation read.
+    opaque_read: Option<SymbolId>,
 }
 
 impl Folder<'_, '_> {
@@ -952,9 +1029,15 @@ impl Folder<'_, '_> {
     /// double` is not, a `constexpr double` is). Another module's shared
     /// constant that its header declares `extern const` is no constant
     /// expression where its definition is not seen.
-    fn variable(&self, sym: &SymbolId, ty: &Type) -> Option<Constant> {
+    fn variable(&mut self, sym: &SymbolId, ty: &Type) -> Option<Constant> {
         let constant = self.constants.get(sym)?;
-        let opaque = self.context.is_some_and(|context| context.opaque.contains(sym));
+        let opaque = self
+            .context
+            .is_some_and(|context| context.opaque.contains_key(sym));
+        if opaque && self.opaque_read.is_none() {
+            self.opaque_read = Some(sym.clone());
+        }
+        let opaque = opaque && !self.transparent;
         let constexpr = self.constexprs.is_some_and(|constexprs| constexprs.contains(sym));
         Some(Constant {
             value: constant.value.convert(ty)?,

@@ -670,9 +670,25 @@ fn e0424_for_another_module_s_const_constant_but_not_a_constexpr_one() {
                        "inputs": {"VALUE": slot(&[n("0")])}}),
                 switch("switch_fixed", slot(&[r("s_n")]), slot(&[r("s_kFixed")])),
                 switch("switch_extern", slot(&[r("s_n")]), slot(&[r("s_kExtern")])),
+                // A variable keeps it from being fixed anyway: the message
+                // names no constant.
+                switch(
+                    "switch_mixed",
+                    slot(&[r("s_n")]),
+                    slot(&[r("s_kExtern"), op("+"), r("s_n")]),
+                ),
                 json!({"id": "check_extern", "type": "program.check", "v": 1,
                        "fields": {"MESSAGE": "too small"},
                        "inputs": {"COND": slot(&[r("s_kExtern"), op(">"), n("0")])}}),
+                json!({"id": "declare_fixed", "type": "var.declare", "v": 1,
+                       "fields": {"CONST": false, "CONSTEXPR": true, "NAME": {"sym": "s_fixed", "name": "fixed"},
+                                  "TYPE": "int"},
+                       "inputs": {"VALUE": slot(&[r("s_kFixed"), op("*"), n("2")])}}),
+                json!({"id": "declare_twice", "type": "var.declare", "v": 1,
+                       "fields": {"CONST": false, "CONSTEXPR": true, "NAME": {"sym": "s_twice", "name": "twice"},
+                                  "TYPE": "int"},
+                       "inputs": {"VALUE": slot(&[r("s_kExtern"), op("*"), n("2")])}}),
+                print(slot(&[r("s_fixed"), op("+"), r("s_twice")])),
             ])],
         ),
         (
@@ -704,14 +720,36 @@ fn e0424_for_another_module_s_const_constant_but_not_a_constexpr_one() {
         found,
         [
             (String::from("mod_0"), String::from("switch_extern")),
+            (String::from("mod_0"), String::from("switch_mixed")),
             (String::from("mod_0"), String::from("check_extern")),
+            (String::from("mod_0"), String::from("declare_twice")),
         ],
         "{}",
         render_all(&analysis)
     );
+    assert_eq!(codes(&analysis), ["B2C-E0424"; 4], "{}", render_all(&analysis));
+    // The message names the cause: the other module's constant, which its
+    // header declares `extern const` (w3-modules.md §2.1).
+    let cause = "`kExtern` belongs to module `stock`, whose header declares it `extern const` without its value, \
+                 because its value uses something `stock` does not share. So this module knows `kExtern` only when \
+                 the program runs, and";
+    let share = "To use it here, share what its value uses too, so that the header holds its value.";
     assert_eq!(
-        codes(&analysis),
-        ["B2C-E0424", "B2C-E0424"],
+        messages(&analysis, "B2C-E0424"),
+        [
+            format!("{cause} a 'case' label must be fixed when the program is built. {share}"),
+            String::from(
+                "A 'case' label must be a value that is fixed when the program is built: a whole number, a \
+                 character, a value of an enum, or a constant whole number or character with a fixed value."
+            ),
+            format!(
+                "{cause} the condition of 'check at compile time' must be fixed when the program is built. {share}"
+            ),
+            format!(
+                "{cause} a 'constexpr' variable's value must be fixed when the program is built. {share} Or untick \
+                 'constexpr' in the block's ⚙."
+            ),
+        ],
         "{}",
         render_all(&analysis)
     );
