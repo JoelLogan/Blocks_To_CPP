@@ -68,7 +68,7 @@ W4's rows that the owner has already decided (marked *Accepted by the owner* or 
 | W3-6 (l.1394) | Headers forward-declare types they use only in lists | They include the other header, so mutual list-holding shared structs are `E0422` | `std::vector<T>{}` fields need `T` complete; the header would not compile alone | Strong |
 | W3-7 (l.1396) | Uniqueness rules across modules | Globals, structs and enums are unique per module, not program-wide; new `E0213` and `E0210` texts | "The rules of §2.1 for every kind" | Unclear |
 | W3-8 (l.1399) | `E0424` names the cause (another module's `extern const`) | It keeps its generic message; the reference explains the cause | Naming it would need module and value in L10's check (cost) | **Weak, S**; Reworked (`0944f1a`) |
-| W3-9 (l.1404) | The E2E flow builds the program block by block | It opens a copy of `gradebook` | Building needs the mutator dialog (convenience) | **Weak, S** |
+| W3-9 (l.1404) | The E2E flow builds the program block by block | It opens a copy of `gradebook` | Building needs the mutator dialog (convenience) | **Weak, S**; Reworked (`249d03b`) |
 | W3-10 (l.1405) | Cache temporaries get temporary names in `obj/` | They go in `tmp/<stem>.o` and are renamed into `obj/` | GCC 13 and 14 name SARIF files after the output stem | Strong |
 | W3-11 (l.1406) | Pruning `obj/` is part of the build | Best effort: a cache file that cannot be deleted is logged, not fatal; the messages file gets a format tag | Never fail a build that has linked | Strong |
 | W3-12 (l.1408) | The namespace depth limit refuses everywhere | Drags are refused; a deeper file still loads, and the analyser reports `E0219` | A refusal while loading would turn blocks into placeholders | Strong |
@@ -78,7 +78,7 @@ W4's rows that the owner has already decided (marked *Accepted by the owner* or 
 | W3-16 (l.1431) | N2 regression tests use ADR-0006's case programs | The cases were rebuilt from blocks | The originals were never committed | Strong |
 | W3-17 (l.1432) | 06 §6.14.13: open each standard namespace with a statement block | Not built; it waits for *use namespace … here* (package S, cut) | Budget (S was cut) | **Weak, M** |
 | W3-18 (l.1433) | Textbook style switch (W3M-D13) | A checkbox in the settings page's *Language* draft, applied with *Save changes*; no IPC change | The page saves every setting as one edit | Unclear |
-| W3-19 (l.1435) | The `namespaces` E2E flow builds through the UI | It uses a fixture and the test hook | The hook cannot put definitions into a mouth (convenience) | **Weak, S** |
+| W3-19 (l.1435) | The `namespaces` E2E flow builds through the UI | It uses a fixture and the test hook | The hook cannot put definitions into a mouth (convenience) | **Weak, S**; Reworked (`4fa3361`) |
 | W3-20 (l.1437) | Paste records every reference with its namespace | A global is recorded by plain name and a namespace by nothing (*use namespace* keeps its ID) | The clipboard format v2 has no kind for them | Strong |
 | W3-21 (l.1438) | W3M-D12 (b) keeps the IDs of pasted *definitions* | Keeps the IDs of every free symbol, locals too; spec 05 §5.12 changed | One rule; a free ID collides with nothing | Unclear |
 | W3-22 (l.1440) | The 8-module native benchmark is gated | `pipeline/preview-modules` is reported only, until it has baselines | The gate needs five baselines | Strong |
@@ -105,7 +105,7 @@ In "From the W4 and W5 merges", E's `'none'` is W3-4. M3-4 was done later (see b
 
 | ID | Contract said | Built | Stated reason | Rating |
 |---|---|---|---|---|
-| X-1 ("Not done") | Coverage for *End input*, the input file and the external terminal | No E2E flow: Rust and Vitest tests only. "Can follow with W5's sweep." | Coverage judged enough (cost) | **Weak, S** |
+| X-1 ("Not done") | Coverage for *End input*, the input file and the external terminal | No E2E flow: Rust and Vitest tests only. "Can follow with W5's sweep." | Coverage judged enough (cost) | **Weak, S**; Reworked (`39b1451`) for End input and the input file; the external terminal waits for the owner |
 
 **Excluded (1):** the "known limits" (the Windows window closing, an input file shared by two copies, POSIX make quoting) are platform limits, not changes to the contract. The 17 review findings are bug fixes.
 
@@ -147,7 +147,7 @@ In "From the W4 and W5 merges", E's `'none'` is W3-4. M3-4 was done later (see b
 | M34-4 | A parked `return` is typed as in `main` | Typed against `Unknown`, with no report | The attach point is unknown; `main`'s `int` would mistype list values | Strong |
 | M34-5 | The shared `lower_list` | A loop like `body_and_end` in its own `#parked` frame above `#seed` | There is no `lower_list`; the own frame makes a parked `create` shadow | Strong |
 | M34-6 | Parked heads come from `program()`'s catch-all arm | Taken from each module's `workspace.blocks` with `DEFINITION_TYPES` | Since W3, `sorted_blocks` reaches into namespace mouths | Strong |
-| M34-9 | Four tests, including an E2E check that text no longer snaps into a parked `int` *set* | The other tests were added or updated; **the E2E check was not added** | "The E2E check is the editor's" (ownership) | **Weak, S** |
+| M34-9 | Four tests, including an E2E check that text no longer snaps into a parked `int` *set* | The other tests were added or updated; **the E2E check was not added** | "The E2E check is the editor's" (ownership) | **Weak, S**; Reworked (`e1b88c5`) |
 
 **Excluded (2):** M34-7 (`slot_types` kept; the proposal left it open) and M34-8 (diagnostics swapped once rather than per stack, with the same result).
 
@@ -161,7 +161,7 @@ In "From the W4 and W5 merges", E's `'none'` is W3-4. M3-4 was done later (see b
 | W5P-2 (§11.5) | The worker flag is removed | It is inverted and kept as an off switch (`B2C_PREVIEW_WORKER=0`) | A/B and developer measurements | **Weak, S**; Reworked (`bcc3340`) |
 | W5P-3 (§10.2, §14; w5-worker item 8) | Clipboard arguments (worker.md §5) and the `webview.copy/paste/duplicate-1000.max-task` benchmarks (N12, 100 ms) | Neither built. A copy, paste or duplicate costs one main-thread analysis while the worker previews; the condition was never measured. | Wait for the measurement (cost) | **Weak, M** |
 | W5P-4 (§14) | `webview.preview-1000.p95` is redefined as the `b2c:preview` span, plus a new `update-p95` metric | The old metric is kept, and spans give `update()` | Nightly compares like with like | **Weak, S** |
-| W5P-5 (§14) | E2E additions of worker.md §2.5 | The package's worker test checks each example's golden C++; no new E2E flow | Coverage judged equivalent | **Weak, S** |
+| W5P-5 (§14) | E2E additions of worker.md §2.5 | The package's worker test checks each example's golden C++; no new E2E flow | Coverage judged equivalent | **Weak, S**; Reworked (`2c43a3b`) |
 
 **Excluded (5):** §11.1 (format detail added), §11.2 (an interim step, then done by E: W3-4), §11.4 (an epoch mechanism, internal), the hold wiring (done later by W3 E), and lazy first-showing drawing (conditional in §3; the condition was not met).
 

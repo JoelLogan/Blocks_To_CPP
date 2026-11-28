@@ -524,7 +524,9 @@ Each is fixed with a test written to fail without the fix (checked by removing t
 
 ### Not done, and why
 
-* No E2E flow for _End input_, the input file or the external terminal; the
+* **Reworked to the contract on 2026-11-27 (`39b1451`) for _End input_ and
+  the input file; the runs in an external terminal wait for the owner.**
+  No E2E flow for _End input_, the input file or the external terminal; the
   Rust tests cover the three on both systems, and the console's button and
   the pages have Vitest tests. An E2E flow can follow with W5's sweep.
 * Known limits, kept as they are: on Windows the external window closes at
