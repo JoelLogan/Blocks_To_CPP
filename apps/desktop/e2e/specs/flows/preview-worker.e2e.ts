@@ -11,12 +11,19 @@
  * that keeps it on the main thread, w5-worker.md §4): it moves to the worker after the first
  * update, and after the worker is stopped the next edit previews on a new one.
  *
+ * The fourth and fifth are the E2E additions of docs/plans/m3-contracts/w5-performance.md §2.5,
+ * with the worker previewing: a variable made with *Make a variable* after the worker started is
+ * in a *set* block's variable menu (the M2 exit flow's failure of w5-worker.md §4, when the menus
+ * still asked the main thread's core), and each M3-D1 assignment project (tests/assignments/)
+ * opens and its preview equals its golden C++ (tests/golden/<name>/main.cpp), one after the other
+ * in one app, each opened with ≡ *Open…* once the worker previews.
+ *
  * The second test measures, at 1,000 blocks (the benchmarks' document), the worker's start-up, a
  * preview's round trip through `postMessage` against the main thread's call, and the
  * structured-clone cost of the largest messages. It writes them to standard output; only the
  * worker's answer is checked.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -26,10 +33,29 @@ import type { E2eWorkerCheck } from '../../../src/e2e/contract';
 import { MAIN_ID, writeBenchProject } from '../../bench/document';
 import { openProjectFile } from '../../bench/project';
 import { type App, launchApp } from '../../support/app';
-import { NodeIds, print } from '../../support/bdm';
+import { NodeIds, num, print } from '../../support/bdm';
+import { centerOn, fieldOf } from '../../support/editor';
+import { clickMiddle } from '../../support/ui';
+import { REPOSITORY_ROOT } from '../../support/env';
 import { waitFor } from '../../support/wait';
+import { closeMenu, makeVariable, menuLabels } from './lib/editor';
 import { startFlow } from './lib/launch';
-import { copyExample, newEmptyProject, openFromStartPage } from './lib/project';
+import { copyExample, declare, newEmptyProject, openFromStartPage } from './lib/project';
+import { answerDialog, chooseMenuItem, dialogText } from './lib/ui';
+
+/** The M3-D1 assignments (tests/assignments/status.toml), each an example with its golden C++. */
+const ASSIGNMENTS = [
+  'temperature_table',
+  'grade_average',
+  'word_count',
+  'student_records',
+  'bank_menu',
+  'palindrome',
+  'dice_statistics',
+  'guessing_game',
+  'matrix_sum',
+  'input_validation',
+] as const;
 
 /** How long a check may take: a worker's start-up (20 s at most) and its rounds. */
 const CHECK_TIMEOUT_MS = 120_000;
@@ -54,6 +80,14 @@ async function printAndWait(app: App, mainId: string, ids: NodeIds, text: string
   await waitFor(async () => (await app.hook.code()).includes(text), {
     timeout: EDIT_TIMEOUT_MS,
     message: `"${text}" in the C++`,
+  });
+}
+
+/** Waits until the editor's preview runs in the worker. */
+async function waitForWorker(app: App): Promise<void> {
+  await waitFor(async () => (await app.hook.call('previewThread')) === 'worker', {
+    timeout: EDIT_TIMEOUT_MS,
+    message: 'the preview worker to start',
   });
 }
 
@@ -131,4 +165,78 @@ describe('The preview worker', () => {
     await printAndWait(app, mainId, ids, 'third edit');
     expect(await app.hook.call('previewThread')).toBe('worker');
   });
+
+  it('lists a variable made after the worker started in a set block’s menu', async (context) => {
+    const flow = startFlow(context);
+    const app = await flow.launch();
+    const mainId = await newEmptyProject(app);
+    const ids = new NodeIds('workermenu');
+    const set = {
+      id: ids.next(),
+      type: 'var.set',
+      v: 1,
+      fields: { VAR: { ref: 's_worker_secret' } },
+      inputs: { VALUE: num(1) },
+    };
+    await app.hook.insertBlocks(mainId, 'BODY', [
+      declare(ids, { sym: 's_worker_secret', name: 'secret', type: 'int', value: num(0) }),
+      set,
+    ]);
+    await waitFor(async () => (await app.hook.code()).includes('secret = 1;'), {
+      timeout: EDIT_TIMEOUT_MS,
+      message: 'secret = 1; in the C++',
+    });
+    await waitForWorker(app);
+
+    // Make a variable, with main selected: guess goes at the top of main, before the set.
+    await centerOn(app, mainId);
+    await makeVariable(app, 'guess', 'int');
+    await waitFor(async () => (await app.hook.code()).includes('int guess'), {
+      timeout: EDIT_TIMEOUT_MS,
+      message: 'int guess in the C++',
+    });
+    expect(await app.hook.call('previewThread')).toBe('worker');
+    await clickMiddle(app.driver, await fieldOf(app, set.id, 'VAR'));
+    expect((await menuLabels(app.driver)).sort()).toEqual(['guess', 'secret']);
+    await closeMenu(app.driver);
+  });
+
+  it('opens each assignment and previews its golden C++ in the worker', async (context) => {
+    const flow = startFlow(context);
+    const files = ASSIGNMENTS.map((name) => copyExample(name, flow.folders.projects));
+    const [first] = files;
+    if (first === undefined) {
+      throw new Error('no assignments');
+    }
+    // The first one is opened twice: from the start page, where its first preview starts the
+    // worker, and again last, once the worker previews.
+    const app = await flow.launch({ dialogs: { open: [first, ...files.slice(1), first] } });
+    await openFromStartPage(app);
+    await waitForWorker(app);
+    const order = [...ASSIGNMENTS.slice(1), ASSIGNMENTS[0]];
+    for (const name of order) {
+      expect(await app.hook.call('previewThread')).toBe('worker');
+      const golden = readFileSync(
+        path.join(REPOSITORY_ROOT, 'tests', 'golden', name, 'main.cpp'),
+        'utf8',
+      );
+      await chooseMenuItem(app.driver, 'Open…');
+      await waitFor(
+        async () => {
+          // The project shown may have become changed (•) as the editor loaded it; its changes
+          // are not kept.
+          if ((await dialogText(app.driver)).includes('Save changes to')) {
+            await answerDialog(app.driver, "Don't save");
+          }
+          return (await app.hook.code()) === golden ? true : null;
+        },
+        {
+          timeout: EDIT_TIMEOUT_MS,
+          message: async () =>
+            `the golden C++ of ${name} in the preview (it shows:\n${(await app.hook.code()).slice(0, 400)})`,
+        },
+      );
+      expect(await app.hook.call('previewThread')).toBe('worker');
+    }
+  }, 300_000);
 });

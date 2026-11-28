@@ -1148,6 +1148,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   a parked `int` _set_ (w5-performance.md §10.1, M3-4): a stack dragged out
   of `main` keeps its variable's type, so the text is refused where a
   number snaps.
+- The E2E flow `preview-worker` gains the checks of w5-performance.md §2.5
+  with the worker previewing: a variable made after the worker started is
+  in a _set_ block's menu, and each M3-D1 assignment opens and previews its
+  golden C++.
 
 ### Removed
 
