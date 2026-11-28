@@ -1144,6 +1144,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   input file chosen on the project settings page is the program's input,
   also with the separate terminal window ticked, which the input file wins
   over.
+- The E2E flow `parked-blocks` checks that a text value no longer snaps into
+  a parked `int` _set_ (w5-performance.md §10.1, M3-4): a stack dragged out
+  of `main` keeps its variable's type, so the text is refused where a
+  number snaps.
 
 ### Removed
 

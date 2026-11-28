@@ -1,8 +1,8 @@
 /**
  * The block editor in the flow tests, beyond ../../../support/editor.ts: dragging a reporter from
  * the toolbox by its output connection onto a value input, dropping a block on an empty part of
- * the canvas, clicking a block with the pointer, making a variable with the toolbox's *Make a
- * variable*, and reading Blockly's dropdown menu.
+ * the canvas or dragging one there, clicking a block with the pointer, making a variable with the
+ * toolbox's *Make a variable*, and reading Blockly's dropdown menu.
  */
 import { By, Key, Origin, type WebDriver } from 'selenium-webdriver';
 
@@ -94,8 +94,11 @@ const EMPTY_AREA = `
 /** How often {@link dropOnCanvas} scrolls the canvas to find an empty area before it gives up. */
 const EMPTY_AREA_SCROLLS = 10;
 
-/** A point of an empty area of the visible canvas (see {@link EMPTY_AREA}), or `null`. */
-async function emptyArea(app: App): Promise<[number, number] | null> {
+/**
+ * A point of an empty `width` × `height` area of the visible canvas (see {@link EMPTY_AREA}),
+ * 24 pixels inside its top left corner, or `null`.
+ */
+async function emptyArea(app: App, width = 160, height = 80): Promise<[number, number] | null> {
   const rect = await visibleCanvas(app.driver);
   const found: unknown = await app.driver.executeScript(
     EMPTY_AREA,
@@ -103,8 +106,8 @@ async function emptyArea(app: App): Promise<[number, number] | null> {
     rect.top + 8,
     rect.right - 8,
     rect.bottom - 8,
-    160,
-    80,
+    width,
+    height,
   );
   return Array.isArray(found) && found.length === 2 && found.every((n) => typeof n === 'number')
     ? (found as [number, number])
@@ -132,6 +135,33 @@ export async function dropOnCanvas(app: App, entry: ToolboxEntry): Promise<void>
   const grab = await flyoutGrabPoint(app, blockId);
   const [x, y] = found;
   await drag(app.driver, grab, { x, y });
+  await sleep(400);
+}
+
+/**
+ * Drags block `blockId` (with the blocks below it, as Blockly takes them) out of where it is to
+ * an empty part of the visible canvas, well away from every other block: the middle of an empty
+ * area one and a half times the size {@link dropOnCanvas} looks for, so no connection is near
+ * enough to snap to. Where the blocks fill the visible canvas (800 × 560), it is scrolled so they move
+ * up, a little at a time, until such an area shows below them. A statement left there with its
+ * stack is parked (ADR-0012).
+ */
+export async function dragToEmptyArea(app: App, blockId: string): Promise<void> {
+  await centerOn(app, blockId);
+  let found = await emptyArea(app, 240, 120);
+  for (let scroll = 0; found === null && scroll < EMPTY_AREA_SCROLLS; scroll++) {
+    // The blocks move up by a fifth of a view, the block itself still on screen.
+    const rect = await visibleCanvas(app.driver);
+    await app.hook.scrollCanvasBy(0, -Math.max(20, Math.round((rect.bottom - rect.top) / 5)));
+    await sleep(100);
+    found = await emptyArea(app, 240, 120);
+  }
+  if (found === null) {
+    throw new Error('The visible canvas has no empty area to drag a block to');
+  }
+  const grab = await pointOf(() => app.hook.grabPoint(blockId), `block ${blockId} on screen`);
+  const [x, y] = found;
+  await drag(app.driver, grab, { x: x - 24 + 120, y: y - 24 + 60 });
   await sleep(400);
 }
 

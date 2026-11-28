@@ -5,15 +5,22 @@
  * test hook) has only the attached *print*, and F5 runs the program without the parked block. An
  * *ask* from the toolbox, whose variable is not chosen yet, is parked the same way: only warnings,
  * and Run is still not held back.
+ *
+ * A parked stack is lowered for the editor (M3-4, docs/plans/m3-contracts/w5-performance.md
+ * §10.1): `create [int] x` with `set x to 0` below it, dragged out of *when program starts* onto
+ * an empty part of the canvas, keeps `x`'s type in the stack, so a text block taken from the
+ * toolbox towards the *set*'s value does not snap (the *set* keeps its `0`, the text lies loose),
+ * where a number does.
  */
 import { By, Key } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
-import { type BlockNode, NodeIds, type ProjectDocument } from '../../support/bdm';
+import { type BlockNode, moduleNodes, NodeIds, num, type ProjectDocument } from '../../support/bdm';
 import { waitForConsoleState } from '../../support/console';
 import {
   currentDocument,
   foldCodePanel,
+  waitForDelivery,
   problemsSummary,
   runHeldBack,
   showProblems,
@@ -21,9 +28,9 @@ import {
 import { pressKey, textContent } from '../../support/ui';
 import { waitFor } from '../../support/wait';
 import { waitForTranscript } from './lib/console';
-import { dropOnCanvas } from './lib/editor';
+import { dragToEmptyArea, dragValueFromToolbox, dropOnCanvas } from './lib/editor';
 import { type FlowApp, startFlow } from './lib/launch';
-import { mainBody, newEmptyProject, printValue } from './lib/project';
+import { declare, mainBody, newEmptyProject, printValue } from './lib/project';
 import { BUILD_TIMEOUT_MS, UI_TIMEOUT_MS, waitForToolchain } from './lib/ui';
 
 /** What the attached *print* writes. */
@@ -31,6 +38,15 @@ const ATTACHED = 'Attached and running';
 
 /** What a *print* from the toolbox writes (its preset, `io.print`'s default item). */
 const TOOLBOX_PRINT = 'Hello, world!';
+
+/** The text and number toolbox entries (Text and Math categories). */
+const TEXT = { category: 'Text', type: 'text.literal' } as const;
+const NUMBER = { category: 'Math', type: 'math.number' } as const;
+
+/** What value input `input` of block `id` holds now, from the canvas. */
+async function inputOf(app: FlowApp, id: string, input: string): Promise<unknown> {
+  return moduleNodes(await currentDocument(app)).find((node) => node.id === id)?.inputs?.[input];
+}
 
 /** Waits for a *print* directly on the canvas (a top-level block), and returns it. */
 function loosePrint(app: FlowApp): Promise<BlockNode> {
@@ -127,5 +143,62 @@ describe('Parked blocks', () => {
         `"${warnings}" and no errors in Problems (it says "${await problemsSummary(app.driver)}")`,
     });
     expect(await runHeldBack(app.driver)).toBe(false);
+  }, 180_000);
+
+  it('keeps a parked int variable’s type, so text does not snap into its set', async (context) => {
+    const flow = startFlow(context);
+    const app = await flow.launch();
+    const mainId = await newEmptyProject(app);
+    await foldCodePanel(app);
+    const ids = new NodeIds('parkedset');
+    const create = declare(ids, { sym: 's_parked_x', name: 'x', type: 'int', value: num(0) });
+    const set: BlockNode = {
+      id: ids.next(),
+      type: 'var.set',
+      v: 1,
+      fields: { VAR: { ref: 's_parked_x' } },
+      inputs: { VALUE: num(0) },
+    };
+    await app.hook.insertBlocks(mainId, 'BODY', [create, set]);
+    await waitForDelivery(app.driver);
+
+    // (1) The create, with the set below it, dragged out of main onto an empty part: parked.
+    await dragToEmptyArea(app, create.id);
+    await waitFor(
+      async () => {
+        const blocks = (await currentDocument(app)).modules[0]?.workspace.blocks ?? [];
+        const parked = blocks.find((block) => block.id === create.id);
+        return parked?.stack?.length === 1 && parked.stack[0]?.id === set.id ? true : null;
+      },
+      { timeout: UI_TIMEOUT_MS, message: 'create x with set x below it, parked' },
+    );
+    expect(await mainBody(app)).toHaveLength(0);
+    await waitForDelivery(app.driver);
+
+    // (2) Text towards the parked set's value: refused, so it keeps its 0 and the text lies loose.
+    await dragValueFromToolbox(app, TEXT, set.id, 'VALUE');
+    await waitFor(
+      async () =>
+        ((await currentDocument(app)).modules[0]?.workspace.blocks ?? []).some(
+          (block) => block.type === TEXT.type,
+        ),
+      { timeout: UI_TIMEOUT_MS, message: 'the refused text loose on the canvas' },
+    );
+    expect(await inputOf(app, set.id, 'VALUE')).toEqual(num(0));
+
+    // (3) A number towards it snaps.
+    await dragValueFromToolbox(app, NUMBER, set.id, 'VALUE');
+    await waitFor(
+      async () => {
+        const value = await inputOf(app, set.id, 'VALUE');
+        return typeof value === 'object' &&
+          value !== null &&
+          'block' in value &&
+          (value.block as BlockNode).type === NUMBER.type
+          ? true
+          : null;
+      },
+      { timeout: UI_TIMEOUT_MS, message: 'the number in the parked set' },
+    );
   }, 180_000);
 });
