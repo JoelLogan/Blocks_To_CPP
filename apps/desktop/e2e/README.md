@@ -20,7 +20,7 @@ machine's folders are scripted, through the app's `e2e-hooks` feature.
   §9.2 (Restricted Mode and trust, save and reload, crash recovery, Stop, exit decoding, closing
   the app, the output flood, the setup page, external changes, the clipboard, settings, the
   variable menus, the connection checker, code-to-block selection, dragging from every category,
-  build and run with input); their launcher (`specs/flows/lib/launch.ts`) keeps one profile across
+  build and run with input, ending a program's input and reading it from a file); their launcher (`specs/flows/lib/launch.ts`) keeps one profile across
   launches. [`specs/security/`](specs/security/README.md) are the security tests of 08 §8.13,
   which run nightly (`nightly.yml`, `e2e-security`), not in the PR job.
 - **Benchmarks and visual diff:** [`bench/`](bench/README.md) (cold start, the preview and edits

@@ -1138,6 +1138,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   W3 contract has it (w3-modules.md §5.2 N2): the function and the struct
   are dragged into the namespace's mouth and the call into `main`, instead
   of a fixture and the test hook. The fixture `namespaces.b2c` is gone.
+- The E2E flow `run-input`, which the W3 export and run contract asked for
+  (w3-export-run.md §13): _End input_ ends a running program's input in the
+  console (its next read gets nothing, and it goes on to finish), and an
+  input file chosen on the project settings page is the program's input,
+  also with the separate terminal window ticked, which the input file wins
+  over.
 
 ### Removed
 
